@@ -107,6 +107,9 @@ jobs:
       - if: runner.os != 'Linux'
         run: pixi run --locked --manifest-path ci/pixi.toml -e python315 maturin build --manifest-path source/Cargo.toml --release --locked --out dist -i python
       - run: pixi run --locked --manifest-path ci/pixi.toml twine check --strict dist/*.whl
+      - name: Audit native dependencies
+        shell: bash
+        run: pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_wheel_native.py dist/*.whl
       - name: Audit Python ABI
         shell: bash
         run: pixi run --locked --manifest-path ci/pixi.toml abi3audit --strict --summary dist/*-cp312-abi3-*.whl
@@ -121,6 +124,7 @@ jobs:
           pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp315-abi3.abi3t-*.whl --python 3.15t --abi-tag cp315-abi3.abi3t --platform-tag ${{ matrix.platform-tag }} --find-links dist
           pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp312-abi3-*.whl --python 3.12 --platform-tag ${{ matrix.platform-tag }} --extra dev
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
         with:
           name: wheel-${{ matrix.target }}
           path: dist/*.whl
