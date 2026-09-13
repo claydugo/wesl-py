@@ -1,0 +1,162 @@
+name: Artifacts
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  WESL_PY_BUILD_REVISION: ${{ github.sha }}
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f
+        with:
+          pixi-version: v0.80.0
+          locked: true
+      - run: pixi run --locked lint
+      - run: pixi run --locked format-check
+      - run: pixi run --locked ty check python/wesl
+      - run: pixi run --locked rust-format-check
+      - run: pixi run --locked clippy
+      - run: pixi run --locked machete
+      - run: pixi run --locked deny
+      - run: pixi run --locked audit
+      - run: pixi run --locked licenses
+
+  sdist:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f
+        with:
+          pixi-version: v0.80.0
+          manifest-path: ci/pixi.toml
+          locked: true
+      - run: pixi run --locked --manifest-path ci/pixi.toml maturin sdist --out dist
+      - run: pixi run --locked --manifest-path ci/pixi.toml twine check --strict dist/*.tar.gz
+      - run: pixi run --locked --manifest-path ci/pixi.toml python tools/test_sdist.py dist/*.tar.gz
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  wheel:
+    needs: sdist
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            platform-tag: manylinux_2_28_x86_64
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            platform-tag: macosx_11_0_arm64
+          - runner: windows-2022
+            target: x86_64-pc-windows-msvc
+            platform-tag: win_amd64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f
+        with:
+          pixi-version: v0.80.0
+          manifest-path: ci/pixi.toml
+          locked: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: sdist
+          path: sdist
+      - name: Extract source archive
+        shell: bash
+        run: |
+          mkdir source
+          tar -xf sdist/*.tar.gz -C source --strip-components=1
+      - if: runner.os == 'Linux'
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
+        with:
+          maturin-version: v1.15.0
+          rust-toolchain: 1.97.1
+          target: x86_64-unknown-linux-gnu
+          manylinux: "2_28"
+          docker-options: -e WESL_PY_BUILD_REVISION
+          working-directory: source
+          args: --release --locked --out ../dist -i python3.12
+      - if: runner.os != 'Linux'
+        run: pixi run --locked --manifest-path ci/pixi.toml maturin build --manifest-path source/Cargo.toml --release --locked --out dist -i python
+      - if: runner.os == 'Linux'
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
+        with:
+          maturin-version: v1.15.0
+          rust-toolchain: 1.97.1
+          target: x86_64-unknown-linux-gnu
+          manylinux: "2_28"
+          docker-options: -e WESL_PY_BUILD_REVISION
+          working-directory: source
+          args: --release --locked --out ../dist -i python3.15
+      - if: runner.os != 'Linux'
+        run: pixi run --locked --manifest-path ci/pixi.toml -e python315 maturin build --manifest-path source/Cargo.toml --release --locked --out dist -i python
+      - run: pixi run --locked --manifest-path ci/pixi.toml twine check --strict dist/*.whl
+      - name: Audit Python ABI
+        shell: bash
+        run: pixi run --locked --manifest-path ci/pixi.toml abi3audit --strict --summary dist/*-cp312-abi3-*.whl
+      - name: Test installed wheel
+        shell: bash
+        run: |
+          pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp312-abi3-*.whl --python 3.12 --platform-tag ${{ matrix.platform-tag }} --find-links dist
+          pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp312-abi3-*.whl --python 3.13 --platform-tag ${{ matrix.platform-tag }} --find-links dist
+          pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp312-abi3-*.whl --python 3.14 --platform-tag ${{ matrix.platform-tag }} --find-links dist
+          pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp312-abi3-*.whl --python 3.15 --platform-tag ${{ matrix.platform-tag }}
+          pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp315-abi3.abi3t-*.whl --python 3.15 --abi-tag cp315-abi3.abi3t --platform-tag ${{ matrix.platform-tag }} --find-links dist
+          pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp315-abi3.abi3t-*.whl --python 3.15t --abi-tag cp315-abi3.abi3t --platform-tag ${{ matrix.platform-tag }} --find-links dist
+          pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp312-abi3-*.whl --python 3.12 --platform-tag ${{ matrix.platform-tag }} --extra dev
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: wheel-${{ matrix.target }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  compute:
+    needs: wheel
+    runs-on: ubuntu-24.04
+    env:
+      WGPU_BACKEND_TYPE: Vulkan
+      VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f
+        with:
+          pixi-version: v0.80.0
+          manifest-path: ci/pixi.toml
+          locked: true
+      - name: Install Mesa Vulkan driver
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mesa-vulkan-drivers libvulkan1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: sdist
+          path: sdist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: wheel-x86_64-unknown-linux-gnu
+          path: dist
+      - name: Extract source archive
+        run: |
+          mkdir source
+          tar -xf sdist/*.tar.gz -C source --strip-components=1
+      - name: Test compute and example extras
+        env:
+          XDG_RUNTIME_DIR: ${{ runner.temp }}
+        run: |
+          pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp312-abi3-*.whl --python 3.12 --platform-tag manylinux_2_28_x86_64 --extra compute --compute
+          pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp312-abi3-*.whl --python 3.12 --platform-tag manylinux_2_28_x86_64 --extra fractal
+          pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp312-abi3-*.whl --python 3.12 --platform-tag manylinux_2_28_x86_64 --extra examples

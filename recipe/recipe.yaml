@@ -1,0 +1,49 @@
+package:
+  name: wesl-py
+  version: 0.1.0
+
+source:
+  path: ..
+
+build:
+  number: 2
+  script: build.py
+
+requirements:
+  build:
+    - ${{ compiler('rust') }}
+    - ${{ compiler('c') }}
+    - if: unix
+      then: ${{ stdlib('c') }}
+  host:
+    - python 3.12.*
+    - maturin >=1.15,<2
+    - python-installer
+  run:
+    - python >=3.12,<3.13
+
+tests:
+  - script:
+      - python -m pytest tests/test_compile.py -q
+      - python -m pytest tests/test_check_syntax.py -q
+      - python -m pytest tests/test_diagnostics.py -q
+    requirements:
+      run:
+        - pytest
+    files:
+      source:
+        - tests/conftest.py
+        - tests/test_compile.py
+        - tests/test_check_syntax.py
+        - tests/test_diagnostics.py
+
+about:
+  homepage: https://github.com/claydugo/wesl-py
+  repository: https://github.com/claydugo/wesl-py
+  license: MIT
+  license_file:
+    - LICENSE-MIT
+    - LICENSE-RUST.html
+    - NOTICE
+    - THIRDPARTY.yml
+  summary: Python bindings for the Rust WESL compiler

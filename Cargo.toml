@@ -1,0 +1,83 @@
+[package]
+name = "wesl-py"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+publish = false
+description = "Python bindings for the Rust WESL compiler"
+repository = "https://github.com/claydugo/wesl-py"
+license = "MIT"
+include = [
+    "src/**", "/build.rs", "/Cargo.toml", "/Cargo.lock", "python/**",
+    "/pyproject.toml", "/README.md", "/CONTRIBUTING.md", "/CHANGELOG.md", "/LICENSE-MIT", "/LICENSE-RUST.html", "/NOTICE", "/THIRDPARTY.yml", "tests/**",
+    "examples/**", "/pixi.toml", "/pixi.lock", "/clippy.toml", "/deny.toml",
+    "tools/**", "recipe/**",
+]
+
+[lib]
+name = "_native"
+crate-type = ["cdylib"]
+test = false
+doctest = false
+
+[dependencies]
+naga = { version = "=29.0.4", features = ["wgsl-in"] }
+pyo3 = { version = "=0.29.2", features = ["extension-module", "abi3-py312", "abi3t-py315"] }
+wesl = { version = "=0.4.4", default-features = false }
+wgsl-parse = { version = "=0.4.4", default-features = false }
+
+[build-dependencies]
+serde_json = "1"
+toml = "1.1"
+
+[package.metadata.wesl]
+revision = "666362633e5235fa56c6a351d0aea5a502fa42e3"
+
+[lints.rust]
+unsafe_code = "deny"
+unused = { level = "deny", priority = -1 }
+unused_crate_dependencies = "warn"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+
+clone_on_ref_ptr = "deny"
+cognitive_complexity = "deny"
+needless_collect = "deny"
+option_if_let_else = "deny"
+redundant_clone = "deny"
+use_self = "deny"
+
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+dbg_macro = "deny"
+empty_drop = "deny"
+empty_enum_variants_with_brackets = "deny"
+empty_structs_with_brackets = "deny"
+error_impl_error = "deny"
+exit = "deny"
+expect_used = "deny"
+infinite_loop = "deny"
+lossy_float_literal = "deny"
+mem_forget = "deny"
+missing_assert_message = "deny"
+panic = "deny"
+panic_in_result_fn = "deny"
+print_stderr = "deny"
+print_stdout = "deny"
+rc_buffer = "deny"
+rest_pat_in_fully_bound_structs = "deny"
+str_to_string = "deny"
+string_add = "deny"
+string_slice = "deny"
+todo = "deny"
+unimplemented = "deny"
+unnecessary_safety_comment = "deny"
+unwrap_used = "deny"
+
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+struct_excessive_bools = "allow"
