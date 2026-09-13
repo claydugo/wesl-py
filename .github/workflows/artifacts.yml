@@ -42,7 +42,7 @@ jobs:
       - run: pixi run --locked --manifest-path ci/pixi.toml maturin sdist --out dist
       - run: pixi run --locked --manifest-path ci/pixi.toml twine check --strict dist/*.tar.gz
       - run: pixi run --locked --manifest-path ci/pixi.toml python tools/test_sdist.py dist/*.tar.gz
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: sdist
           path: dist/*.tar.gz
@@ -118,7 +118,7 @@ jobs:
           pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp315-abi3.abi3t-*.whl --python 3.15 --abi-tag cp315-abi3.abi3t --platform-tag ${{ matrix.platform-tag }} --find-links dist
           pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp315-abi3.abi3t-*.whl --python 3.15t --abi-tag cp315-abi3.abi3t --platform-tag ${{ matrix.platform-tag }} --find-links dist
           pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp312-abi3-*.whl --python 3.12 --platform-tag ${{ matrix.platform-tag }} --extra dev
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: wheel-${{ matrix.target }}
           path: dist/*.whl
