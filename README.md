@@ -1,56 +1,25 @@
 # wesl-py
 
 Python bindings for the [Rust WESL compiler](https://github.com/webgpu-tools/wesl-rs).
-Compile WESL strings, files, or module mappings to WGSL.
-Check WESL syntax or validate WGSL semantics.
-The extension includes the compiler and runs without a GPU.
 
-The distribution name is `wesl-py`. Import it as `wesl`.
-Use Python 3.12 or later. No public release exists yet.
-To build and use the checkout on Linux:
+WESL extends WGSL with imports and conditional compilation. Compile modular
+shaders from Python and pass the generated WGSL to wgpu-py. Compilation and
+validation run without a GPU.
+
+## Installation
+
+Requires Python 3.12 or later. No public release is available yet.
+Build from a checkout on Linux:
 
 ```bash
 pixi install --locked
 pixi run python -c "import wesl; print(wesl.__version__)"
 ```
 
-## Support
+The distribution name is `wesl-py`. Import it as `wesl`.
+See [CONTRIBUTING.md](CONTRIBUTING.md#support) for platform support and source builds.
 
-The first release targets CPython 3.12, 3.13, 3.14, 3.15, and 3.15t.
-Python 3.15 coverage currently uses the release candidate.
-
-| Platform | Wheel target |
-| --- | --- |
-| Linux x86-64 | glibc 2.28 or later |
-| macOS arm64 | macOS 11 or later |
-| Windows x86-64 | Native Windows build |
-
-Each platform has an `abi3` wheel for regular CPython 3.12 and later.
-It also has an `abi3t` wheel for regular and free-threaded CPython 3.15 and later.
-CI tests each listed Python version. Later versions require verification.
-Free-threaded Python 3.13 and 3.14 are outside the first release's scope.
-
-| Extra | Purpose | Verification target |
-| --- | --- | --- |
-| `dev` | IPython | Python 3.12 on all three platforms |
-| `compute` | Headless compute examples | Python 3.12 on Linux x86-64 |
-| `fractal` | Fractal image example | Python 3.12 on Linux x86-64 |
-| `examples` | Interactive image examples | Python 3.12 on Linux x86-64 |
-
-CI verifies that the extras install and their dependencies import.
-The compute job runs shaders with Mesa's software Vulkan adapter.
-Interactive examples require a window server and a supported graphics adapter.
-The artifact workflow does not test their windows.
-Extras have no verified free-threaded support yet.
-
-Artifact tests pass on Linux and macOS. Windows tests pass on Python 3.12
-through 3.15 with the `abi3` wheel. The Windows `abi3t` check fails because
-conda-forge's regular Python 3.15.0rc2 package omits `python3t.dll`.
-Source builds require Rust 1.97.1 or later and a native linker.
-The root Pixi workspace supports Linux. The `ci` workspace also supports
-macOS arm64 and Windows x86-64.
-
-## Compile modules
+## Usage
 
 ```python
 import wesl
@@ -66,220 +35,30 @@ modules = {
     """,
 }
 result = wesl.compile(modules, features={"enabled": True}, keep=["answer"])
+wesl.validate(result.wgsl)
 print(result.wgsl)
 ```
 
-`compile(modules, *, root="package::main", features=None, strip=True,
-keep_root=False, mangle_root=False, keep=None, missing_features="disable",
-filenames=None, root_directory=None)` returns a `CompileResult`.
+The feature flag selects the implementation of `value()`.
+The compiler strips unused declarations by default. `keep=["answer"]`
+retains `answer` even though it is not a shader entry point.
+Use `device.create_shader_module(code=result.wgsl)` to load it in wgpu-py.
 
-Module keys and `root` use names such as `package::main` and
-`package::settings`. Imports resolve through `modules` by default.
-An explicit `root_directory` also enables file imports.
-The function accepts mappings and preserves their contents.
+Use `compile_source()` for a string or `compile_file()` for a file.
+`check_syntax()` checks WESL syntax. `validate()` checks WGSL semantics with Naga.
+Validation does not check the features or limits of a GPU device.
 
-Feature values, `strip`, `keep_root`, and `mangle_root` must be booleans.
-The compiler disables unspecified feature flags.
-Set `missing_features="error"` to require an explicit value for each
-feature flag encountered during compilation. Unused supplied flags do
-not cause an error.
+See the [API reference](API.md) for compilation options and diagnostics.
 
-| Option | Effect |
-| --- | --- |
-| `strip=True` | Remove the unused declarations. Follow imports only when needed. |
-| `keep_root=True` | Preserve all root declarations when stripping. |
-| `mangle_root=True` | Rename root declarations as well as imported declarations. |
-| `keep=["main"]` | Preserve the named root declarations and their dependencies. |
+## Examples
 
-The default matches the Rust compiler. A module containing only unused
-helper functions can compile to an empty string. Use `strip=False` or
-`keep_root=True` to preserve those functions. Stripping also determines
-which imported modules the compiler reads.
+- [Compute](examples/compute.py) compiles two shader variants and runs them with wgpu-py.
+- [Heightfield](examples/heightfield/README.md) shares shader modules for edges, normals, and lighting.
+- [Image processing](examples/README.md) demonstrates multiscale fluorescence enhancement and adaptive local contrast.
 
-`keep` replaces the default selection of entry points.
-`keep_root=True` and `strip=False` take precedence over `keep`.
-An empty `keep` sequence selects no declarations.
-The compiler ignores unknown names.
+## Contributing
 
-Invalid argument types raise `TypeError`. Invalid module names raise
-`ValueError`. Missing modules and compiler failures raise `CompileError`.
-Successful compilation still requires validation by the GPU device.
-
-## Compile strings and files
-
-```python
-result = wesl.compile_source(
-    "@compute @workgroup_size(1) fn main() {}",
-    filename="generated.wesl",
-)
-result = wesl.compile_file("shaders/main.wesl", root_directory="shaders")
-```
-
-`compile_source(source, ...)` uses `package::main` as its default root.
-Set `root` to use another module name. The optional `modules` mapping
-provides imported sources. It must not contain the root module.
-`filename` labels the root source and defaults to `<string>`.
-The compiler does not open this label.
-
-`compile_file(filename, ...)` reads the root file as UTF-8.
-Its parent directory is the default `root_directory`.
-The file must be inside that directory. Its relative path determines
-the root module name. For example, `nested/main.wesl` becomes
-`package::nested::main`.
-
-Invalid root file paths raise the corresponding Python file exception.
-A file outside `root_directory` raises `ValueError`.
-
-Both functions accept the feature and stripping options of `compile()`.
-Files load only when the compiler resolves an import.
-The resolver first checks the supplied `modules` mapping.
-It then looks for a `.wesl` file, with `.wgsl` as a fallback.
-Missing imported files raise `CompileError`.
-
-Named libraries also use `modules`:
-
-```python
-result = wesl.compile_source(
-    "import noise::lib::value; fn main() -> u32 { return value(); }",
-    modules={"noise::lib": "fn value() -> u32 { return 7u; }"},
-    keep=["main"],
-)
-```
-
-Within a library, `package::` and relative imports refer to that library.
-Named libraries share one namespace across the supplied modules.
-The resolver does not search the filesystem for named libraries.
-
-## Compilation results
-
-All compilation functions return an immutable `CompileResult`.
-Use `result.wgsl` to pass the shader to wgpu-py.
-`str(result)` also returns WGSL. Results support equality and pickle.
-
-| Attribute | Meaning |
-| --- | --- |
-| `wgsl` | Compiled WGSL source. |
-| `modules` | Sorted tuple of loaded module names, including the root. |
-| `entry_points` | Tuple of entry-point names in the emitted WGSL. |
-| `declarations` | Dictionary from emitted names to `(module, original_name)`. |
-
-The declaration map contains the named declarations that remain after
-stripping. Each access returns a copy of the dictionary.
-The map identifies original names. It does not map output positions
-to input positions.
-
-## Syntax checks
-
-```python
-wesl.check_syntax(result.wgsl, filename="generated shader.wgsl")
-```
-
-`check_syntax(source, *, filename="<string>")` returns `None` on success.
-It parses WESL without resolving imports or validating types.
-The filename accepts a string or a path object as an error label.
-The compiler does not open it.
-Syntax errors raise `CompileError`.
-
-## Semantic validation
-
-```python
-wesl.validate(result.wgsl, filename="generated shader.wgsl")
-```
-
-`validate(source, *, filename="<string>")` returns `None` on success.
-It uses Naga 29.0.4 to parse WGSL and validate shader semantics.
-It accepts WGSL output. Compile WESL imports and conditional attributes
-first. Failures raise `CompileError` with source diagnostics.
-The filename accepts a string or a path object as an error label.
-
-Validation runs without a GPU. It enables all Naga capabilities and
-does not check the features or limits of a particular device.
-`compile()` does not run this separate validation step.
-
-## Diagnostics
-
-```python
-try:
-    wesl.check_syntax("fn main(", filename="shaders/broken.wesl")
-except wesl.CompileError as error:
-    print(error)
-    for diagnostic in error.diagnostics:
-        print(diagnostic)
-```
-
-`CompileError.diagnostics` is a tuple. A manually constructed exception
-starts with an empty tuple. Error text contains no terminal color codes.
-
-`Diagnostic(message, module=None, filename=None, source=None, span=None)`
-is an immutable value. It supports equality, hashing, and pickle.
-Compiler exceptions also preserve their diagnostics through pickle.
-
-| Attribute | Meaning |
-| --- | --- |
-| `message` | Error message without the source excerpt. |
-| `module` | WESL module name, when available. |
-| `filename` | Display filename, when available. |
-| `source` | Source text associated with the error, when available. |
-| `span` | UTF-8 byte offsets `(start, end)` with an exclusive end. |
-| `line`, `column` | The start position, with one-based line and character numbers. |
-| `end_line`, `end_column` | The exclusive end position, with the same numbering. |
-
-Missing metadata is `None`. EOF spans have equal offsets at the source
-length in bytes. These offsets are not Python character indices.
-
-A column advances by one for each Unicode character, including a tab.
-Position attributes are `None` when the source or a valid offset is
-unavailable. Some Naga validation errors have no source span.
-
-All compilation functions accept `filenames`, a mapping from module
-names to display filenames. Values accept strings or path objects.
-File imports use their filesystem paths when reporting errors.
-
-## Compiler version
-
-`wesl.__version__` identifies the binding. `wesl.compiler_version`
-identifies the Rust compiler. This package uses the published WESL and
-`wgsl-parse` 0.4.4 crates without local patches.
-Report parser defects to the [upstream issue tracker](https://github.com/webgpu-tools/wesl-rs/issues).
-See [NOTICE](licenses/NOTICE) for source provenance.
-
-The binding enables imports, conditional translation, name mangling,
-source diagnostics, and upstream validation. It disables evaluation,
-generics, and lowering. Upstream validation does not catch every WGSL error.
-
-## Development
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for builds and targeted checks.
-The optional `dev` extra adds IPython:
-
-```bash
-pixi run -e dev ipython
-```
-
-The [compute example](examples/compute.py) compiles two shader variants
-and executes them with wgpu-py:
-
-```bash
-pixi run -e gpu python examples/compute.py
-```
-
-The [heightfield](examples/heightfield/README.md) example composes small shader modules
-with wgpu-py, NumPy, and imageio. It saves images to an explicit `--output` directory
-and includes NumPy verification.
-
-```bash
-pixi run -e compute python -m examples.heightfield --output /tmp/heightfield --show
-```
-
-The [image examples](examples/README.md) use the bacterial colony TIFF from
-imageio. They show multiscale fluorescence enhancement and adaptive local
-contrast in pygfx viewers. Each example includes modular WESL shaders and
-NumPy verification. The optional `examples` extra supplies their dependencies.
-
-```bash
-pixi run -e examples python -m examples.multiscale
-pixi run -e examples python -m examples.clahe
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and targeted checks.
 
 ## License
 
