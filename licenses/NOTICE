@@ -1,8 +1,8 @@
 Copyright (c) 2026 wesl-py contributors.
 
-This project's code uses the MIT license in LICENSE-MIT.
-THIRDPARTY.yml contains dependency licenses and notices.
-LICENSE-RUST.html contains notices for the Rust 1.97.1 standard library
+This project's code uses the MIT license in LICENSE.
+licenses/THIRDPARTY.yml contains dependency licenses and notices.
+licenses/RUST.html contains notices for the Rust 1.97.1 standard library
 and its backtrace dependencies.
 
 This package links the WESL compiler and wgsl-parse.

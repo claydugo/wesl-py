@@ -3,6 +3,8 @@ name: Artifacts
 on:
   pull_request:
   push:
+    branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -15,8 +17,8 @@ jobs:
   checks:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e
         with:
           pixi-version: v0.80.0
           locked: true
@@ -33,8 +35,8 @@ jobs:
   sdist:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e
         with:
           pixi-version: v0.80.0
           manifest-path: ci/pixi.toml
@@ -42,7 +44,7 @@ jobs:
       - run: pixi run --locked --manifest-path ci/pixi.toml maturin sdist --out dist
       - run: pixi run --locked --manifest-path ci/pixi.toml twine check --strict dist/*.tar.gz
       - run: pixi run --locked --manifest-path ci/pixi.toml python tools/test_sdist.py dist/*.tar.gz
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: sdist
           path: dist/*.tar.gz
@@ -57,16 +59,16 @@ jobs:
           - runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             platform-tag: manylinux_2_28_x86_64
-          - runner: macos-14
+          - runner: macos-26
             target: aarch64-apple-darwin
             platform-tag: macosx_11_0_arm64
-          - runner: windows-2022
+          - runner: windows-2025
             target: x86_64-pc-windows-msvc
             platform-tag: win_amd64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e
         with:
           pixi-version: v0.80.0
           manifest-path: ci/pixi.toml
@@ -118,7 +120,7 @@ jobs:
           pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp315-abi3.abi3t-*.whl --python 3.15 --abi-tag cp315-abi3.abi3t --platform-tag ${{ matrix.platform-tag }} --find-links dist
           pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp315-abi3.abi3t-*.whl --python 3.15t --abi-tag cp315-abi3.abi3t --platform-tag ${{ matrix.platform-tag }} --find-links dist
           pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp312-abi3-*.whl --python 3.12 --platform-tag ${{ matrix.platform-tag }} --extra dev
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: wheel-${{ matrix.target }}
           path: dist/*.whl
@@ -131,8 +133,8 @@ jobs:
       WGPU_BACKEND_TYPE: Vulkan
       VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e
         with:
           pixi-version: v0.80.0
           manifest-path: ci/pixi.toml

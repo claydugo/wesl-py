@@ -29,21 +29,21 @@ Cargo-deny and Cargo-audit check the RustSec advisory database.
 The workflow runs the Rust checks, Ruff, formatting, and ty on Linux.
 The artifact tests run stubtest against installed wheels on each platform.
 
-`pixi run licenses` checks the dependency licenses against `THIRDPARTY.yml`.
+`pixi run licenses` checks the dependency licenses against `licenses/THIRDPARTY.yml`.
 It also rejects empty license lists and empty license text.
 After changing dependencies, regenerate the bundle and review its changes:
 
 ```bash
-pixi run cargo bundle-licenses --format yaml --prefer MIT --previous THIRDPARTY.yml --output THIRDPARTY.yml
+pixi run cargo bundle-licenses --format yaml --prefer MIT --previous licenses/THIRDPARTY.yml --output licenses/THIRDPARTY.yml
 ```
 
 Fill the missing license texts before accepting the bundle.
 The WESL 0.4.4 entries use the [upstream MIT text](https://github.com/webgpu-tools/wesl-rs/blob/666362633e5235fa56c6a351d0aea5a502fa42e3/LICENSE-MIT).
-Their copyright notice comes from [NOTICE](NOTICE).
+Their copyright notice comes from [NOTICE](licenses/NOTICE).
 `hexf-parse` 0.2.1 declares CC0 in its manifest and omits the license text.
 Its entry uses the [SPDX CC0 text](https://github.com/spdx/license-list-data/blob/main/text/CC0-1.0.txt).
 
-`LICENSE-RUST.html` contains the Rust 1.97.1 standard library notices.
+`licenses/RUST.html` contains the Rust 1.97.1 standard library notices.
 It copies `share/doc/rust/COPYRIGHT-library.html` from that toolchain.
 It also includes the `addr2line` 0.25.1, `adler2` 2.0.1, `miniz_oxide` 0.8.9,
 and `object` 0.37.3 sections from `share/doc/rust/COPYRIGHT.html`.
@@ -106,6 +106,9 @@ The macOS build sets `MACOSX_DEPLOYMENT_TARGET=11.0`.
 
 The workflow builds wheels for Linux, macOS, and Windows with Rust 1.97.1.
 This matches the minimum in `Cargo.toml`.
+The runners use Ubuntu 24.04, macOS 26, and Windows Server 2025.
+The manylinux container and macOS deployment target set wheel compatibility
+independently of the runner version.
 
 Artifact builds use `ci/pixi.lock` and audit the Python ABI with `abi3audit`.
 Local verification currently covers Linux.

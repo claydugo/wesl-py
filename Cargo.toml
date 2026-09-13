@@ -9,7 +9,7 @@ repository = "https://github.com/claydugo/wesl-py"
 license = "MIT"
 include = [
     "src/**", "/build.rs", "/Cargo.toml", "/Cargo.lock", "python/**",
-    "/pyproject.toml", "/README.md", "/CONTRIBUTING.md", "/CHANGELOG.md", "/LICENSE-MIT", "/LICENSE-RUST.html", "/NOTICE", "/THIRDPARTY.yml", "tests/**",
+    "/pyproject.toml", "/README.md", "/CONTRIBUTING.md", "/CHANGELOG.md", "/LICENSE", "licenses/**", "tests/**",
     "examples/**", "/pixi.toml", "/pixi.lock", "/clippy.toml", "/deny.toml",
     "tools/**", "recipe/**",
 ]

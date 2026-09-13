@@ -42,8 +42,8 @@ about:
   repository: https://github.com/claydugo/wesl-py
   license: MIT
   license_file:
-    - LICENSE-MIT
-    - LICENSE-RUST.html
-    - NOTICE
-    - THIRDPARTY.yml
+    - LICENSE
+    - licenses/RUST.html
+    - licenses/NOTICE
+    - licenses/THIRDPARTY.yml
   summary: Python bindings for the Rust WESL compiler

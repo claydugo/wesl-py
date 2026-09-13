@@ -43,8 +43,9 @@ Interactive examples require a window server and a supported graphics adapter.
 The artifact workflow does not test their windows.
 Extras have no verified free-threaded support yet.
 
-Local artifact verification covers Linux. Native macOS and Windows CI runs
-remain pending before the first package release.
+Artifact tests pass on Linux and macOS. Windows tests pass on Python 3.12
+through 3.15 with the `abi3` wheel. The Windows `abi3t` check fails because
+conda-forge's regular Python 3.15.0rc2 package omits `python3t.dll`.
 Source builds require Rust 1.97.1 or later and a native linker.
 The root Pixi workspace supports Linux. The `ci` workspace also supports
 macOS arm64 and Windows x86-64.
@@ -240,7 +241,7 @@ File imports use their filesystem paths when reporting errors.
 identifies the Rust compiler. This package uses the published WESL and
 `wgsl-parse` 0.4.4 crates without local patches.
 Report parser defects to the [upstream issue tracker](https://github.com/webgpu-tools/wesl-rs/issues).
-See [NOTICE](NOTICE) for source provenance.
+See [NOTICE](licenses/NOTICE) for source provenance.
 
 The binding enables imports, conditional translation, name mangling,
 source diagnostics, and upstream validation. It disables evaluation,
@@ -282,5 +283,5 @@ pixi run -e examples python -m examples.clahe
 
 ## License
 
-This project's code uses the [MIT license](LICENSE-MIT).
-See [NOTICE](NOTICE) and [THIRDPARTY.yml](THIRDPARTY.yml) for dependency licenses and notices.
+This project's code uses the [MIT license](LICENSE).
+See [NOTICE](licenses/NOTICE) and [THIRDPARTY.yml](licenses/THIRDPARTY.yml) for dependency licenses and notices.

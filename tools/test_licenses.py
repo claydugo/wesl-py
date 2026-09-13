@@ -3,7 +3,7 @@ from pathlib import Path
 
 import yaml
 
-bundle = yaml.safe_load(Path("THIRDPARTY.yml").read_text())
+bundle = yaml.safe_load(Path("licenses/THIRDPARTY.yml").read_text())
 for package in bundle["third_party_libraries"]:
     assert package["licenses"], package["package_name"]
     for license_entry in package["licenses"]:
@@ -19,7 +19,7 @@ subprocess.run(
         "--prefer",
         "MIT",
         "--previous",
-        "THIRDPARTY.yml",
+        "licenses/THIRDPARTY.yml",
         "--check-previous",
         "--output",
         "target/THIRDPARTY.yml",
