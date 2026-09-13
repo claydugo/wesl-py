@@ -45,6 +45,7 @@ with zipfile.ZipFile(wheel) as archive:
     assert metadata["Name"] == project["name"]
     assert metadata["Version"] == package["version"]
     assert metadata["Requires-Python"] == project["requires-python"]
+    assert metadata["License-Expression"] == project.get("license")
     assert set(metadata.get_all("Provides-Extra", [])) == {
         canonicalize_name(extra) for extra in project.get("optional-dependencies", {})
     }

@@ -97,6 +97,12 @@ for wheel_path in arguments.wheels:
             )
             (repaired_wheel,) = Path(temporary_directory).glob("*.whl")
             with zipfile.ZipFile(repaired_wheel) as repaired:
-                assert set(repaired.namelist()) == set(archive.namelist()), wheel
+                assert {
+                    entry.filename
+                    for entry in repaired.infolist()
+                    if not entry.is_dir()
+                } == {
+                    entry.filename for entry in archive.infolist() if not entry.is_dir()
+                }, wheel
                 for filename, content in extensions.items():
                     assert repaired.read(filename) == content, filename

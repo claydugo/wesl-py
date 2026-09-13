@@ -62,6 +62,7 @@ with tempfile.TemporaryDirectory(prefix="wesl-sdist-") as temporary_directory:
     assert metadata["Name"] == project["name"]
     assert metadata["Version"] == package["version"]
     assert metadata["Requires-Python"] == project["requires-python"]
+    assert metadata["License-Expression"] == project.get("license")
     assert set(metadata.get_all("License-File", [])) == set(project["license-files"])
     (directory / "pixi.toml").write_text(
         '[workspace]\nname = "wesl-sdist"\nchannels = ["conda-forge"]\n'
