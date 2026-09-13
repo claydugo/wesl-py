@@ -15,7 +15,7 @@ jobs:
   checks:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f
         with:
           pixi-version: v0.80.0
@@ -33,7 +33,7 @@ jobs:
   sdist:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f
         with:
           pixi-version: v0.80.0
@@ -65,7 +65,7 @@ jobs:
             platform-tag: win_amd64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f
         with:
           pixi-version: v0.80.0
@@ -131,7 +131,7 @@ jobs:
       WGPU_BACKEND_TYPE: Vulkan
       VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f
         with:
           pixi-version: v0.80.0
