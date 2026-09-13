@@ -27,7 +27,8 @@ python_version = arguments.python.removesuffix("t")
 wheel = arguments.wheel.resolve(strict=True)
 project_directory = Path(__file__).resolve().parents[1]
 project = tomllib.loads((project_directory / "pyproject.toml").read_text())["project"]
-package = tomllib.loads((project_directory / "Cargo.toml").read_text())["package"]
+cargo = tomllib.loads((project_directory / "Cargo.toml").read_text())
+package = cargo["package"]
 name, version, _, tags = parse_wheel_filename(wheel.name)
 assert name == canonicalize_name(project["name"])
 assert str(version) == package["version"]
@@ -67,6 +68,15 @@ with zipfile.ZipFile(wheel) as archive:
             archive.read(f"{metadata_directory}/licenses/{filename}")
             == (project_directory / filename).read_bytes()
         ), filename
+    sbom = json.loads(
+        archive.read(f"{metadata_directory}/sboms/{package['name']}.cyclonedx.json")
+    )
+    assert sbom["bomFormat"] == "CycloneDX"
+    assert sbom["metadata"]["component"]["name"] == package["name"]
+    assert sbom["metadata"]["component"]["version"] == package["version"]
+    assert cargo["dependencies"].keys() <= {
+        component["name"] for component in sbom["components"]
+    }
     for filename in ("__init__.py", "_native.pyi", "py.typed"):
         assert (
             archive.read(f"wesl/{filename}")

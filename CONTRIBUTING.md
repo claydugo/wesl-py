@@ -1,6 +1,8 @@
 # Development
 
 The root Pixi workspace supports Linux.
+Source builds require Rust 1.97.1 or later and a native linker.
+The `ci` workspace also supports macOS arm64 and Windows x86-64.
 Pixi installs the Rust toolchain, Python tools, and the editable extension.
 Reinstall the extension after changing Rust source.
 
@@ -19,6 +21,12 @@ pixi run audit
 pixi run licenses
 ```
 
+The optional `dev` extra adds IPython:
+
+```bash
+pixi run -e dev ipython
+```
+
 Cargo denies Clippy's `all` and `pedantic` groups and selected restriction
 and nursery lints. `clippy.toml` sets the complexity limits. The Python
 binding uses reasoned `expect` attributes for its argument count and length.
@@ -28,6 +36,12 @@ Cargo-deny checks dependencies against the license list in `deny.toml`.
 Cargo-deny and Cargo-audit check the RustSec advisory database.
 The workflow runs the Rust checks, Ruff, formatting, and ty on Linux.
 The artifact tests run stubtest against installed wheels on each platform.
+
+The project declares MIT in `LICENSE`, `Cargo.toml`, and `pyproject.toml`.
+Dependencies retain their own licenses and notices in `licenses/`.
+Maturin includes a CycloneDX SBOM in each wheel's `.dist-info/sboms/` directory.
+The SBOM records Cargo dependencies and their declared licenses.
+It does not replace the license files that accompany each artifact.
 
 `pixi run licenses` checks the dependency licenses against `licenses/THIRDPARTY.yml`.
 It also rejects empty license lists and empty license text.
@@ -67,6 +81,37 @@ pixi run -e gpu python -m pytest tests/test_compute.py -q
 `pixi run profile-startup` separates Python startup, import, and Pixi overhead.
 Both commands report their units and measurement settings as JSON.
 
+## Support
+
+The first release targets CPython 3.12, 3.13, 3.14, 3.15, and 3.15t.
+Python 3.15 coverage currently uses the release candidate.
+
+| Platform | Wheel target |
+| --- | --- |
+| Linux x86-64 | glibc 2.28 or later |
+| macOS arm64 | macOS 11 or later |
+| Windows x86-64 | Windows 10 or Windows Server 2016 or later |
+
+The Windows minimum follows the [Rust target requirements](https://github.com/rust-lang/rust/blob/1.97.1/src/doc/rustc/src/platform-support/windows-msvc.md).
+
+Each platform has an `abi3` wheel for regular CPython 3.12 and later.
+It also has an `abi3t` wheel for regular and free-threaded CPython 3.15 and later.
+CI tests each listed Python version. Later versions require verification.
+Free-threaded Python 3.13 and 3.14 are outside the first release's scope.
+
+| Extra | Purpose | Verification target |
+| --- | --- | --- |
+| `dev` | IPython | Python 3.12 on all three platforms |
+| `compute` | Headless compute examples | Python 3.12 on Linux x86-64 |
+| `fractal` | Fractal image example | Python 3.12 on Linux x86-64 |
+| `examples` | Interactive image examples | Python 3.12 on Linux x86-64 |
+
+CI verifies that the extras install and their dependencies import.
+The compute job runs shaders with Mesa's software Vulkan adapter.
+Interactive examples require a window server and a supported graphics adapter.
+The artifact workflow does not test their windows.
+Extras have no verified free-threaded support yet.
+
 ## Artifacts
 
 ```bash
@@ -99,10 +144,21 @@ the corresponding dependencies. `--compute` also requires a software Vulkan
 adapter and runs `tests/test_compute.py`.
 
 The script checks package versions, metadata, typing files, and license files.
+It also verifies the SBOM format, project identity, and direct Cargo dependencies.
 It compares dependency requirements and extras with `pyproject.toml`.
 Its `--platform-tag` option requires the expected wheel tag. CI requires
 `manylinux_2_28_x86_64`, `macosx_11_0_arm64`, or `win_amd64` for each platform.
 The macOS build sets `MACOSX_DEPLOYMENT_TARGET=11.0`.
+
+`tools/test_wheel_native.py` audits each wheel with auditwheel on Linux,
+delocate on macOS, or delvewheel on Windows. It rejects unsupported Linux
+symbol versions, external libraries, and absolute RPATHs.
+
+The macOS audit checks arm64 and compatibility with macOS 11.
+The Windows audit checks
+x86-64 and the Python DLL for the wheel's ABI. Repair tools run on temporary
+copies. The audit rejects changes to native files or the addition of files.
+These checks do not replace testing on the minimum supported OS.
 
 The workflow builds wheels for Linux, macOS, and Windows with Rust 1.97.1.
 This matches the minimum in `Cargo.toml`.
@@ -152,7 +208,7 @@ the Cargo version. Installed wheel tests compare both with `wesl.__version__`.
 
 Require the `checks`, `sdist`, all three `wheel` jobs, and `compute` to pass
 before a package release. These include Python 3.15 and 3.15t coverage.
-The [README support table](README.md#support) defines the initial targets.
+The [support table](#support) defines the initial targets.
 
 The PyPI publishing job and account configuration remain in [TODO.md](TODO.md).
 The release procedure is:
