@@ -1,70 +1,100 @@
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, MutableMapping, Sequence
+from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
-from typing import Literal
 
 from . import _native
 from ._native import (
     CompileError,
     CompileResult,
     Diagnostic,
+    Source,
     __version__,
+    build_revision,
     compiler_version,
 )
+from ._resources import LoadedModules, load_modules
 
 __all__ = [
     "CompileError",
+    "CompileOptions",
     "CompileResult",
     "Diagnostic",
+    "Feature",
+    "Features",
+    "LoadedModules",
+    "ManglerKind",
+    "Source",
     "__version__",
+    "build_revision",
     "check_syntax",
     "compile",
     "compile_file",
     "compile_source",
     "compiler_version",
-    "validate",
+    "load_modules",
 ]
+
+
+class Feature(Enum):
+    Enable = "Enable"
+    Disable = "Disable"
+    Keep = "Keep"
+    Error = "Error"
+
+
+class ManglerKind(Enum):
+    Escape = "Escape"
+    Hash = "Hash"
+    Unicode = "Unicode"
+    None_ = "None"
+
+
+@dataclass(kw_only=True)
+class Features:
+    default: Feature = Feature.Disable
+    flags: MutableMapping[str, bool | Feature] = field(default_factory=dict)
+
+
+@dataclass(kw_only=True)
+class CompileOptions:
+    imports: bool = True
+    condcomp: bool = True
+    strip: bool = True
+    lower: bool = False
+    validate: bool = True
+    lazy: bool = True
+    mangle_root: bool = False
+    keep: Sequence[str] | None = None
+    keep_root: bool = False
+    features: Features = field(default_factory=Features)
 
 
 def compile(
     modules: Mapping[str, str],
     *,
     root: str = "package::main",
-    features: Mapping[str, bool] | None = None,
-    strip: bool = True,
-    keep_root: bool = False,
-    mangle_root: bool = False,
-    keep: Sequence[str] | None = None,
-    missing_features: Literal["disable", "error"] = "disable",
+    options: CompileOptions | None = None,
+    mangler: ManglerKind = ManglerKind.Escape,
+    use_sourcemap: bool = True,
     filenames: Mapping[str, str | os.PathLike[str]] | None = None,
     root_directory: str | os.PathLike[str] | None = None,
 ) -> CompileResult:
     if not isinstance(modules, Mapping):
         raise TypeError("modules must be a mapping")
-    copied_modules = dict(modules)
-    if features is None:
-        copied_features = {}
-    elif isinstance(features, Mapping):
-        copied_features = dict(features)
-    else:
-        raise TypeError("features must be a mapping or None")
-    if not all(isinstance(value, bool) for value in copied_features.values()):
-        raise TypeError("feature values must be booleans")
-    if not all(isinstance(value, bool) for value in (strip, keep_root, mangle_root)):
-        raise TypeError("compiler options must be booleans")
-    if isinstance(keep, str):
-        raise TypeError("keep must be a sequence of declaration names")
     if filenames is not None and not isinstance(filenames, Mapping):
         raise TypeError("filenames must be a mapping or None")
+    if options is not None and not isinstance(options, CompileOptions):
+        raise TypeError("options must be CompileOptions or None")
+    if not isinstance(mangler, ManglerKind):
+        raise TypeError("mangler must be ManglerKind")
     return _native.compile(
-        copied_modules,
+        modules,
         root,
-        copied_features,
-        strip,
-        keep_root,
-        mangle_root,
-        None if keep is None else list(keep),
-        missing_features,
+        options,
+        mangler.value,
+        use_sourcemap,
         {}
         if filenames is None
         else {name: os.fspath(path) for name, path in filenames.items()},
@@ -78,12 +108,9 @@ def compile_source(
     modules: Mapping[str, str] | None = None,
     root: str = "package::main",
     filename: str | os.PathLike[str] = "<string>",
-    features: Mapping[str, bool] | None = None,
-    strip: bool = True,
-    keep_root: bool = False,
-    mangle_root: bool = False,
-    keep: Sequence[str] | None = None,
-    missing_features: Literal["disable", "error"] = "disable",
+    options: CompileOptions | None = None,
+    mangler: ManglerKind = ManglerKind.Escape,
+    use_sourcemap: bool = True,
     filenames: Mapping[str, str | os.PathLike[str]] | None = None,
     root_directory: str | os.PathLike[str] | None = None,
 ) -> CompileResult:
@@ -100,12 +127,9 @@ def compile_source(
     return compile(
         copied_modules,
         root=root,
-        features=features,
-        strip=strip,
-        keep_root=keep_root,
-        mangle_root=mangle_root,
-        keep=keep,
-        missing_features=missing_features,
+        options=options,
+        mangler=mangler,
+        use_sourcemap=use_sourcemap,
         filenames=copied_filenames,
         root_directory=root_directory,
     )
@@ -116,32 +140,27 @@ def compile_file(
     *,
     modules: Mapping[str, str] | None = None,
     root_directory: str | os.PathLike[str] | None = None,
-    features: Mapping[str, bool] | None = None,
-    strip: bool = True,
-    keep_root: bool = False,
-    mangle_root: bool = False,
-    keep: Sequence[str] | None = None,
-    missing_features: Literal["disable", "error"] = "disable",
+    options: CompileOptions | None = None,
+    mangler: ManglerKind = ManglerKind.Escape,
+    use_sourcemap: bool = True,
     filenames: Mapping[str, str | os.PathLike[str]] | None = None,
 ) -> CompileResult:
-    path = Path(filename).resolve(strict=True)
+    path = Path(filename).absolute()
     directory = (
-        path.parent
-        if root_directory is None
-        else Path(root_directory).resolve(strict=True)
+        path.parent if root_directory is None else Path(root_directory).absolute()
     )
-    root = "package::" + "::".join(path.relative_to(directory).with_suffix("").parts)
+    relative_path = Path(os.path.normpath(path)).relative_to(
+        os.path.normpath(directory)
+    )
+    root = "package::" + "::".join(relative_path.with_suffix("").parts)
     return compile_source(
         path.read_bytes().decode("utf-8"),
         modules=modules,
         root=root,
         filename=path,
-        features=features,
-        strip=strip,
-        keep_root=keep_root,
-        mangle_root=mangle_root,
-        keep=keep,
-        missing_features=missing_features,
+        options=options,
+        mangler=mangler,
+        use_sourcemap=use_sourcemap,
         filenames=filenames,
         root_directory=directory,
     )
@@ -149,7 +168,3 @@ def compile_file(
 
 def check_syntax(source: str, *, filename: str | os.PathLike[str] = "<string>") -> None:
     return _native.check_syntax(source, os.fspath(filename))
-
-
-def validate(source: str, *, filename: str | os.PathLike[str] = "<string>") -> None:
-    return _native.validate(source, os.fspath(filename))

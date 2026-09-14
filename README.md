@@ -3,8 +3,7 @@
 Python bindings for the [Rust WESL compiler](https://github.com/webgpu-tools/wesl-rs).
 
 WESL extends WGSL with imports and conditional compilation. Compile modular
-shaders from Python and pass the generated WGSL to wgpu-py. Compilation and
-validation run without a GPU.
+shaders from Python and pass the generated WGSL to wgpu-py. Compilation runs without a GPU.
 
 ## Installation
 
@@ -34,25 +33,31 @@ modules = {
         @if(!enabled) fn value() -> u32 { return 3u; }
     """,
 }
-result = wesl.compile(modules, features={"enabled": True}, keep=["answer"])
-wesl.validate(result.wgsl)
+result = wesl.compile(
+    modules,
+    options=wesl.CompileOptions(
+        features=wesl.Features(flags={"enabled": True}),
+        keep=["answer"],
+    ),
+)
 print(result.wgsl)
 ```
 
 The feature flag selects the implementation of `value()`.
-The compiler strips unused declarations by default. `keep=["answer"]`
+The compiler strips unused declarations by default. `CompileOptions(keep=["answer"])`
 retains `answer` even though it is not a shader entry point.
 Use `device.create_shader_module(code=result.wgsl)` to load it in wgpu-py.
 
 Use `compile_source()` for a string or `compile_file()` for a file.
-`check_syntax()` checks WESL syntax. `validate()` checks WGSL semantics with Naga.
-Validation does not check the features or limits of a GPU device.
+`check_syntax()` checks WESL syntax. Compilation runs upstream WESL checks.
+The target GPU runtime validates the generated shader and pipeline.
 
 See the [API reference](API.md) for compilation options and diagnostics.
 
 ## Examples
 
 - [Compute](examples/compute.py) compiles two shader variants and runs them with wgpu-py.
+- [Fractal](examples/fractal/README.md) renders Mandelbrot and Julia sets with one shader.
 - [Heightfield](examples/heightfield/README.md) shares shader modules for edges, normals, and lighting.
 - [Image processing](examples/README.md) demonstrates multiscale fluorescence enhancement and adaptive local contrast.
 

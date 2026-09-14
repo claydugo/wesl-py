@@ -37,7 +37,7 @@ The equation and palette have no buffer bindings or pixel coordinates.
 | `__main__.py` | Compile two variants, dispatch them, and save their output. |
 
 `render.wesl` imports the iteration and palette functions.
-Python sets `features={"julia": ...}` when it compiles each variant.
+Python sets `Features(flags={"julia": ...})` in `CompileOptions` for each variant.
 The `@if` declarations select the starting value and constant during compilation.
 The generated WGSL contains one variant and the same iteration loop.
 The palette stays separate from the fractal calculation.

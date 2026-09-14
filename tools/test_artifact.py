@@ -77,7 +77,10 @@ with zipfile.ZipFile(wheel) as archive:
     assert cargo["dependencies"].keys() <= {
         component["name"] for component in sbom["components"]
     }
-    for filename in ("__init__.py", "_native.pyi", "py.typed"):
+    for filename in (
+        "py.typed",
+        *(path.name for path in (project_directory / "python/wesl").glob("*.py*")),
+    ):
         assert (
             archive.read(f"wesl/{filename}")
             == (project_directory / "python" / "wesl" / filename).read_bytes()
@@ -142,7 +145,6 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
         "test_check_syntax.py",
         "test_diagnostics.py",
         "test_sources.py",
-        "test_validate.py",
         "test_compute.py",
     ):
         shutil.copyfile(
@@ -263,7 +265,6 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
             "test_check_syntax.py",
             "test_diagnostics.py",
             "test_sources.py",
-            "test_validate.py",
         ):
             subprocess.run(
                 ["pixi", "run", "python", "-m", "pytest", f"tests/{filename}", "-q"],

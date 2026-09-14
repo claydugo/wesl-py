@@ -36,7 +36,10 @@ with tempfile.TemporaryDirectory(prefix="wesl-sdist-") as temporary_directory:
         "Cargo.lock",
         "pyproject.toml",
         "build.rs",
-        "python/wesl/__init__.py",
+        *(
+            path.relative_to(project_directory)
+            for path in project_directory.glob("python/wesl/*.py")
+        ),
         "python/wesl/_native.pyi",
         "python/wesl/py.typed",
         *project["license-files"],
@@ -89,8 +92,7 @@ with tempfile.TemporaryDirectory(prefix="wesl-sdist-") as temporary_directory:
                 "assert find_spec('maturin') is None; "
                 "result = wesl.compile_source("
                 "'@compute @workgroup_size(1) fn main() {}'); "
-                "assert 'fn main(' in result.wgsl; "
-                "wesl.validate(result.wgsl)"
+                "assert 'fn main(' in result.wgsl"
             ),
             package["version"],
         ],

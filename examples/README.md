@@ -1,10 +1,24 @@
-# Compute examples
+# Examples
+
+| Example | Demonstrates |
+| --- | --- |
+| [Height to surface](heightfield/README.md) | Share a gradient across edges, normals, and animated lighting. |
+| [Mandelbrot and Julia](fractal/README.md) | Select between two fractals with conditional compilation. |
+| [Multiscale fluorescence](multiscale/README.md) | Share a convolution across directions and scales. |
+| [Adaptive local contrast](clahe/README.md) | Combine tile histograms and interpolated contrast curves. |
+
+Start with [fractal](fractal/README.md) for a small introduction to imports and
+conditional compilation. Continue with the microscopy viewers for algorithms
+that use multiple compute passes.
+
+## Render images
 
 Run these commands from the repository root.
-The repository's `wesl.toml` sets `examples/` as the shader root.
-Imports and Python compilation use the same `package::` namespace.
-The [heightfield example](heightfield/README.md) turns one height field into edges,
-normals, and animated lighting. It shares a gradient across three shader variants.
+The repository's `wesl.toml` sets `examples/` as the shader root for editor tooling.
+The Python examples pass that root to `compile_file()` for the same
+`package::` namespace.
+
+Render the height field and its relighting animation:
 
 ```bash
 pixi run -e compute python -m examples.heightfield --output /tmp/heightfield --show
@@ -32,6 +46,8 @@ pixi run -e fractal python -m examples.fractal --output /tmp/fractals --show
 Read [quadratic.wesl](fractal/quadratic.wesl) for the fractal equation.
 Read [render.wesl](fractal/render.wesl) for the compute entry point and imports.
 
+## Explore microscopy
+
 Continue with [multiscale fluorescence](multiscale/README.md) for filter reuse.
 One convolution serves both image axes and both Gaussian scales.
 Python generates the coefficients, and a WESL feature selects workgroup tiling.
@@ -51,33 +67,12 @@ Pan and zoom stay linked between the views.
 Sliders control the algorithm and channel gains.
 Channel toggles apply to both views.
 
-The microscopy examples load `imageio:bacterial_colony.tif` with the tifffile plugin.
-Imageio downloads and caches the image on first use.
-The TIFF contains three `uint8` planes with shape `(3, 2048, 2048)`:
+Both viewers use a microscopy image of a bacterial colony.
+Imageio downloads and caches the TIFF on first use.
+See [the image and shared shaders](imaging/README.md) for its channels,
+source, and GPU compositing code.
 
-1. Transmission brightfield.
-2. Fluorescence at 440 nm (GFP).
-3. Fluorescence at 590 nm (RFP).
-
-ImageJ metadata supplies the channel labels and RGB lookup tables.
-Processing keeps the acquisition channels separate.
-The final compute pass applies the LUTs and adds the channel colors.
-The display clips the sum to the range `[0, 1]`.
-Gain and enhancement controls affect visualization.
-
-See the [image contribution](https://github.com/imageio/imageio-binaries/pull/25)
-for acquisition details and the
-[imageio integration](https://github.com/imageio/imageio/pull/1115)
-for the resource name.
-
-Each example keeps its algorithm in `.wesl` files and schedules passes
-in `compute.py`. Both import indexing and color functions from `imaging/`.
-`common.py` loads the TIFF and connects the composite shader to a pygfx texture.
-Intermediate arrays and display textures stay on the GPU.
-The verification scripts read results back to compare them with NumPy.
-
-The viewers use pygfx's experimental `ComputeShader` helper.
-The helper consumes `CompileResult.wgsl` and manages wgpu pipelines and bindings.
+## Verify and export
 
 Run numerical verification without opening a window:
 
@@ -96,7 +91,9 @@ pixi run -e examples python -m examples.multiscale --screenshot /tmp/multiscale.
 pixi run -e examples python -m examples.clahe --screenshot /tmp/clahe.png
 ```
 
-The original [compute smoke example](compute.py) remains available:
+## Minimal compute example
+
+[compute.py](compute.py) compiles two feature variants and checks their GPU output:
 
 ```bash
 pixi run -e gpu python examples/compute.py

@@ -60,7 +60,7 @@ builtins-ignorelist = ["compile"]
 convention = "numpy"
 
 [tool.ruff.lint.per-file-ignores]
-"python/wesl/__init__.py" = ["D103", "D104", "EM101", "PLR0913", "TRY003"]
+"python/wesl/*.py" = ["D101", "D103", "D104", "EM101", "EM102", "PLR0913", "TRY003"]
 "tests/*.py" = ["D100", "D103", "INP001", "S101"]
 "tools/*.py" = ["D100", "INP001", "S603", "S607"]
 "tools/test_*.py" = ["S101"]

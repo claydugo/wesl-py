@@ -16,6 +16,9 @@ modules = {
 }
 
 for enabled, expected in ((False, 3), (True, 7)):
-    wgsl = wesl.compile(modules, features={"enabled": enabled}).wgsl
+    wgsl = wesl.compile(
+        modules,
+        options=wesl.CompileOptions(features=wesl.Features(flags={"enabled": enabled})),
+    ).wgsl
     output = compute_with_buffers({}, {0: (1, "I")}, wgsl, n=1)
     assert output[0][0] == expected

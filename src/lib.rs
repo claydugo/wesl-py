@@ -8,16 +8,14 @@ use pyo3::{
     create_exception,
     exceptions::{PyException, PyValueError},
     prelude::*,
-    types::{PyTuple, PyType},
+    types::{PyMapping, PyTuple, PyType},
 };
 use wesl::{
-    CompileOptions, Feature, Features, FileResolver, ManglerKind, ModulePath, ResolveError,
-    Resolver, SourceMap, SyntaxUtil, VirtualResolver, Wesl,
+    FileResolver, ModulePath, ResolveError, Resolver, SourceMap, SyntaxUtil, VirtualResolver, Wesl,
 };
 use wgsl_parse::{
-    SyntaxNode,
     error::ErrorKind,
-    syntax::{ImportStatement, PathOrigin, TranslationUnit},
+    syntax::{ImportStatement, TranslationUnit},
 };
 
 create_exception!(
@@ -26,6 +24,89 @@ create_exception!(
     PyException,
     "A syntax or compilation failure. The diagnostics attribute is a tuple of Diagnostic values."
 );
+
+#[derive(FromPyObject)]
+struct Feature {
+    value: String,
+}
+
+impl TryFrom<Feature> for wesl::Feature {
+    type Error = PyErr;
+
+    fn try_from(feature: Feature) -> PyResult<Self> {
+        match feature.value.as_str() {
+            "Enable" => Ok(Self::Enable),
+            "Disable" => Ok(Self::Disable),
+            "Keep" => Ok(Self::Keep),
+            "Error" => Ok(Self::Error),
+            _ => Err(PyValueError::new_err("invalid feature policy")),
+        }
+    }
+}
+
+#[derive(FromPyObject)]
+enum FeatureValue {
+    Flag(bool),
+    Policy(Feature),
+}
+
+#[derive(FromPyObject)]
+struct Features<'py> {
+    default: Feature,
+    flags: Bound<'py, PyMapping>,
+}
+
+#[derive(FromPyObject)]
+struct CompileOptions<'py> {
+    imports: bool,
+    condcomp: bool,
+    strip: bool,
+    lower: bool,
+    validate: bool,
+    lazy: bool,
+    mangle_root: bool,
+    keep: Option<Vec<String>>,
+    keep_root: bool,
+    features: Features<'py>,
+}
+
+impl TryFrom<CompileOptions<'_>> for wesl::CompileOptions {
+    type Error = PyErr;
+
+    fn try_from(options: CompileOptions<'_>) -> PyResult<Self> {
+        Ok(Self {
+            imports: options.imports,
+            condcomp: options.condcomp,
+            strip: options.strip,
+            lower: options.lower,
+            validate: options.validate,
+            lazy: options.lazy,
+            mangle_root: options.mangle_root,
+            keep: options.keep,
+            keep_root: options.keep_root,
+            features: wesl::Features {
+                default: options.features.default.try_into()?,
+                flags: options
+                    .features
+                    .flags
+                    .items()?
+                    .extract::<Vec<(String, FeatureValue)>>()?
+                    .into_iter()
+                    .map(|(name, feature)| {
+                        Ok((
+                            name,
+                            match feature {
+                                FeatureValue::Flag(enabled) => enabled.into(),
+                                FeatureValue::Policy(feature) => feature.try_into()?,
+                            },
+                        ))
+                    })
+                    .collect::<PyResult<_>>()?,
+            },
+            ..Self::default()
+        })
+    }
+}
 
 #[pyclass(frozen, eq, hash, module = "wesl")]
 #[derive(PartialEq, Eq, Hash)]
@@ -116,6 +197,29 @@ impl Diagnostic {
     }
 }
 
+#[pyclass(frozen, eq, hash, get_all, from_py_object, module = "wesl")]
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct Source {
+    text: String,
+    filename: Option<String>,
+}
+
+#[pymethods]
+impl Source {
+    #[new]
+    #[pyo3(signature = (text, filename=None))]
+    fn new(text: String, filename: Option<String>) -> Self {
+        Self { text, filename }
+    }
+
+    fn __reduce__<'py>(&self, py: Python<'py>) -> (Bound<'py, PyType>, (&str, Option<&str>)) {
+        (
+            py.get_type::<Self>(),
+            (&self.text, self.filename.as_deref()),
+        )
+    }
+}
+
 #[pyclass(frozen, eq, module = "wesl")]
 #[derive(PartialEq, Eq)]
 struct CompileResult {
@@ -124,7 +228,7 @@ struct CompileResult {
     modules: Vec<String>,
     entry_points: Vec<String>,
     #[pyo3(get)]
-    declarations: BTreeMap<String, (String, String)>,
+    sources: BTreeMap<String, Source>,
 }
 
 #[pymethods]
@@ -134,13 +238,13 @@ impl CompileResult {
         wgsl: String,
         modules: Vec<String>,
         entry_points: Vec<String>,
-        declarations: BTreeMap<String, (String, String)>,
+        sources: BTreeMap<String, Source>,
     ) -> Self {
         Self {
             wgsl,
             modules,
             entry_points,
-            declarations,
+            sources,
         }
     }
 
@@ -176,7 +280,7 @@ impl CompileResult {
                 &self.wgsl,
                 &self.modules,
                 &self.entry_points,
-                &self.declarations,
+                self.sources.clone(),
             )
                 .into_pyobject(py)?,
         ))
@@ -205,16 +309,6 @@ impl Resolver for ModuleResolver {
             self.files.as_ref()?.display_name(path)
         }
     }
-
-    fn canonical_path(&self, path: &ModulePath) -> ModulePath {
-        let mut path = path.clone();
-        if let PathOrigin::Package(package) = &mut path.origin
-            && let Some((_, name)) = package.rsplit_once('/')
-        {
-            *package = name.to_owned();
-        }
-        path
-    }
 }
 
 impl Diagnostic {
@@ -229,7 +323,6 @@ impl Diagnostic {
 
 enum Failure {
     Path(String),
-    Option(String),
     Compiler(Box<Diagnostic>, String),
 }
 
@@ -239,7 +332,6 @@ impl Failure {
             Self::Path(path) => PyValueError::new_err(format!(
                 "invalid module path {path:?}; expected an absolute module or package name"
             )),
-            Self::Option(message) => PyValueError::new_err(message),
             Self::Compiler(diagnostic, rendered) => {
                 let error = CompileError::new_err(rendered);
                 let result = Py::new(py, *diagnostic)
@@ -252,19 +344,30 @@ impl Failure {
 }
 
 fn module_path(path: &str) -> Result<ModulePath, Failure> {
-    let statement: ImportStatement = format!("import {path}::item;")
+    let syntax_path = path.replace('/', "::");
+    let statement: ImportStatement = format!("import {syntax_path}::item;")
         .parse()
         .map_err(|_| Failure::Path(path.to_owned()))?;
-    statement
+    let validated = statement
         .path
-        .filter(|module| !module.origin.is_relative() && module.to_string() == path)
-        .ok_or_else(|| Failure::Path(path.to_owned()))
+        .filter(|module| !module.origin.is_relative() && module.to_string() == syntax_path)
+        .ok_or_else(|| Failure::Path(path.to_owned()))?;
+    let module: ModulePath = path.parse().map_err(|_| Failure::Path(path.to_owned()))?;
+    if module
+        .components
+        .iter()
+        .any(|component| component.contains('/'))
+        || (path.contains('/') && !validated.origin.is_package())
+    {
+        return Err(Failure::Path(path.to_owned()));
+    }
+    Ok(module)
 }
 
 #[pyfunction]
 #[expect(
     clippy::too_many_arguments,
-    reason = "The Python binding accepts each compiler option as an argument."
+    reason = "The binding accepts compiler settings and Python source inputs."
 )]
 #[expect(
     clippy::too_many_lines,
@@ -272,28 +375,28 @@ fn module_path(path: &str) -> Result<ModulePath, Failure> {
 )]
 fn compile(
     py: Python<'_>,
-    modules: HashMap<String, String>,
+    modules: &Bound<'_, PyMapping>,
     root: String,
-    features: HashMap<String, bool>,
-    strip: bool,
-    keep_root: bool,
-    mangle_root: bool,
-    keep: Option<Vec<String>>,
-    missing_features: String,
+    options: Option<CompileOptions<'_>>,
+    mangler: &str,
+    use_sourcemap: bool,
     filenames: HashMap<String, String>,
     root_directory: Option<PathBuf>,
 ) -> PyResult<CompileResult> {
+    let modules = modules.items()?.extract::<Vec<(String, String)>>()?;
+    let options = options
+        .map(wesl::CompileOptions::try_from)
+        .transpose()?
+        .unwrap_or_default();
+    let mangler = match mangler {
+        "Escape" => wesl::ManglerKind::Escape,
+        "Hash" => wesl::ManglerKind::Hash,
+        "Unicode" => wesl::ManglerKind::Unicode,
+        "None" => wesl::ManglerKind::None,
+        _ => return Err(PyValueError::new_err("invalid mangler")),
+    };
     py.detach(move || {
         let root = module_path(&root)?;
-        let default_feature = match missing_features.as_str() {
-            "disable" => Feature::Disable,
-            "error" => Feature::Error,
-            _ => {
-                return Err(Failure::Option(
-                    "missing_features must be 'disable' or 'error'".to_owned(),
-                ));
-            }
-        };
         let mut resolver = ModuleResolver {
             modules: VirtualResolver::new(),
             filenames: filenames
@@ -308,55 +411,36 @@ fn compile(
                 .add_module(module_path(&path)?, source.into());
         }
         let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
-        compiler.set_options(CompileOptions {
-            imports: true,
-            condcomp: true,
-            generics: false,
-            strip,
-            lower: false,
-            validate: true,
-            lazy: strip,
-            mangle_root,
-            keep,
-            keep_root,
-            features: Features {
-                default: default_feature,
-                flags: features
-                    .into_iter()
-                    .map(|(name, enabled)| (name, enabled.into()))
-                    .collect(),
-            },
-        });
-        compiler.set_mangler(ManglerKind::Escape);
-        compiler.use_sourcemap(true);
+        compiler.set_options(options);
+        compiler.set_mangler(mangler);
+        compiler.use_sourcemap(use_sourcemap);
         compiler
             .compile(&root)
-            .map(|result| {
-                let mut modules: Vec<_> = result.modules.iter().map(ToString::to_string).collect();
-                modules.sort();
-                CompileResult {
-                    wgsl: result.to_string(),
-                    modules,
-                    entry_points: result
-                        .syntax
-                        .entry_points()
-                        .map(ToString::to_string)
-                        .collect(),
-                    declarations: result
-                        .syntax
-                        .global_declarations
-                        .iter()
-                        .filter_map(SyntaxNode::ident)
-                        .map(|identifier| {
-                            let name = identifier.to_string();
-                            let (module, original) = result.sourcemap.get_decl(&name).map_or_else(
-                                || (root.to_string(), name.clone()),
-                                |(module, original)| (module.to_string(), original.to_owned()),
-                            );
-                            (name, (module, original))
-                        })
-                        .collect(),
-                }
+            .map(|result| CompileResult {
+                wgsl: result.to_string(),
+                modules: result.modules.iter().map(ToString::to_string).collect(),
+                sources: result
+                    .modules
+                    .iter()
+                    .filter_map(|module| {
+                        let text = result.sourcemap.get_source(module)?;
+                        Some((
+                            module.to_string(),
+                            Source {
+                                text: text.to_owned(),
+                                filename: result
+                                    .sourcemap
+                                    .get_display_name(module)
+                                    .map(str::to_owned),
+                            },
+                        ))
+                    })
+                    .collect(),
+                entry_points: result
+                    .syntax
+                    .entry_points()
+                    .map(ToString::to_string)
+                    .collect(),
             })
             .map_err(|error| {
                 let mut diagnostic = error.diagnostic();
@@ -425,78 +509,16 @@ fn check_syntax(py: Python<'_>, source: String, filename: String) -> PyResult<()
     .map_err(|failure| failure.into_pyerr(py))
 }
 
-#[pyfunction]
-fn validate(py: Python<'_>, source: String, filename: String) -> PyResult<()> {
-    py.detach(move || {
-        let module = naga::front::wgsl::parse_str(&source).map_err(|error| {
-            let span = error
-                .labels()
-                .find_map(|(span, _)| span.to_range())
-                .map(|range| (range.start, range.end));
-            let rendered = error.emit_to_string_with_path(&source, &filename);
-            let rendered = if span.is_none() {
-                format!("{filename}: {rendered}")
-            } else {
-                rendered
-            };
-            Failure::Compiler(
-                Box::new(Diagnostic {
-                    message: error.message().to_owned(),
-                    module: None,
-                    filename: Some(filename.clone()),
-                    source: Some(source.clone()),
-                    span,
-                }),
-                rendered,
-            )
-        })?;
-        naga::valid::Validator::new(
-            naga::valid::ValidationFlags::all(),
-            naga::valid::Capabilities::all(),
-        )
-        .validate(&module)
-        .map(|_| ())
-        .map_err(|error| {
-            let span = error
-                .spans()
-                .find_map(|(span, _)| span.to_range())
-                .map(|range| (range.start, range.end));
-            let mut message = error.to_string();
-            let mut cause = std::error::Error::source(&error);
-            while let Some(error) = cause {
-                message.push_str(": ");
-                message.push_str(&error.to_string());
-                cause = error.source();
-            }
-            let rendered = error.emit_to_string_with_path(&source, &filename);
-            let rendered = if span.is_none() {
-                format!("{filename}: {rendered}")
-            } else {
-                rendered
-            };
-            Failure::Compiler(
-                Box::new(Diagnostic {
-                    message,
-                    module: None,
-                    filename: Some(filename.clone()),
-                    source: Some(source.clone()),
-                    span,
-                }),
-                rendered,
-            )
-        })
-    })
-    .map_err(|failure| failure.into_pyerr(py))
-}
-
 #[pymodule]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<Diagnostic>()?;
     module.add_class::<CompileResult>()?;
+    module.add_class::<Source>()?;
     let error = module.py().get_type::<CompileError>();
     error.setattr("diagnostics", PyTuple::empty(module.py()))?;
     module.add("CompileError", error)?;
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    module.add("build_revision", option_env!("WESL_PY_BUILD_REVISION"))?;
     module.add("compiler_version", env!("WESL_COMPILER_VERSION"))?;
     module.add(
         "_build_metadata",
@@ -504,6 +526,5 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     )?;
     module.add_function(wrap_pyfunction!(compile, module)?)?;
     module.add_function(wrap_pyfunction!(check_syntax, module)?)?;
-    module.add_function(wrap_pyfunction!(validate, module)?)?;
     Ok(())
 }

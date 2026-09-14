@@ -6,6 +6,8 @@ pixi run -e examples python -m examples.clahe
 
 The viewer applies contrast-limited adaptive histogram equalization (CLAHE)
 independently to brightfield, GFP, and RFP.
+The [sample image](../imaging/README.md#sample-image) shows a bacterial colony
+in those three channels.
 The tile size controls the spatial extent of each contrast calculation.
 The clip limit controls how much each histogram bin can contribute before
 redistribution. Slider changes update the result while you drag.

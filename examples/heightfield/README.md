@@ -21,7 +21,7 @@ One gradient supplies the edge magnitude and the surface normal.
 @if(shaded) let color = illuminate(normal(position, dimensions), vec3<f32>(light_x, light_y, light_z));
 ```
 
-Python compiles the entry point with `features={mode: True}`.
+Python selects the mode with `Features(flags={mode: True})` in `CompileOptions`.
 WESL selects the output during compilation.
 The edge shader does not contain the normal or lighting functions.
 The normal shader does not contain the lighting function.

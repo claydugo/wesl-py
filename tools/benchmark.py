@@ -25,7 +25,13 @@ timings = {}
 for name, operation in (
     (
         "facade_compile",
-        functools.partial(wesl.compile, modules, features=features, strip=False),
+        functools.partial(
+            wesl.compile,
+            modules,
+            options=wesl.CompileOptions(
+                strip=False, features=wesl.Features(flags=features)
+            ),
+        ),
     ),
     (
         "native_boundary_compile",
@@ -33,12 +39,11 @@ for name, operation in (
             _native.compile,
             modules,
             root="package::main",
-            features=features,
-            strip=False,
-            keep_root=False,
-            mangle_root=False,
-            keep=None,
-            missing_features="disable",
+            options=wesl.CompileOptions(
+                strip=False, features=wesl.Features(flags=features)
+            ),
+            mangler=wesl.ManglerKind.Escape,
+            use_sourcemap=True,
             filenames={},
             root_directory=None,
         ),

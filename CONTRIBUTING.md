@@ -54,8 +54,6 @@ pixi run cargo bundle-licenses --format yaml --prefer MIT --previous licenses/TH
 Fill the missing license texts before accepting the bundle.
 The WESL 0.4.4 entries use the [upstream MIT text](https://github.com/webgpu-tools/wesl-rs/blob/666362633e5235fa56c6a351d0aea5a502fa42e3/LICENSE-MIT).
 Their copyright notice comes from [NOTICE](licenses/NOTICE).
-`hexf-parse` 0.2.1 declares CC0 in its manifest and omits the license text.
-Its entry uses the [SPDX CC0 text](https://github.com/spdx/license-list-data/blob/main/text/CC0-1.0.txt).
 
 `licenses/RUST.html` contains the Rust 1.97.1 standard library notices.
 It copies `share/doc/rust/COPYRIGHT-library.html` from that toolchain.
@@ -73,7 +71,6 @@ pixi run python -m pytest tests/test_compile.py -q
 pixi run python -m pytest tests/test_check_syntax.py -q
 pixi run python -m pytest tests/test_diagnostics.py -q
 pixi run python -m pytest tests/test_sources.py -q
-pixi run python -m pytest tests/test_validate.py -q
 pixi run -e gpu python -m pytest tests/test_compute.py -q
 ```
 
@@ -214,7 +211,7 @@ The PyPI publishing job and account configuration remain in [TODO.md](TODO.md).
 The release procedure is:
 
 1. Update the Cargo version and [release notes](CHANGELOG.md).
-   Record WESL and Naga upgrades, WGSL output changes, and diagnostic changes.
+   Record WESL upgrades, WGSL output changes, and diagnostic changes.
    Refresh dependency notices when needed.
 2. Run the required checks on the release revision. Review one sdist and
    six wheels, with both ABI families for each platform.
@@ -222,7 +219,7 @@ The release procedure is:
 4. Create the matching version tag and GitHub release. The publishing job
    uploads the tested artifacts through Trusted Publishing without rebuilding.
 5. Verify the PyPI file hashes and installation in a fresh Pixi environment.
-   Compile and validate a shader. Attach the same files to the GitHub release.
+   Compile a shader and check its syntax. Attach the same files to the GitHub release.
 
 For a partial upload, retain the original artifacts. Compare hashes of files
 already on PyPI before uploading the missing files. For a broken release,

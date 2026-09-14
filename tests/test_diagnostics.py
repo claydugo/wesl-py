@@ -63,7 +63,7 @@ def test_linked_argument_error_preserves_missing_metadata() -> None:
                 "package::main": source,
                 "package::helper": "fn consume(value: u32) -> u32 { return value; }",
             },
-            strip=False,
+            options=wesl.CompileOptions(strip=False),
         )
     diagnostic = caught.value.diagnostics[0]
     assert diagnostic.module is None
@@ -100,7 +100,7 @@ def test_compiler_eof_spans_are_zero_width(source: str, module: str) -> None:
     modules = {"package::main": "import package::helper::main; fn entry() { main(); }"}
     modules[module] = source
     with pytest.raises(wesl.CompileError) as caught:
-        wesl.compile(modules, strip=False)
+        wesl.compile(modules, options=wesl.CompileOptions(strip=False))
     diagnostic = caught.value.diagnostics[0]
     assert diagnostic.module == module
     assert diagnostic.source == source
@@ -129,6 +129,7 @@ def test_versions_and_build_metadata() -> None:
     assert wesl.compiler_version == "0.4.4"
     metadata = json.loads(_native._build_metadata)  # noqa: SLF001
     assert metadata["binding_version"] == wesl.__version__
+    assert metadata["binding_revision"] == wesl.build_revision
     assert metadata["compiler_version"] == wesl.compiler_version
     assert metadata["compiler_revision"] == "666362633e5235fa56c6a351d0aea5a502fa42e3"
     assert metadata["compiler_features"] == []

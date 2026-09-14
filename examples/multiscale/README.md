@@ -6,6 +6,8 @@ pixi run -e examples python -m examples.multiscale
 
 The viewer enhances GFP and RFP structures at an adjustable spatial scale.
 Brightfield stays unchanged.
+The [sample image](../imaging/README.md#sample-image) shows a bacterial colony
+in brightfield and two fluorescence channels.
 For each fluorescence channel, it computes
 
 ```text

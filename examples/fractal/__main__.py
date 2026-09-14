@@ -20,7 +20,7 @@ for name, julia in (("mandelbrot", False), ("julia", True)):
     result = wesl.compile_file(
         Path(__file__).with_name("render.wesl"),
         root_directory=Path(__file__).parent.parent,
-        features={"julia": julia},
+        options=wesl.CompileOptions(features=wesl.Features(flags={"julia": julia})),
     )
     output = compute_with_buffers(
         {},

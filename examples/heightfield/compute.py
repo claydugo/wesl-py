@@ -14,7 +14,7 @@ def render(
     shader = wesl.compile_file(
         Path(__file__).with_name("render.wesl"),
         root_directory=Path(__file__).parent.parent,
-        features={mode: True},
+        options=wesl.CompileOptions(features=wesl.Features(flags={mode: True})),
     )
     constants = {"width": width, "height": height}
     if mode == "shaded":

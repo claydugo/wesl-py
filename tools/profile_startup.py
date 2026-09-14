@@ -60,7 +60,8 @@ samples = [
                     "import time; start = time.perf_counter_ns(); import wesl; "
                     "import_time = (time.perf_counter_ns() - start) / 1_000_000; "
                     "start = time.perf_counter_ns(); "
-                    "wesl.compile({'package::main': 'fn main() {}'}, strip=False); "
+                    "wesl.compile({'package::main': 'fn main() {}'}, "
+                    "options=wesl.CompileOptions(strip=False)); "
                     "compile_time = (time.perf_counter_ns() - start) / 1_000_000; "
                     "import json; print(json.dumps([import_time, compile_time]))"
                 ),

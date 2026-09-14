@@ -45,7 +45,11 @@ def enhance(
             result = wesl.compile_file(
                 directory / "filter.wesl",
                 root_directory=directory.parent,
-                features={"horizontal": horizontal, "tiled": tiled},
+                options=wesl.CompileOptions(
+                    features=wesl.Features(
+                        flags={"horizontal": horizontal, "tiled": tiled}
+                    )
+                ),
             )
             shader = ComputeShader(result.wgsl, entry_point="main")
             shader.set_resource(0, input_buffer)
