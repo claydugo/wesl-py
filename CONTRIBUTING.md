@@ -94,12 +94,10 @@ Free-threaded Python 3.13 and 3.14 are outside the first release's scope.
 
 | Extra | Purpose | Verification target |
 | --- | --- | --- |
-| `compute` | Headless compute examples | Python 3.12 on Linux x86-64 |
-| `fractal` | Fractal image example | Python 3.12 on Linux x86-64 |
-| `examples` | Interactive image examples | Python 3.12 on Linux x86-64 |
+| `examples` | Interactive graphics and compute examples | Python 3.12 on Linux x86-64 |
 
 CI installs the extras from PyPI and runs their shaders with Mesa's software
-Vulkan adapter. It verifies numerical results and renders both image viewers
+Vulkan adapter. It verifies numerical results and renders both viewers
 offscreen. Interactive use requires a window server and a supported graphics
 adapter. The artifact workflow does not test window events.
 Extras have no verified free-threaded support yet.
@@ -131,8 +129,7 @@ Use `tools/test_artifact.py` with a wheel filename to test that installation
 outside the checkout. Its `--python` option selects Python 3.12 through 3.15.
 Use `--python 3.15t` for the free-threaded interpreter.
 The `--stubtest` option also runs mypy stubtest.
-Use `--extra compute`, `--extra fractal`, or `--extra examples` to install
-the corresponding dependencies and run their examples. `--compute` also
+Use `--extra examples` to install the dependencies and run the examples. `--compute` also
 requires a software Vulkan adapter and runs `tests/test_compute.py`.
 
 The script checks package versions, metadata, typing files, and license files.

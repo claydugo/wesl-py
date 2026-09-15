@@ -21,16 +21,13 @@ loop = import_module("rendercanvas.glfw").loop
     and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")),
     reason="requires a window server",
 )
-@pytest.mark.parametrize("module", ["examples.multiscale", "examples.clahe"])
-def test_native_pointer_coordinates(
-    module: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_native_pointer_coordinates(monkeypatch: pytest.MonkeyPatch) -> None:
     channels = numpy.full((3, 19, 37), 0.25, dtype=numpy.float32)
     colors = numpy.ones((3, 256, 4), dtype=numpy.float32)
     labels = ["Brightfield", "GFP", "RFP"]
     monkeypatch.setattr(common, "load_colony", lambda: (channels, colors, labels))
     monkeypatch.setattr(loop, "run", lambda: None)
-    monkeypatch.setattr(sys, "argv", [module])
+    monkeypatch.setattr(sys, "argv", ["examples.multiscale"])
     rectangles = {}
     checkbox = imgui.checkbox
 
@@ -43,7 +40,7 @@ def test_native_pointer_coordinates(
         return result
 
     monkeypatch.setattr(imgui, "checkbox", record_checkbox)
-    viewer = runpy.run_module(module, run_name="__main__")
+    viewer = runpy.run_module("examples.multiscale", run_name="__main__")
     canvas = viewer["canvas"]
     try:
         for dimensions in (None, (1024, 768)):
@@ -76,5 +73,70 @@ def test_native_pointer_coordinates(
                     canvas._events.flush()
                     canvas.force_draw()
                 assert viewer["visible"][channel] is not previous
+    finally:
+        canvas.close()
+
+
+@pytest.mark.gpu
+@pytest.mark.skipif(
+    sys.platform == "linux"
+    and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")),
+    reason="requires a window server",
+)
+def test_sdf_pointer_controls(monkeypatch: pytest.MonkeyPatch) -> None:
+    rendercanvas = import_module("rendercanvas.glfw")
+    viewer_module = import_module("examples.sdf.viewer")
+    rectangles = {}
+    checkbox = imgui.checkbox
+
+    def record_checkbox(label: str, value: bool) -> tuple[bool, bool]:  # noqa: FBT001
+        result = checkbox(label, value)
+        rectangles[label] = (
+            tuple(imgui.get_item_rect_min()),
+            tuple(imgui.get_item_rect_max()),
+        )
+        return result
+
+    monkeypatch.setattr(imgui, "checkbox", record_checkbox)
+    canvas = rendercanvas.RenderCanvas()
+    canvas.set_logical_size(1440, 900)
+    viewer = viewer_module.Viewer(canvas)
+    try:
+        for dimensions in (None, (1024, 768)):
+            if dimensions is not None:
+                canvas.set_logical_size(*dimensions)
+            for _ in range(3):
+                glfw.poll_events()
+                canvas._events.flush()
+                canvas.force_draw()
+            canvas._on_cursor_enter(canvas._window, entered=True)
+            window_width, window_height = glfw.get_window_size(canvas._window)
+            logical_width, logical_height = canvas.get_logical_size()
+            for label in ("Cut a tunnel", "Pause"):
+                lower, upper = rectangles[label]
+                previous = (viewer.cutout, viewer.paused)
+                canvas._on_cursor_pos(
+                    canvas._window,
+                    (lower[0] + 8) * window_width / logical_width,
+                    (lower[1] + upper[1]) / 2 * window_height / logical_height,
+                )
+                canvas._events.flush()
+                canvas.force_draw()
+                for action in (glfw.PRESS, glfw.RELEASE):
+                    canvas._on_mouse_button(
+                        canvas._window, glfw.MOUSE_BUTTON_LEFT, action, 0
+                    )
+                    canvas._events.flush()
+                    canvas.force_draw()
+                if label == "Cut a tunnel":
+                    assert (viewer.cutout, viewer.paused) == (
+                        not previous[0],
+                        previous[1],
+                    )
+                else:
+                    assert (viewer.cutout, viewer.paused) == (
+                        previous[0],
+                        not previous[1],
+                    )
     finally:
         canvas.close()

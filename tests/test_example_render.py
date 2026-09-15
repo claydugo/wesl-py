@@ -14,9 +14,7 @@ common = import_module("examples.common")
 
 
 @pytest.mark.gpu
-@pytest.mark.parametrize("module", ["examples.multiscale", "examples.clahe"])
 def test_offscreen_render(
-    module: str,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
@@ -26,8 +24,10 @@ def test_offscreen_render(
     labels = ["Brightfield", "GFP", "RFP"]
     monkeypatch.setattr(common, "load_colony", lambda: (channels, colors, labels))
     screenshot = tmp_path / "viewer.png"
-    monkeypatch.setattr(sys, "argv", [module, "--screenshot", str(screenshot)])
-    viewer = runpy.run_module(module, run_name="__main__")
+    monkeypatch.setattr(
+        sys, "argv", ["examples.multiscale", "--screenshot", str(screenshot)]
+    )
+    viewer = runpy.run_module("examples.multiscale", run_name="__main__")
     try:
         viewer["draw_frame"]()
         assert not [

@@ -149,6 +149,7 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
         "test_sources.py",
         "test_compute.py",
         "test_example_render.py",
+        "test_sdf.py",
     ):
         shutil.copyfile(
             project_directory / "tests" / filename, directory / "tests" / filename
@@ -219,38 +220,20 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
                 "run",
                 "python",
                 "-c",
-                "import imageio, numpy, wgpu; "
-                + (
-                    "import imgui_bundle; import glfw, pygfx, rendercanvas, tifffile"
-                    if arguments.extra == "examples"
-                    else ""
+                (
+                    "import imageio, numpy, wgpu; "
+                    "import imgui_bundle, glfw, pygfx, rendercanvas, tifffile"
                 ),
             ],
             cwd=directory,
             check=True,
         )
-    if arguments.extra == "compute":
-        for module in ("examples.compute", "examples.heightfield.verify"):
-            subprocess.run(
-                ["pixi", "run", "python", "-m", module],
-                cwd=directory,
-                check=True,
-            )
-    if arguments.extra == "fractal":
+    if arguments.extra == "examples":
         subprocess.run(
-            ["pixi", "run", "python", "-m", "examples.fractal", "--output", "images"],
+            ["pixi", "run", "python", "-m", "examples.multiscale.verify"],
             cwd=directory,
             check=True,
         )
-        assert (directory / "images/mandelbrot.png").is_file()
-        assert (directory / "images/julia.png").is_file()
-    if arguments.extra == "examples":
-        for module in ("examples.multiscale.verify", "examples.clahe.verify"):
-            subprocess.run(
-                ["pixi", "run", "python", "-m", module],
-                cwd=directory,
-                check=True,
-            )
         subprocess.run(
             [
                 "pixi",
@@ -259,6 +242,7 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
                 "-m",
                 "pytest",
                 "tests/test_example_render.py",
+                "tests/test_sdf.py",
                 "-q",
             ],
             cwd=directory,

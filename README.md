@@ -56,10 +56,15 @@ See the [API reference](https://github.com/claydugo/wesl-py/blob/main/API.md) fo
 
 ## Examples
 
-- [Compute](https://github.com/claydugo/wesl-py/blob/main/examples/compute.py) compiles two shader variants and runs them with wgpu-py.
-- [Fractal](https://github.com/claydugo/wesl-py/blob/main/examples/fractal/README.md) renders Mandelbrot and Julia sets with one shader.
-- [Heightfield](https://github.com/claydugo/wesl-py/blob/main/examples/heightfield/README.md) shares shader modules for edges, normals, and lighting.
-- [Image processing](https://github.com/claydugo/wesl-py/blob/main/examples/README.md) demonstrates multiscale fluorescence enhancement and adaptive local contrast.
+- [SDF playground](examples/sdf/README.md) shares geometry between rendering and particle collisions.
+- [Multiscale fluorescence](examples/multiscale/README.md) shares convolution across image axes, scales, and implementations.
+
+Both examples open interactive windows:
+
+```bash
+pixi run -e examples python -m examples.sdf
+pixi run -e examples python -m examples.multiscale
+```
 
 ## Contributing
 

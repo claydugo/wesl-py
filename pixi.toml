@@ -25,14 +25,6 @@ no-build-isolation = ["wesl-py"]
 [feature.gpu.dependencies]
 wgpu-py = ">=0.31.1"
 
-[feature.fractal.dependencies]
-imageio = ">=2.37"
-numpy = "*"
-
-[feature.compute.dependencies]
-imageio = ">=2.37"
-numpy = "*"
-
 [feature.examples.pypi-dependencies]
 wesl-py = { path = ".", editable = true, extras = ["examples"] }
 
@@ -54,8 +46,6 @@ stubtest = "python -m mypy.stubtest wesl --concise"
 [environments]
 default = { solve-group = "default" }
 gpu = { features = ["gpu"], solve-group = "default" }
-compute = { features = ["gpu", "compute"], solve-group = "default" }
-fractal = { features = ["gpu", "fractal"], solve-group = "default" }
 examples = { features = ["gpu", "examples"], solve-group = "default" }
 dev = { features = ["dev"], solve-group = "default" }
 

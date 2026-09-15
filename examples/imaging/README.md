@@ -1,7 +1,6 @@
 # Microscopy image and shared shaders
 
-[Multiscale fluorescence](../multiscale/README.md) and
-[adaptive local contrast](../clahe/README.md) use the same microscopy image
+[Multiscale fluorescence](../multiscale/README.md) uses this microscopy image
 and color compositing code.
 
 ## Sample image
@@ -26,8 +25,8 @@ for the resource name.
 
 ## GPU compositing
 
-Each example keeps its algorithm in `.wesl` files and schedules passes
-in `compute.py`. Both import indexing and color functions from this directory.
+The example keeps its algorithm in `.wesl` files and schedules passes
+in `compute.py`. It imports indexing and color functions from this directory.
 `composite()` in [common.py](../common.py) connects the composite shader
 to a pygfx texture.
 
@@ -43,6 +42,6 @@ The display clips the sum to the range `[0, 1]`.
 Gain and enhancement controls affect visualization.
 
 Intermediate arrays and display textures stay on the GPU.
-The verification scripts read results back to compare them with NumPy.
-The viewers use pygfx's experimental `ComputeShader` helper.
+The verification script reads results back to compare them with NumPy.
+The viewer uses pygfx's experimental `ComputeShader` helper.
 The helper consumes `CompileResult.wgsl` and manages wgpu pipelines and bindings.

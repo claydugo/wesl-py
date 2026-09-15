@@ -24,8 +24,6 @@ Issues = "https://github.com/claydugo/wesl-py/issues"
 Changelog = "https://github.com/claydugo/wesl-py/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-compute = ["imageio>=2.37", "numpy", "wgpu>=0.31.1"]
-fractal = ["imageio>=2.37", "numpy", "wgpu>=0.31.1"]
 examples = [
     "glfw",
     "imageio>=2.37",

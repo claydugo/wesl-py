@@ -159,10 +159,8 @@ jobs:
         run: |
           mkdir source
           tar -xf sdist/*.tar.gz -C source --strip-components=1
-      - name: Test compute and example extras
+      - name: Test examples and compute
         env:
           XDG_RUNTIME_DIR: ${{ runner.temp }}
         run: |
-          pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp312-abi3-*.whl --python 3.12 --platform-tag manylinux_2_28_x86_64 --extra compute --compute
-          pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp312-abi3-*.whl --python 3.12 --platform-tag manylinux_2_28_x86_64 --extra fractal
-          pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp312-abi3-*.whl --python 3.12 --platform-tag manylinux_2_28_x86_64 --extra examples
+          pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp312-abi3-*.whl --python 3.12 --platform-tag manylinux_2_28_x86_64 --extra examples --compute

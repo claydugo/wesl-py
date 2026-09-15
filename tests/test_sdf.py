@@ -1,0 +1,112 @@
+# ruff: noqa: PLR2004
+
+import logging
+from importlib import import_module
+from pathlib import Path
+
+import pytest
+import wesl
+
+numpy = pytest.importorskip("numpy")
+wgpu = pytest.importorskip("wgpu")
+pytest.importorskip("imgui_bundle")
+RenderCanvas = import_module("rendercanvas.offscreen").RenderCanvas
+Viewer = import_module("examples.sdf.viewer").Viewer
+get_default_device = import_module("wgpu.utils").get_default_device
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("cutout", [False, True])
+def test_particle_collisions(*, cutout: bool) -> None:
+    directory = Path(__file__).parents[1] / "examples"
+    device = get_default_device()
+    parameters = numpy.zeros((7, 4), dtype=numpy.float32)
+    parameters[0] = (640, 480, 1, 1 / 60)
+    parameters[1] = (0.35, 0.48, 0.7, 0)
+    parameters[6] = (0.55, 5, 0, 0)
+    particles = numpy.array(
+        [
+            [2, -1.24, 0, 5, 0, -1, 0, 0.035],
+            [0, 2.12, 0, 5, 0, -1, 0, 0.035],
+        ],
+        dtype=numpy.float32,
+    )
+    module = device.create_shader_module(
+        code=wesl.compile_file(
+            directory / "sdf/simulate.wesl",
+            root_directory=directory,
+            options=wesl.CompileOptions(
+                features=wesl.Features(flags={"cutout": cutout})
+            ),
+        ).wgsl
+    )
+    pipeline = device.create_compute_pipeline(
+        layout="auto", compute={"module": module, "entry_point": "main"}
+    )
+    output = device.create_buffer_with_data(
+        data=particles, usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_SRC
+    )
+    bindings = device.create_bind_group(
+        layout=pipeline.get_bind_group_layout(0),
+        entries=[
+            {
+                "binding": 0,
+                "resource": {
+                    "buffer": device.create_buffer_with_data(
+                        data=parameters, usage=wgpu.BufferUsage.UNIFORM
+                    )
+                },
+            },
+            {"binding": 1, "resource": {"buffer": output}},
+        ],
+    )
+    encoder = device.create_command_encoder()
+    compute_pass = encoder.begin_compute_pass()
+    compute_pass.set_pipeline(pipeline)
+    compute_pass.set_bind_group(0, bindings)
+    compute_pass.dispatch_workgroups(1)
+    compute_pass.end()
+    device.queue.submit([encoder.finish()])
+    result = numpy.frombuffer(device.queue.read_buffer(output), dtype=numpy.float32)
+    result = result.reshape(2, 8)
+    assert numpy.isfinite(result).all()
+    assert result[0, 1] >= -1.215001
+    assert result[0, 5] > 0
+    if cutout:
+        assert result[1, 1] < 2.12
+        assert result[1, 5] < -1
+    else:
+        assert result[1, 1] >= 2.135
+        assert result[1, 5] > 0
+
+
+@pytest.mark.gpu
+def test_sdf_viewer(caplog: pytest.LogCaptureFixture) -> None:
+    canvas = RenderCanvas(size=(800, 600))
+    viewer = Viewer(canvas)
+    try:
+        viewer.paused = True
+        original = numpy.asarray(canvas.draw()).copy()
+        viewer.cutout = False
+        filled = numpy.asarray(canvas.draw()).copy()
+        assert numpy.count_nonzero(original[:, 320:, :3] != filled[:, 320:, :3]) > 100
+        viewer.paused = False
+        viewer.previous_time -= 1 / 60
+        canvas.draw()
+        moving = numpy.frombuffer(
+            viewer.device.queue.read_buffer(viewer.particles), dtype=numpy.float32
+        ).copy()
+        viewer.reset = True
+        canvas.set_logical_size(1024, 768)
+        resized = numpy.asarray(canvas.draw())
+        reset = numpy.frombuffer(
+            viewer.device.queue.read_buffer(viewer.particles), dtype=numpy.float32
+        )
+        assert resized.shape == (768, 1024, 4)
+        assert numpy.isfinite(reset).all()
+        assert not numpy.array_equal(moving, reset)
+        assert not [
+            record for record in caplog.records if record.levelno >= logging.ERROR
+        ]
+    finally:
+        canvas.close()
