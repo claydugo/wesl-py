@@ -38,15 +38,12 @@ wesl-py = { path = ".", editable = true, extras = ["examples"] }
 
 [feature.examples.dependencies]
 imageio = ">=2.37"
-imgui-bundle = ">=1.92.900"
+imgui-bundle = ">=1.92.801,<1.92.900"
 numpy = "*"
 pygfx = ">=0.17"
 pyglfw = "*"
 rendercanvas = "*"
 tifffile = "*"
-
-[feature.dev.pypi-dependencies]
-wesl-py = { path = ".", editable = true, extras = ["dev"] }
 
 [feature.dev.dependencies]
 mypy = "*"

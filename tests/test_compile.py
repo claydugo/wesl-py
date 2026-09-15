@@ -6,6 +6,7 @@ import subprocess
 import sys
 from collections import UserDict
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from dataclasses import make_dataclass
 from multiprocessing import get_context
 from types import MappingProxyType
 from typing import TYPE_CHECKING
@@ -561,6 +562,24 @@ def test_compile_options_preserve_all_fields_through_pickle() -> None:
     assert restored == options
     assert restored is not options
     assert pickle.loads(pickle.dumps(wesl.ManglerKind.None_)) is wesl.ManglerKind.None_  # noqa: S301
+
+
+def test_features_retain_supplied_flags() -> None:
+    flags: dict[str, bool | wesl.Feature] = {"enabled": False}
+    features = wesl.Features(flags=flags)
+    source = "@if(enabled) @compute @workgroup_size(1) fn main() {}"
+    options = wesl.CompileOptions(features=features)
+    assert wesl.compile_source(source, options=options).entry_points == ()
+    flags["enabled"] = True
+    assert wesl.compile_source(source, options=options).entry_points == ("main",)
+    flags["enabled"] = wesl.Feature.Disable
+    assert wesl.compile_source(source, options=options).entry_points == ()
+
+
+def test_features_dataclass_subclass_preserves_defaults() -> None:
+    features = make_dataclass("DerivedFeatures", [], bases=(wesl.Features,))()
+    assert features.default is wesl.Feature.Disable
+    assert features.flags == {}
 
 
 def test_compile_options_apply_mutations_without_sharing_defaults() -> None:

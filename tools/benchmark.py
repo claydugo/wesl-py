@@ -20,7 +20,7 @@ modules["package::main"] = (
     + " + ".join(f"value_{index}()" for index in range(64))
     + "; }"
 )
-features = {"enabled": True}
+features: dict[str, bool | wesl.Feature] = {"enabled": True}
 timings = {}
 for name, operation in (
     (
@@ -42,7 +42,7 @@ for name, operation in (
             options=wesl.CompileOptions(
                 strip=False, features=wesl.Features(flags=features)
             ),
-            mangler=wesl.ManglerKind.Escape,
+            mangler=wesl.ManglerKind.Escape.value,
             use_sourcemap=True,
             filenames={},
             root_directory=None,
@@ -69,9 +69,11 @@ print(
             "extension": _native.__file__,
             "module_count": len(modules),
             "source_bytes": sum(len(source.encode()) for source in modules.values()),
+            "root": "package::main",
+            "mangler": "Escape",
+            "use_sourcemap": True,
             "options": {
-                "root": "package::main",
-                "features": features,
+                "features": {"default": "Disable", "flags": features},
                 "strip": False,
                 "keep_root": False,
                 "mangle_root": False,

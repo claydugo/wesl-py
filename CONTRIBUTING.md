@@ -12,7 +12,7 @@ pixi reinstall wesl-py
 pixi run lint
 pixi run format-check
 pixi run -e dev stubtest
-pixi run ty check python/wesl
+pixi run ty check python/wesl tools/benchmark.py tools/profile_startup.py
 pixi run rust-format-check
 pixi run clippy
 pixi run machete
@@ -21,11 +21,7 @@ pixi run audit
 pixi run licenses
 ```
 
-The optional `dev` extra adds IPython:
-
-```bash
-pixi run -e dev ipython
-```
+The local `dev` environment provides mypy for stubtest.
 
 Cargo denies Clippy's `all` and `pedantic` groups and selected restriction
 and nursery lints. `clippy.toml` sets the complexity limits. The Python
@@ -98,15 +94,14 @@ Free-threaded Python 3.13 and 3.14 are outside the first release's scope.
 
 | Extra | Purpose | Verification target |
 | --- | --- | --- |
-| `dev` | IPython | Python 3.12 on all three platforms |
 | `compute` | Headless compute examples | Python 3.12 on Linux x86-64 |
 | `fractal` | Fractal image example | Python 3.12 on Linux x86-64 |
 | `examples` | Interactive image examples | Python 3.12 on Linux x86-64 |
 
-CI verifies that the extras install and their dependencies import.
-The compute job runs shaders with Mesa's software Vulkan adapter.
-Interactive examples require a window server and a supported graphics adapter.
-The artifact workflow does not test their windows.
+CI installs the extras from PyPI and runs their shaders with Mesa's software
+Vulkan adapter. It verifies numerical results and renders both image viewers
+offscreen. Interactive use requires a window server and a supported graphics
+adapter. The artifact workflow does not test window events.
 Extras have no verified free-threaded support yet.
 
 ## Artifacts
@@ -135,10 +130,10 @@ The test environment provides Python and Rust. It does not provide Maturin.
 Use `tools/test_artifact.py` with a wheel filename to test that installation
 outside the checkout. Its `--python` option selects Python 3.12 through 3.15.
 Use `--python 3.15t` for the free-threaded interpreter.
-The `--extra dev` option also runs stubtest and tests IPython.
-Use `--extra compute`, `--extra fractal`, or `--extra examples` to verify
-the corresponding dependencies. `--compute` also requires a software Vulkan
-adapter and runs `tests/test_compute.py`.
+The `--stubtest` option also runs mypy stubtest.
+Use `--extra compute`, `--extra fractal`, or `--extra examples` to install
+the corresponding dependencies and run their examples. `--compute` also
+requires a software Vulkan adapter and runs `tests/test_compute.py`.
 
 The script checks package versions, metadata, typing files, and license files.
 It also verifies the SBOM format, project identity, and direct Cargo dependencies.
@@ -191,7 +186,10 @@ pixi run env CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=cc maturin build --rel
 Local builds can produce a generic Linux tag. Use the workflow's manylinux
 container for release wheels. Inspect the native dependencies before publishing.
 
-The [conda recipe](recipe/recipe.yaml) builds from this checkout:
+The [conda recipe](recipe/recipe.yaml) builds from this checkout.
+It uses the regular CPython ABI3 extension with a Python 3.12 minimum.
+It does not provide a free-threaded extension. Replace the checkout source
+with the published sdist URL and hash before submission to conda-forge:
 
 ```bash
 rattler-build build --recipe recipe/recipe.yaml --output-dir target/conda
@@ -207,8 +205,10 @@ Require the `checks`, `sdist`, all three `wheel` jobs, and `compute` to pass
 before a package release. These include Python 3.15 and 3.15t coverage.
 The [support table](#support) defines the initial targets.
 
-The PyPI publishing job and account configuration remain in [TODO.md](TODO.md).
-The release procedure is:
+The artifact workflow builds and tests packages. It does not upload to PyPI
+or TestPyPI. Publishing automation, account setup, and remaining release checks
+are in [TODO.md](TODO.md). Complete those tasks before publication.
+The planned release procedure is:
 
 1. Update the Cargo version and [release notes](CHANGELOG.md).
    Record WESL upgrades, WGSL output changes, and diagnostic changes.
@@ -216,10 +216,10 @@ The release procedure is:
 2. Run the required checks on the release revision. Review one sdist and
    six wheels, with both ABI families for each platform.
 3. Rehearse publication and installation on TestPyPI with those artifacts.
-4. Create the matching version tag and GitHub release. The publishing job
-   uploads the tested artifacts through Trusted Publishing without rebuilding.
+4. Create the matching version tag and GitHub release. Upload the tested
+   artifacts through Trusted Publishing without rebuilding.
 5. Verify the PyPI file hashes and installation in a fresh Pixi environment.
-   Compile a shader and check its syntax. Attach the same files to the GitHub release.
+   Compile a shader and check its syntax. Verify the GitHub release attachments.
 
 For a partial upload, retain the original artifacts. Compare hashes of files
 already on PyPI before uploading the missing files. For a broken release,

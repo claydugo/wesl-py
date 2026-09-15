@@ -36,6 +36,11 @@ with tempfile.TemporaryDirectory(prefix="wesl-sdist-") as temporary_directory:
         "Cargo.lock",
         "pyproject.toml",
         "build.rs",
+        "ci/pixi.toml",
+        "ci/pixi.lock",
+        "wesl.toml",
+        "TODO.md",
+        "ROADMAP.md",
         *(
             path.relative_to(project_directory)
             for path in project_directory.glob("python/wesl/*.py")

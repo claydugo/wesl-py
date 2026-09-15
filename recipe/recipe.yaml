@@ -6,8 +6,10 @@ source:
   path: ..
 
 build:
-  number: 2
+  number: 0
   script: build.py
+  python:
+    version_independent: true
 
 requirements:
   build:
@@ -17,16 +19,18 @@ requirements:
       then: ${{ stdlib('c') }}
   host:
     - python 3.12.*
+    - python-abi3 3.12.*
     - maturin >=1.15,<2
     - python-installer
   run:
-    - python >=3.12,<3.13
+    - python >=3.12
 
 tests:
   - script:
       - python -m pytest tests/test_compile.py -q
       - python -m pytest tests/test_check_syntax.py -q
       - python -m pytest tests/test_diagnostics.py -q
+      - python -m pytest tests/test_sources.py -q
     requirements:
       run:
         - pytest
@@ -36,6 +40,7 @@ tests:
         - tests/test_compile.py
         - tests/test_check_syntax.py
         - tests/test_diagnostics.py
+        - tests/test_sources.py
 
 about:
   homepage: https://github.com/claydugo/wesl-py
@@ -47,3 +52,7 @@ about:
     - licenses/NOTICE
     - licenses/THIRDPARTY.yml
   summary: Python bindings for the Rust WESL compiler
+
+extra:
+  recipe-maintainers:
+    - claydugo

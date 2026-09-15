@@ -14,10 +14,13 @@ from packaging.requirements import Requirement
 from packaging.tags import parse_tag
 from packaging.utils import canonicalize_name, parse_wheel_filename
 
+project_directory = Path(__file__).resolve().parents[1]
+project = tomllib.loads((project_directory / "pyproject.toml").read_text())["project"]
 parser = argparse.ArgumentParser()
 parser.add_argument("wheel", type=Path)
 parser.add_argument("--python", default="3.12")
-parser.add_argument("--extra")
+parser.add_argument("--extra", choices=project.get("optional-dependencies", {}))
+parser.add_argument("--stubtest", action="store_true")
 parser.add_argument("--compute", action="store_true")
 parser.add_argument("--find-links", type=Path)
 parser.add_argument("--abi-tag", default="cp312-abi3")
@@ -25,8 +28,6 @@ parser.add_argument("--platform-tag")
 arguments = parser.parse_args()
 python_version = arguments.python.removesuffix("t")
 wheel = arguments.wheel.resolve(strict=True)
-project_directory = Path(__file__).resolve().parents[1]
-project = tomllib.loads((project_directory / "pyproject.toml").read_text())["project"]
 cargo = tomllib.loads((project_directory / "Cargo.toml").read_text())
 package = cargo["package"]
 name, version, _, tags = parse_wheel_filename(wheel.name)
@@ -114,7 +115,7 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
             if arguments.python.endswith("t")
             else ('python-gil = "*"\n' if python_version != "3.12" else "")
         )
-        + ('mypy = "*"\n' if arguments.extra == "dev" else "")
+        + ('mypy = "*"\n' if arguments.stubtest else "")
         + "[pypi-dependencies]\nwesl-py = { "
         + (
             "version = " + json.dumps(f"=={version}")
@@ -139,6 +140,7 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
         )
     )
     (directory / "tests").mkdir()
+    shutil.copyfile(project_directory / "pyproject.toml", directory / "pyproject.toml")
     for filename in (
         "conftest.py",
         "test_compile.py",
@@ -146,9 +148,16 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
         "test_diagnostics.py",
         "test_sources.py",
         "test_compute.py",
+        "test_example_render.py",
     ):
         shutil.copyfile(
             project_directory / "tests" / filename, directory / "tests" / filename
+        )
+    if arguments.extra:
+        shutil.copytree(
+            project_directory / "examples",
+            directory / "examples",
+            ignore=shutil.ignore_patterns("__pycache__"),
         )
     subprocess.run(
         [
@@ -191,35 +200,19 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
             python_version,
             json.dumps(arguments.python.endswith("t")),
             json.dumps(wheel_metadata.get_all("Tag")),
-            json.dumps(arguments.extra in {None, "dev"}),
+            json.dumps(arguments.extra is None),
             extension_hash,
         ],
         cwd=directory,
         check=True,
     )
-    if arguments.extra == "dev":
+    if arguments.stubtest:
         subprocess.run(
             ["pixi", "run", "python", "-m", "mypy.stubtest", "wesl", "--concise"],
             cwd=directory,
             check=True,
         )
-        subprocess.run(
-            [
-                "pixi",
-                "run",
-                "ipython",
-                "--quick",
-                "--no-banner",
-                "-c",
-                (
-                    "import wesl; "
-                    "wesl.check_syntax('fn main() {}', filename='ipython.wesl')"
-                ),
-            ],
-            cwd=directory,
-            check=True,
-        )
-    if arguments.extra in {"compute", "fractal", "examples"}:
+    if arguments.extra:
         subprocess.run(
             [
                 "pixi",
@@ -232,6 +225,41 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
                     if arguments.extra == "examples"
                     else ""
                 ),
+            ],
+            cwd=directory,
+            check=True,
+        )
+    if arguments.extra == "compute":
+        for module in ("examples.compute", "examples.heightfield.verify"):
+            subprocess.run(
+                ["pixi", "run", "python", "-m", module],
+                cwd=directory,
+                check=True,
+            )
+    if arguments.extra == "fractal":
+        subprocess.run(
+            ["pixi", "run", "python", "-m", "examples.fractal", "--output", "images"],
+            cwd=directory,
+            check=True,
+        )
+        assert (directory / "images/mandelbrot.png").is_file()
+        assert (directory / "images/julia.png").is_file()
+    if arguments.extra == "examples":
+        for module in ("examples.multiscale.verify", "examples.clahe.verify"):
+            subprocess.run(
+                ["pixi", "run", "python", "-m", module],
+                cwd=directory,
+                check=True,
+            )
+        subprocess.run(
+            [
+                "pixi",
+                "run",
+                "python",
+                "-m",
+                "pytest",
+                "tests/test_example_render.py",
+                "-q",
             ],
             cwd=directory,
             check=True,
@@ -259,7 +287,7 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
             cwd=directory,
             check=True,
         )
-    if arguments.extra in {None, "dev"}:
+    if arguments.extra is None:
         for filename in (
             "test_compile.py",
             "test_check_syntax.py",

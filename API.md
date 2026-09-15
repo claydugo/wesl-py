@@ -41,6 +41,7 @@ Its default policy is `Feature.Disable`. Its flag dictionary starts empty.
 The four policies are `Feature.Enable`, `Feature.Disable`, `Feature.Keep`,
 and `Feature.Error`. Each policy can apply to the default or an individual flag.
 The `flags` mapping also accepts booleans, as upstream does.
+Annotate a reusable flag dictionary as `dict[str, bool | wesl.Feature]`.
 
 `Feature.Keep` preserves unresolved conditions for a later compilation.
 `Feature.Error` rejects flags that the compiler evaluates with that policy.

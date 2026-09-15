@@ -1,26 +1,13 @@
 # Release notes
 
-## Unreleased
+## 0.1.0 (unreleased)
 
-- Compilation returns an immutable `CompileResult`. Read generated code from `.wgsl`.
-- Remove the inferred declaration ownership from `CompileResult`.
-- Rename `parse()` to `check_syntax()`.
-- Preserve upstream retention options and selection behavior.
-- Bind `CompileOptions`, `Features`, `Feature`, and `ManglerKind`.
-- Use Python enums and mutable dataclasses for compiler settings.
-- Replace the compiler keywords and `missing_features` with `options=CompileOptions(...)`.
-- Expose upstream import, conditional translation, lazy resolution, lowering, and validation controls.
-- Allow callers to disable source-map recording.
-- Preserve dependency-qualified package names and upstream module order.
-- Preserve symlinks when compiling files.
-- Accept parent components in file paths and root directories.
-- Preserve compiler options and feature policies through pickle and process workers.
-- Add loaded source records from the upstream source map.
-- Add `load_modules()` for directories and Python package resources.
-- Expose the optional `build_revision` supplied at build time.
-- Remove standalone Naga validation. The target runtime validates generated WGSL.
-
-- Add Python bindings for WESL compilation, syntax checks, and diagnostics.
-- Use the published WESL and wgsl-parse 0.4.4 crates without local patches.
-- Document the upstream limitations of `imports=False` and `lower=True`.
-- Build stable ABI wheels for CPython 3.12 and later and free-threaded CPython 3.15 and later.
+- Compile WESL modules, strings, and files into an immutable `CompileResult` with generated WGSL and loaded source records.
+- Check WESL syntax with `check_syntax()` and report structured diagnostics with source locations.
+- Configure upstream compiler behavior with `CompileOptions`, `Features`, `Feature`, and `ManglerKind`. Compiler settings support pickle and process workers.
+- Load modules from directories and Python package resources with `load_modules()`.
+- Preserve dependency-qualified package names, the upstream order of modules, symlinks, and parent components in file paths.
+- Expose the binding version, upstream compiler version, and optional build revision.
+- Use published WESL and wgsl-parse 0.4.4 crates without local patches. See [API.md](API.md) for known limitations of `imports=False` and `lower=True`.
+- Provide compute, fractal, heightfield, and image-processing examples. The target GPU runtime validates generated shaders and pipelines.
+- Build wheels with a stable ABI for CPython 3.12 and later and free-threaded CPython 3.15 and later. See [CONTRIBUTING.md](CONTRIBUTING.md#support) for release targets and verification status.

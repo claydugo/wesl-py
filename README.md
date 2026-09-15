@@ -16,7 +16,7 @@ pixi run python -c "import wesl; print(wesl.__version__)"
 ```
 
 The distribution name is `wesl-py`. Import it as `wesl`.
-See [CONTRIBUTING.md](CONTRIBUTING.md#support) for platform support and source builds.
+See [CONTRIBUTING.md](https://github.com/claydugo/wesl-py/blob/main/CONTRIBUTING.md#support) for platform support and source builds.
 
 ## Usage
 
@@ -52,20 +52,20 @@ Use `compile_source()` for a string or `compile_file()` for a file.
 `check_syntax()` checks WESL syntax. Compilation runs upstream WESL checks.
 The target GPU runtime validates the generated shader and pipeline.
 
-See the [API reference](API.md) for compilation options and diagnostics.
+See the [API reference](https://github.com/claydugo/wesl-py/blob/main/API.md) for compilation options and diagnostics.
 
 ## Examples
 
-- [Compute](examples/compute.py) compiles two shader variants and runs them with wgpu-py.
-- [Fractal](examples/fractal/README.md) renders Mandelbrot and Julia sets with one shader.
-- [Heightfield](examples/heightfield/README.md) shares shader modules for edges, normals, and lighting.
-- [Image processing](examples/README.md) demonstrates multiscale fluorescence enhancement and adaptive local contrast.
+- [Compute](https://github.com/claydugo/wesl-py/blob/main/examples/compute.py) compiles two shader variants and runs them with wgpu-py.
+- [Fractal](https://github.com/claydugo/wesl-py/blob/main/examples/fractal/README.md) renders Mandelbrot and Julia sets with one shader.
+- [Heightfield](https://github.com/claydugo/wesl-py/blob/main/examples/heightfield/README.md) shares shader modules for edges, normals, and lighting.
+- [Image processing](https://github.com/claydugo/wesl-py/blob/main/examples/README.md) demonstrates multiscale fluorescence enhancement and adaptive local contrast.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and targeted checks.
+See [CONTRIBUTING.md](https://github.com/claydugo/wesl-py/blob/main/CONTRIBUTING.md) for development setup and targeted checks.
 
 ## License
 
-This project's code uses the [MIT license](LICENSE).
-See [NOTICE](licenses/NOTICE) and [THIRDPARTY.yml](licenses/THIRDPARTY.yml) for dependency licenses and notices.
+This project's code uses the [MIT license](https://github.com/claydugo/wesl-py/blob/main/LICENSE).
+See [NOTICE](https://github.com/claydugo/wesl-py/blob/main/licenses/NOTICE) and [THIRDPARTY.yml](https://github.com/claydugo/wesl-py/blob/main/licenses/THIRDPARTY.yml) for dependency licenses and notices.
