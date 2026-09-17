@@ -20,6 +20,7 @@ __all__ = [
     "CompileError",
     "CompileOptions",
     "CompileResult",
+    "Compiler",
     "Diagnostic",
     "Feature",
     "Features",
@@ -164,6 +165,57 @@ def compile_file(
         filenames=filenames,
         root_directory=directory,
     )
+
+
+@dataclass(kw_only=True)
+class Compiler:
+    options: CompileOptions = field(default_factory=CompileOptions)
+    modules: Mapping[str, str] = field(default_factory=dict)
+    filenames: Mapping[str, str | os.PathLike[str]] = field(default_factory=dict)
+    root_directory: str | os.PathLike[str] | None = None
+
+    def compile_source(  # noqa: D102
+        self,
+        source: str,
+        *,
+        root: str = "package::main",
+        filename: str | os.PathLike[str] = "<string>",
+        mangler: ManglerKind = ManglerKind.Escape,
+        use_sourcemap: bool = True,
+    ) -> CompileResult:
+        return compile_source(
+            source,
+            modules=self.modules,
+            root=root,
+            filename=filename,
+            options=self.options,
+            mangler=mangler,
+            use_sourcemap=use_sourcemap,
+            filenames=self.filenames,
+            root_directory=self.root_directory,
+        )
+
+    def compile_file(  # noqa: D102
+        self,
+        filename: str | os.PathLike[str],
+        *,
+        mangler: ManglerKind = ManglerKind.Escape,
+        use_sourcemap: bool = True,
+    ) -> CompileResult:
+        path = (
+            Path(filename)
+            if self.root_directory is None
+            else Path(self.root_directory) / filename
+        )
+        return compile_file(
+            path,
+            modules=self.modules,
+            root_directory=self.root_directory,
+            options=self.options,
+            mangler=mangler,
+            use_sourcemap=use_sourcemap,
+            filenames=self.filenames,
+        )
 
 
 def check_syntax(source: str, *, filename: str | os.PathLike[str] = "<string>") -> None:

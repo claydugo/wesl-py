@@ -80,6 +80,7 @@ with zipfile.ZipFile(wheel) as archive:
     }
     for filename in (
         "py.typed",
+        "_assertions.wesl",
         *(path.name for path in (project_directory / "python/wesl").glob("*.py*")),
     ):
         assert (
@@ -116,6 +117,11 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
             else ('python-gil = "*"\n' if python_version != "3.12" else "")
         )
         + ('mypy = "*"\n' if arguments.stubtest else "")
+        + (
+            'pytest-regressions = "*"\npytest-xdist = "*"\n'
+            if arguments.extra == "testing"
+            else ""
+        )
         + "[pypi-dependencies]\nwesl-py = { "
         + (
             "version = " + json.dumps(f"=={version}")
@@ -150,6 +156,8 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
         "test_compute.py",
         "test_example_render.py",
         "test_sdf.py",
+        "test_testing.py",
+        "test_pytest_plugin.py",
     ):
         shutil.copyfile(
             project_directory / "tests" / filename, directory / "tests" / filename
@@ -159,6 +167,10 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
             project_directory / "examples",
             directory / "examples",
             ignore=shutil.ignore_patterns("__pycache__"),
+        )
+    if arguments.extra == "testing":
+        shutil.copytree(
+            project_directory / "tests/shaders", directory / "tests/shaders"
         )
     subprocess.run(
         [
@@ -209,11 +221,19 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
     )
     if arguments.stubtest:
         subprocess.run(
-            ["pixi", "run", "python", "-m", "mypy.stubtest", "wesl", "--concise"],
+            [
+                "pixi",
+                "run",
+                "python",
+                "-m",
+                "mypy.stubtest",
+                "wesl._native",
+                "--concise",
+            ],
             cwd=directory,
             check=True,
         )
-    if arguments.extra:
+    if arguments.extra == "examples":
         subprocess.run(
             [
                 "pixi",
@@ -243,6 +263,35 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
                 "pytest",
                 "tests/test_example_render.py",
                 "tests/test_sdf.py",
+                "-q",
+            ],
+            cwd=directory,
+            check=True,
+        )
+    if arguments.extra == "testing":
+        subprocess.run(
+            [
+                "pixi",
+                "run",
+                "python",
+                "-m",
+                "pytest",
+                "tests/test_testing.py",
+                "tests/test_pytest_plugin.py",
+                "tests/shaders",
+                "-q",
+            ],
+            cwd=directory,
+            check=True,
+        )
+        subprocess.run(
+            [
+                "pixi",
+                "run",
+                "python",
+                "-m",
+                "pytest",
+                "examples/testing",
                 "-q",
             ],
             cwd=directory,

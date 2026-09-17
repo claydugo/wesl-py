@@ -10,6 +10,8 @@ __all__ = [
     "Source",
     "__version__",
     "_build_metadata",
+    "_compile_test",
+    "_discover_tests",
     "build_revision",
     "check_syntax",
     "compile",
@@ -89,3 +91,13 @@ def compile(
     root_directory: str | None,
 ) -> CompileResult: ...
 def check_syntax(source: str, filename: str) -> None: ...
+def _discover_tests(source: str, filename: str) -> list[tuple[str, int, int]]: ...
+def _compile_test(
+    modules: Mapping[str, str],
+    root: str,
+    test_name: str,
+    options: _CompileOptions,
+    filenames: dict[str, str],
+    root_directory: str | None,
+    result_binding: int,
+) -> tuple[str, str, list[Diagnostic], dict[str, str]] | None: ...

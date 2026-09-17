@@ -40,14 +40,24 @@ tifffile = "*"
 [feature.dev.dependencies]
 mypy = "*"
 
+[feature.testing.dependencies]
+numpy = "*"
+pytest-regressions = "*"
+pytest-xdist = "*"
+
+[feature.pytest-minimum.dependencies]
+pytest = "==8.2.0"
+
 [feature.dev.tasks]
-stubtest = "python -m mypy.stubtest wesl --concise"
+stubtest = "python -m mypy.stubtest wesl._native --concise"
 
 [environments]
 default = { solve-group = "default" }
 gpu = { features = ["gpu"], solve-group = "default" }
 examples = { features = ["gpu", "examples"], solve-group = "default" }
 dev = { features = ["dev"], solve-group = "default" }
+testing = { features = ["gpu", "testing"], solve-group = "default" }
+testing-minimum = { features = ["gpu", "testing", "pytest-minimum"] }
 
 [tasks]
 lint = "ruff check python tests tools examples recipe"

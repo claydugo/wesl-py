@@ -2,6 +2,7 @@
 
 ## 0.1.0 (unreleased)
 
+- Collect WESL `@test` functions with pytest. Run compute and fragment tests from Python with NumPy resources through the optional `testing` extra.
 - Compile WESL modules, strings, and files into an immutable `CompileResult` with generated WGSL and loaded source records.
 - Check WESL syntax with `check_syntax()` and report structured diagnostics with source locations.
 - Configure upstream compiler behavior with `CompileOptions`, `Features`, `Feature`, and `ManglerKind`. Compiler settings support pickle and process workers.

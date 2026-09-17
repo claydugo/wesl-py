@@ -598,7 +598,7 @@ def test_compile_options_apply_mutations_without_sharing_defaults() -> None:
 @pytest.mark.xfail(
     strict=True,
     raises=AssertionError,
-    reason="wesl-rs 0.4.4 strips the root when imports are disabled",
+    reason="disabling imports removes root declarations",
 )
 def test_disabled_imports_preserve_the_root_entry_point() -> None:
     result = wesl.compile_source(

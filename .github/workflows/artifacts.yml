@@ -24,7 +24,7 @@ jobs:
           locked: true
       - run: pixi run --locked lint
       - run: pixi run --locked format-check
-      - run: pixi run --locked ty check python/wesl tools/benchmark.py tools/profile_startup.py
+      - run: pixi run --locked -e testing ty check python/wesl tools/benchmark.py tools/profile_startup.py
       - run: pixi run --locked rust-format-check
       - run: pixi run --locked clippy
       - run: pixi run --locked machete
@@ -164,3 +164,12 @@ jobs:
           XDG_RUNTIME_DIR: ${{ runner.temp }}
         run: |
           pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp312-abi3-*.whl --python 3.12 --platform-tag manylinux_2_28_x86_64 --extra examples --compute
+      - name: Test pytest integration
+        env:
+          XDG_RUNTIME_DIR: ${{ runner.temp }}
+        run: |
+          pixi run --locked --manifest-path ci/pixi.toml python source/tools/test_artifact.py dist/*-cp312-abi3-*.whl --python 3.12 --platform-tag manylinux_2_28_x86_64 --extra testing --compute
+      - name: Test minimum pytest version
+        env:
+          XDG_RUNTIME_DIR: ${{ runner.temp }}
+        run: pixi run --locked --manifest-path pixi.toml -e testing-minimum python -m pytest tests/test_pytest_plugin.py -q

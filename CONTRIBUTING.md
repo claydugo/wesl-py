@@ -12,7 +12,7 @@ pixi reinstall wesl-py
 pixi run lint
 pixi run format-check
 pixi run -e dev stubtest
-pixi run ty check python/wesl tools/benchmark.py tools/profile_startup.py
+pixi run -e testing ty check python/wesl tools/benchmark.py tools/profile_startup.py
 pixi run rust-format-check
 pixi run clippy
 pixi run machete
@@ -22,6 +22,9 @@ pixi run licenses
 ```
 
 The local `dev` environment provides mypy for stubtest.
+
+Stubtest checks the compiled extension. Run `ty` in the `testing` environment
+to check the Python API with its optional dependencies.
 
 Cargo denies Clippy's `all` and `pedantic` groups and selected restriction
 and nursery lints. `clippy.toml` sets the complexity limits. The Python
@@ -68,7 +71,20 @@ pixi run python -m pytest tests/test_check_syntax.py -q
 pixi run python -m pytest tests/test_diagnostics.py -q
 pixi run python -m pytest tests/test_sources.py -q
 pixi run -e gpu python -m pytest tests/test_compute.py -q
+pixi run -e testing python -m pytest tests/test_testing.py tests/test_pytest_plugin.py tests/shaders -q
+pixi run -e testing-minimum python -m pytest tests/test_pytest_plugin.py -q
 ```
+
+The pytest plugin delegates parametrization to pytest's collection hook.
+It keeps each collected item and its plugin state.
+It attaches WESL setup and reporting methods to the item.
+Enabled tests call the item's original setup method.
+It uses `_request` to check WESL conditions before GPU fixtures run.
+The plugin tests cover this private access on the minimum and current pytest versions.
+
+The `pytest_generate_tests` hook exposes each shader callable during collection.
+The collector then removes it from the synthetic module.
+This prevents shader names from becoming Python hooks during subsequent collection.
 
 `pixi run benchmark` measures compilation of 65 in-memory modules.
 `pixi run profile-startup` separates Python startup, import, and Pixi overhead.
@@ -95,6 +111,7 @@ Free-threaded Python 3.13 and 3.14 are outside the first release's scope.
 | Extra | Purpose | Verification target |
 | --- | --- | --- |
 | `examples` | Interactive graphics and compute examples | Python 3.12 on Linux x86-64 |
+| `testing` | pytest integration for WESL, compute, and fragment tests | Python 3.12 on Linux x86-64 |
 
 CI installs the extras from PyPI and runs their shaders with Mesa's software
 Vulkan adapter. It verifies numerical results and renders both viewers
@@ -129,6 +146,7 @@ Use `tools/test_artifact.py` with a wheel filename to test that installation
 outside the checkout. Its `--python` option selects Python 3.12 through 3.15.
 Use `--python 3.15t` for the free-threaded interpreter.
 The `--stubtest` option also runs mypy stubtest.
+Use `--extra testing` to verify the pytest plugin and GPU test helpers.
 Use `--extra examples` to install the dependencies and run the examples. `--compute` also
 requires a software Vulkan adapter and runs `tests/test_compute.py`.
 

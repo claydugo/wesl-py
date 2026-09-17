@@ -42,7 +42,7 @@ def test_compute(modules: dict[str, str], *, enabled: bool, expected: int) -> No
             marks=pytest.mark.xfail(
                 strict=True,
                 raises=(AssertionError, wgpu.GPUValidationError),
-                reason="wesl-rs 0.4.4 lowers constants incorrectly",
+                reason="constant lowering does not preserve these expressions",
             ),
         ),
     ],

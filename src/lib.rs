@@ -18,6 +18,8 @@ use wgsl_parse::{
     syntax::{ImportStatement, TranslationUnit},
 };
 
+mod testing;
+
 create_exception!(
     wesl,
     CompileError,
@@ -322,13 +324,48 @@ impl Diagnostic {
 }
 
 enum Failure {
+    Message(String),
     Path(String),
     Compiler(Box<Diagnostic>, String),
 }
 
 impl Failure {
+    fn from_diagnostic(mut diagnostic: wesl::Diagnostic<wesl::Error>) -> Self {
+        if let wesl::Error::ParseError(error) = &mut *diagnostic.error
+            && matches!(error.error, ErrorKind::UnexpectedEof { .. })
+            && let Some(source) = &diagnostic.detail.source
+        {
+            error.span = (source.len()..source.len()).into();
+            diagnostic.detail.span = Some(error.span);
+        }
+        let rendered = diagnostic.render_plain();
+        let span = diagnostic.detail.span.map(|span| {
+            let range = span.range();
+            (range.start, range.end)
+        });
+        let message = match &*diagnostic.error {
+            wesl::Error::ParseError(error) => error.error.to_string(),
+            error => error.to_string(),
+        };
+        Self::Compiler(
+            Box::new(Diagnostic {
+                message,
+                module: diagnostic
+                    .detail
+                    .module_path
+                    .as_ref()
+                    .map(ToString::to_string),
+                filename: diagnostic.detail.display_name,
+                source: diagnostic.detail.source,
+                span,
+            }),
+            rendered,
+        )
+    }
+
     fn into_pyerr(self, py: Python<'_>) -> PyErr {
         match self {
+            Self::Message(message) => PyValueError::new_err(message),
             Self::Path(path) => PyValueError::new_err(format!(
                 "invalid module path {path:?}; expected an absolute module or package name"
             )),
@@ -442,39 +479,7 @@ fn compile(
                     .map(ToString::to_string)
                     .collect(),
             })
-            .map_err(|error| {
-                let mut diagnostic = error.diagnostic();
-                if let wesl::Error::ParseError(error) = &mut *diagnostic.error
-                    && matches!(error.error, ErrorKind::UnexpectedEof { .. })
-                    && let Some(source) = &diagnostic.detail.source
-                {
-                    error.span = (source.len()..source.len()).into();
-                    diagnostic.detail.span = Some(error.span);
-                }
-                let rendered = diagnostic.render_plain();
-                let span = diagnostic.detail.span.map(|span| {
-                    let range = span.range();
-                    (range.start, range.end)
-                });
-                let message = match &*diagnostic.error {
-                    wesl::Error::ParseError(error) => error.error.to_string(),
-                    error => error.to_string(),
-                };
-                Failure::Compiler(
-                    Box::new(Diagnostic {
-                        message,
-                        module: diagnostic
-                            .detail
-                            .module_path
-                            .as_ref()
-                            .map(ToString::to_string),
-                        filename: diagnostic.detail.display_name,
-                        source: diagnostic.detail.source,
-                        span,
-                    }),
-                    rendered,
-                )
-            })
+            .map_err(|error| Failure::from_diagnostic(error.diagnostic()))
     })
     .map_err(|failure| failure.into_pyerr(py))
 }
@@ -485,25 +490,10 @@ fn check_syntax(py: Python<'_>, source: String, filename: String) -> PyResult<()
         source
             .parse::<TranslationUnit>()
             .map(|_| ())
-            .map_err(|mut error| {
-                if matches!(error.error, ErrorKind::UnexpectedEof { .. }) {
-                    error.span = (source.len()..source.len()).into();
-                }
-                let range = error.span.range();
-                let message = error.error.to_string();
+            .map_err(|error| {
                 let mut diagnostic = wesl::Diagnostic::from(error).with_source(source);
                 diagnostic.detail.display_name = Some(filename);
-                let rendered = diagnostic.render_plain();
-                Failure::Compiler(
-                    Box::new(Diagnostic {
-                        message,
-                        module: None,
-                        filename: diagnostic.detail.display_name,
-                        source: diagnostic.detail.source,
-                        span: Some((range.start, range.end)),
-                    }),
-                    rendered,
-                )
+                Failure::from_diagnostic(diagnostic)
             })
     })
     .map_err(|failure| failure.into_pyerr(py))
@@ -526,5 +516,7 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     )?;
     module.add_function(wrap_pyfunction!(compile, module)?)?;
     module.add_function(wrap_pyfunction!(check_syntax, module)?)?;
+    module.add_function(wrap_pyfunction!(testing::_discover_tests, module)?)?;
+    module.add_function(wrap_pyfunction!(testing::_compile_test, module)?)?;
     Ok(())
 }

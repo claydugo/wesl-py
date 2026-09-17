@@ -12,7 +12,7 @@ include = [
     "/pyproject.toml", "/README.md", "/CONTRIBUTING.md", "/API.md", "/CHANGELOG.md", "/LICENSE", "licenses/**", "tests/**",
     "examples/**", "/pixi.toml", "/pixi.lock", "/clippy.toml", "/deny.toml",
     "tools/**", "recipe/**", "/ci/pixi.toml", "/ci/pixi.lock", "/wesl.toml",
-    "/TODO.md", "/ROADMAP.md",
+    "/TODO.md", "/ROADMAP.md", "/TESTING.md",
 ]
 
 [lib]

@@ -54,6 +54,15 @@ The target GPU runtime validates the generated shader and pipeline.
 
 See the [API reference](https://github.com/claydugo/wesl-py/blob/main/API.md) for compilation options and diagnostics.
 
+## Shader tests
+
+Collect WESL `@test` functions with pytest, or test compute and fragment shaders
+from Python with NumPy inputs and assertions. See [TESTING.md](TESTING.md).
+
+```bash
+pixi run -e testing python -m pytest tests/shaders -v
+```
+
 ## Examples
 
 - [SDF playground](examples/sdf/README.md) shares geometry between rendering and particle collisions.

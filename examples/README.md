@@ -39,3 +39,14 @@ pixi run -e examples python -m examples.multiscale.verify
 
 Add `--image` to verify the full TIFF as well as synthetic inputs.
 Synthetic checks do not download the TIFF.
+
+## Shader tests
+
+The [testing examples](testing/README.md) use pytest without an interactive window.
+They cover compilation, native WESL tests, compute dispatch, and fragment images.
+The tour also covers resources from Python fixtures, a texture shared between
+compute and rendering, stored baselines, and an explicit failure demo.
+
+```bash
+pixi run -e testing python -m pytest examples/testing -v
+```

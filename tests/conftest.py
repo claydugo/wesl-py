@@ -1,5 +1,7 @@
 import pytest
 
+pytest_plugins = ["pytester"]
+
 
 @pytest.fixture
 def modules() -> dict[str, str]:

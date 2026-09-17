@@ -47,6 +47,7 @@ with tempfile.TemporaryDirectory(prefix="wesl-sdist-") as temporary_directory:
         ),
         "python/wesl/_native.pyi",
         "python/wesl/py.typed",
+        "python/wesl/_assertions.wesl",
         *project["license-files"],
         *(
             path.relative_to(project_directory)

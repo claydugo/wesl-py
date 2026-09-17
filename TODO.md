@@ -24,3 +24,15 @@ See [ROADMAP.md](ROADMAP.md) for compiler upgrades and future integrations.
 - [ ] Replace the recipe's checkout source with the published PyPI sdist URL and SHA256. [Submission requirements](https://conda-forge.org/docs/maintainer/adding_pkgs/)
 - [ ] Verify the conda package on each intended platform and supported Python version. The recipe builds the regular CPython ABI3 extension. Free-threaded conda packages remain outside this recipe's scope. [conda-forge ABI3 guidance](https://conda-forge.org/docs/maintainer/knowledge_base/#packages-with-abi3-extensions), [Rattler ABI3 recipe](https://rattler-build.prefix.dev/latest/tutorials/python/#an-abi3-compatible-package)
 - [ ] Submit the recipe to `conda-forge/staged-recipes` and resolve its checks before feedstock creation. [Staged recipe process](https://conda-forge.org/docs/maintainer/adding_pkgs/#step-by-step-instructions)
+
+## CI
+- [ ] Why GIL not No-GIL/Freethreading? Did we not implement this?
+- [ ] CI Pins rust and * everything. either star all or pin all. Likely star all.
+
+## Shader testing
+
+- [ ] Add allocation and decoding for buffers declared with upstream resource annotations. Use shader reflection for sizes and layout. Defer this work and the Naga dependency until a concrete test requires it. Use explicit NumPy resources for now.
+
+## Linting
+- [ ] Add ty and pyrefly and pyright to type checking optional dependencies for dev, contribution guide, ci
+- [ ] maybe restructure lib to avoid `ruff check python tests tools examples recipe` -> `ruff check python`
