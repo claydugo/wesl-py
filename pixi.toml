@@ -23,6 +23,7 @@ wesl-py = { path = ".", editable = true }
 no-build-isolation = ["wesl-py"]
 
 [feature.gpu.dependencies]
+numpy = "*"
 wgpu-py = ">=0.31.1"
 
 [feature.examples.pypi-dependencies]

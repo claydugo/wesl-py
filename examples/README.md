@@ -23,6 +23,18 @@ The `examples` environment provides the optional `examples` dependencies.
 The repository's `wesl.toml` sets `examples/` as the shader root for editor tooling.
 The examples pass that root to `compile_file()` for the same `package::` namespace.
 
+## Headless compute
+
+These examples run without a window or downloaded data.
+They require `wesl`, `wgpu`, and NumPy at runtime.
+Each command verifies its output and prints a result.
+Their READMEs describe targeted Python and native WESL tests.
+
+| Example | Run | WESL demonstrates |
+| --- | --- | --- |
+| [Residual RMSNorm](rmsnorm/README.md) | `pixi run -e gpu python -m examples.rmsnorm` | Fuse an ML normalization and specialize imported input logic. |
+| [Stable compaction](compaction/README.md) | `pixi run -e gpu python -m examples.compaction` | Share a predicate across a hierarchical scan and scatter. |
+
 ## Verify
 
 Run the SDF checks without opening a window:
