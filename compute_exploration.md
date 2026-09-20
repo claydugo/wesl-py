@@ -150,7 +150,7 @@ The internal scan variant also removes the threshold declaration.
 Run only the new tests:
 
 ```bash
-pixi run -e testing python -m pytest tests/test_rmsnorm.py tests/test_compaction.py examples/rmsnorm examples/compaction --wesl-gpu=required -q
+pixi run test tests/examples/test_rmsnorm.py tests/examples/test_compaction.py tests/examples/rmsnorm tests/examples/compaction -q
 ```
 
 The final targeted run passes 68 tests with no skips on the RTX 4090.
@@ -170,7 +170,7 @@ They verify output dtypes and reject incorrect shapes or an incorrect compaction
 Native tests also collect without GPU dependencies:
 
 ```bash
-pixi run python -m pytest examples/rmsnorm examples/compaction --collect-only -q
+pixi run python -m pytest tests/examples/rmsnorm tests/examples/compaction --collect-only -q
 ```
 
 This command collects four tests.

@@ -139,7 +139,7 @@ Pass resources and constants to Python execution calls explicitly.
 The `wesl_resources` and `wesl_constants` fixtures supply these arguments to
 collected WESL tests.
 
-See the [executable examples](examples/testing/README.md) for shared feature flags,
+See the [executable examples](tests/examples/testing/README.md) for shared feature flags,
 compute dispatch, texture sampling, image comparisons, and compilation failures.
 
 ### Resources
@@ -232,8 +232,8 @@ the values. Keep approved baselines in version control.
 
 Use `--force-regen` with a selected test to update a mismatched baseline.
 The update fails that test; run it again to verify the new baseline.
-See the [snapshot example](examples/testing/test_snapshot.py) and its
-[update commands](examples/testing/README.md).
+See the [snapshot example](tests/examples/testing/test_snapshot.py) and its
+[update commands](tests/examples/testing/README.md).
 
 This comparison reports numerical differences by array index.
 For PNG baselines and visual differences, use the plugin's

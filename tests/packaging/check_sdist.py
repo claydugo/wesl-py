@@ -12,7 +12,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("archive", type=Path)
 arguments = parser.parse_args()
 arguments.archive = arguments.archive.resolve(strict=True)
-project_directory = Path(__file__).resolve().parents[1]
+project_directory = Path(__file__).resolve().parents[2]
 platform = json.loads(subprocess.check_output(["pixi", "info", "--json"], text=True))[
     "platform"
 ]
@@ -51,7 +51,8 @@ with tempfile.TemporaryDirectory(prefix="wesl-sdist-") as temporary_directory:
         *project["license-files"],
         *(
             path.relative_to(project_directory)
-            for path in project_directory.glob("tests/*.py")
+            for pattern in ("**/*.py", "**/*.wesl", "**/*.npz", "**/*.md")
+            for path in (project_directory / "tests").glob(pattern)
         ),
     ):
         assert (source / filename).read_bytes() == (

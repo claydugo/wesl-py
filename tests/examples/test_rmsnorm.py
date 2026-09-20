@@ -26,7 +26,7 @@ def wesl_options(request: pytest.FixtureRequest) -> wesl.CompileOptions:
 
 @pytest.fixture
 def wesl_root_directory() -> Path:
-    return Path(__file__).parents[1] / "examples"
+    return Path(__file__).parents[2] / "examples"
 
 
 @pytest.mark.gpu

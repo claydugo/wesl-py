@@ -57,7 +57,7 @@ It is not a kernel benchmark.
 ## Tests
 
 ```bash
-pixi run -e testing python -m pytest tests/test_rmsnorm.py examples/rmsnorm --wesl-gpu=required -q
+pixi run test tests/examples/test_rmsnorm.py tests/examples/rmsnorm -q
 ```
 
 `ShaderRunner.compute()` compares the shader with a float64 NumPy reference.
@@ -70,12 +70,12 @@ Separate tests exercise the Python driver and invalid dimensions.
 They also verify transposed inputs and sliced weights.
 Boundary tests reject a subnormal epsilon and accept the smallest normal f32 epsilon.
 
-Pytest discovers [test_row.wesl](test_row.wesl) as native shader tests.
-[conftest.py](conftest.py) supplies feature variants, buffers, and pipeline constants.
+Pytest discovers [test_row.wesl](../../tests/examples/rmsnorm/test_row.wesl) as native shader tests.
+[conftest.py](../../tests/examples/rmsnorm/conftest.py) supplies feature variants, buffers, and pipeline constants.
 The tests import the same input and scale functions as the compute kernel.
 
 Collect the native tests without GPU dependencies:
 
 ```bash
-pixi run python -m pytest examples/rmsnorm --collect-only -q
+pixi run python -m pytest tests/examples/rmsnorm --collect-only -q
 ```

@@ -7,19 +7,19 @@ and supply test data. NumPy provides numerical references.
 Run the examples from the repository root:
 
 ```bash
-pixi run -e testing python -m pytest examples/testing -v
+pixi run -e testing python -m pytest tests/examples/testing -v
 ```
 
 Run the compilation tests and collect the native tests without GPU dependencies:
 
 ```bash
-pixi run python -m pytest examples/testing/test_compilation.py -v
-pixi run python -m pytest examples/testing/shaders --collect-only -q
+pixi run python -m pytest tests/examples/testing/test_compilation.py -v
+pixi run python -m pytest tests/examples/testing/shaders --collect-only -q
 ```
 
 The `wesl_compiler` fixture reads the shared compilation configuration.
 The `wesl_runner` fixture provides GPU execution.
-The `pytest.ini` file sets `shaders/` as the package root.
+The `wesl_root_directory` fixture sets `shaders/` as the package root.
 Calls to `wesl_compiler.compile_file()` resolve relative paths from that root.
 
 The `wesl_options` fixture selects clamped and unclamped implementations.
@@ -48,7 +48,7 @@ The `negative_values_clamp_to_zero` test skips for the linear variant.
 Next, run the tests that use Python resources:
 
 ```bash
-pixi run -e testing python -m pytest examples/testing/shaders/buffers -v
+pixi run -e testing python -m pytest tests/examples/testing/shaders/buffers -v
 ```
 
 The local [conftest.py](shaders/buffers/conftest.py) supplies two buffers through
@@ -71,13 +71,13 @@ The fragment cases use images of size 2 by 2, 4 by 2, and 2 by 4.
 Run only these numerical checks with:
 
 ```bash
-pixi run -e testing python -m pytest examples/testing/test_compute.py examples/testing/test_fragment.py -v
+pixi run -e testing python -m pytest tests/examples/testing/test_compute.py tests/examples/testing/test_fragment.py -v
 ```
 
 The [pipeline test](test_pipeline.py) joins compute and rendering:
 
 ```bash
-pixi run -e testing python -m pytest examples/testing/test_pipeline.py -v
+pixi run -e testing python -m pytest tests/examples/testing/test_pipeline.py -v
 ```
 
 The test creates a texture and passes it to both calls.
@@ -97,8 +97,8 @@ relative and absolute tolerances. It reports differences by array index.
 Update only the selected snapshots after an intentional change:
 
 ```bash
-pixi run -e testing python -m pytest examples/testing/test_snapshot.py --force-regen
-pixi run -e testing python -m pytest examples/testing/test_snapshot.py
+pixi run -e testing python -m pytest tests/examples/testing/test_snapshot.py --force-regen
+pixi run -e testing python -m pytest tests/examples/testing/test_snapshot.py
 ```
 
 The first command updates mismatched baselines and fails those tests.
@@ -114,8 +114,8 @@ Select the file explicitly to see the shader location, actual value, expected
 value, tolerance, and assertion count:
 
 ```bash
-pixi run -e testing python -m pytest examples/testing/shaders/failure_demo.wesl -k clamped -v --junitxml=failure.xml
-pixi run -e testing python -m pytest examples/testing/shaders/failure_demo.wesl -k clamped --tb=line
+pixi run -e testing python -m pytest tests/examples/testing/shaders/failure_demo.wesl -k clamped -v --junitxml=failure.xml
+pixi run -e testing python -m pytest tests/examples/testing/shaders/failure_demo.wesl -k clamped --tb=line
 ```
 
 Both commands fail intentionally. The first command also records the assertion
@@ -126,8 +126,8 @@ details in `failure.xml`. The second command shows concise terminal output.
 Use normal pytest selection and reporting:
 
 ```bash
-pixi run -e testing python -m pytest examples/testing -k clamped -v
-pixi run -e testing python -m pytest examples/testing/shaders/buffers -k double_gain -v
-pixi run -e testing python -m pytest examples/testing -m wesl -v
-pixi run -e testing python -m pytest examples/testing -n 2 --junitxml=results.xml
+pixi run -e testing python -m pytest tests/examples/testing -k clamped -v
+pixi run -e testing python -m pytest tests/examples/testing/shaders/buffers -k double_gain -v
+pixi run -e testing python -m pytest tests/examples/testing -m wesl -v
+pixi run -e testing python -m pytest tests/examples/testing -n 2 --junitxml=results.xml
 ```

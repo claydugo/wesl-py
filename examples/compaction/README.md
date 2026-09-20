@@ -50,7 +50,7 @@ It is not a kernel benchmark or a speed comparison with Python.
 ## Tests
 
 ```bash
-pixi run -e testing python -m pytest tests/test_compaction.py examples/compaction --wesl-gpu=required -q
+pixi run test tests/examples/test_compaction.py tests/examples/compaction -q
 ```
 
 `ShaderRunner.compute()` checks local prefixes and block totals against NumPy.
@@ -60,12 +60,12 @@ Cases cross the 128-element and 16,384-element hierarchy boundaries.
 They include empty input, full selection, empty selection, and both predicates.
 Thresholds cover zero, the equality boundary, and the largest u32.
 
-Pytest discovers [test_predicate.wesl](test_predicate.wesl) as native shader tests.
-[conftest.py](conftest.py) supplies both predicate variants and the threshold override.
+Pytest discovers [test_predicate.wesl](../../tests/examples/compaction/test_predicate.wesl) as native shader tests.
+[conftest.py](../../tests/examples/compaction/conftest.py) supplies both predicate variants and the threshold override.
 The tests import the predicate used by both production passes.
 
 Collect the native tests without GPU dependencies:
 
 ```bash
-pixi run python -m pytest examples/compaction --collect-only -q
+pixi run python -m pytest tests/examples/compaction --collect-only -q
 ```

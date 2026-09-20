@@ -3,6 +3,10 @@ import pytest
 pytest_plugins = ["pytester"]
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption("--image", action="store_true", help="Also verify the full TIFF.")
+
+
 @pytest.fixture
 def modules() -> dict[str, str]:
     return {

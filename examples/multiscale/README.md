@@ -61,7 +61,7 @@ Set its gain to one, zoom into the branches, and change the scale.
 The strength controls how much of that spatial detail returns to the original.
 Toggle the tiled implementation to compare the same calculation with shared samples.
 
-`verify.py` compares both variants with separable NumPy convolution.
+[test_multiscale.py](../../tests/examples/test_multiscale.py) compares both variants with separable NumPy convolution.
 It checks each Gaussian result and the final enhancement.
 Inputs include single pixels, edge impulses, separate channel signals,
 and random arrays with dimensions that do not divide the workgroup size.

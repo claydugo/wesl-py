@@ -14,7 +14,7 @@ from packaging.requirements import Requirement
 from packaging.tags import parse_tag
 from packaging.utils import canonicalize_name, parse_wheel_filename
 
-project_directory = Path(__file__).resolve().parents[1]
+project_directory = Path(__file__).resolve().parents[2]
 project = tomllib.loads((project_directory / "pyproject.toml").read_text())["project"]
 parser = argparse.ArgumentParser()
 parser.add_argument("wheel", type=Path)
@@ -145,34 +145,17 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
             else ""
         )
     )
-    (directory / "tests").mkdir()
     shutil.copyfile(project_directory / "pyproject.toml", directory / "pyproject.toml")
-    for filename in (
-        "conftest.py",
-        "test_compile.py",
-        "test_check_syntax.py",
-        "test_diagnostics.py",
-        "test_sources.py",
-        "test_compute.py",
-        "test_rmsnorm.py",
-        "test_compaction.py",
-        "test_example_render.py",
-        "test_sdf.py",
-        "test_testing.py",
-        "test_pytest_plugin.py",
-    ):
-        shutil.copyfile(
-            project_directory / "tests" / filename, directory / "tests" / filename
-        )
+    shutil.copytree(
+        project_directory / "tests",
+        directory / "tests",
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
     if arguments.extra:
         shutil.copytree(
             project_directory / "examples",
             directory / "examples",
             ignore=shutil.ignore_patterns("__pycache__"),
-        )
-    if arguments.extra == "testing":
-        shutil.copytree(
-            project_directory / "tests/shaders", directory / "tests/shaders"
         )
     subprocess.run(
         [
@@ -252,19 +235,15 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
         )
     if arguments.extra == "examples":
         subprocess.run(
-            ["pixi", "run", "python", "-m", "examples.multiscale.verify"],
-            cwd=directory,
-            check=True,
-        )
-        subprocess.run(
             [
                 "pixi",
                 "run",
                 "python",
                 "-m",
                 "pytest",
-                "tests/test_example_render.py",
-                "tests/test_sdf.py",
+                "tests/examples/test_multiscale.py",
+                "tests/examples/test_example_render.py",
+                "tests/examples/test_sdf.py",
                 "-q",
             ],
             cwd=directory,
@@ -280,24 +259,12 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
                 "pytest",
                 "tests/test_testing.py",
                 "tests/test_pytest_plugin.py",
-                "tests/test_rmsnorm.py",
-                "tests/test_compaction.py",
+                "tests/examples/test_rmsnorm.py",
+                "tests/examples/test_compaction.py",
                 "tests/shaders",
-                "examples/rmsnorm",
-                "examples/compaction",
-                "-q",
-            ],
-            cwd=directory,
-            check=True,
-        )
-        subprocess.run(
-            [
-                "pixi",
-                "run",
-                "python",
-                "-m",
-                "pytest",
-                "examples/testing",
+                "tests/examples/rmsnorm",
+                "tests/examples/compaction",
+                "tests/examples/testing",
                 "-q",
             ],
             cwd=directory,
@@ -330,6 +297,7 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
         for filename in (
             "test_compile.py",
             "test_check_syntax.py",
+            "test_threading.py",
             "test_diagnostics.py",
             "test_sources.py",
         ):

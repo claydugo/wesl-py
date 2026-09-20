@@ -100,6 +100,78 @@ impl Resolver for TestResolver {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selected_test_and_entry_point_share_conditional_attributes()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let root: ModulePath = "package::main".parse()?;
+        let mut inner = ModuleResolver {
+            modules: VirtualResolver::new(),
+            filenames: HashMap::new(),
+            files: None,
+        };
+        inner.modules.add_module(
+            root.clone(),
+            "@if(enabled) @test fn selected() {}".to_owned().into(),
+        );
+        let resolver = TestResolver {
+            inner,
+            root: root.clone(),
+            test_name: "selected".to_owned(),
+            entry_point: "entry".to_owned(),
+        };
+
+        let syntax = resolver.resolve_module(&root)?;
+        let source = syntax.to_string();
+
+        if !source.contains("@if(enabled)") {
+            return Err("conditional attribute is missing".into());
+        }
+        if !source.contains("@test") || !source.contains("fn selected()") {
+            return Err("selected test is missing".into());
+        }
+        if !source.contains("@compute @workgroup_size(1)") || !source.contains("fn entry()") {
+            return Err("compute entry point is missing".into());
+        }
+        if !source.contains("wgsl_test::begin();")
+            || !source.contains("selected();")
+            || !source.contains("wgsl_test::finish();")
+        {
+            return Err("test tracking calls are missing from the wrapper".into());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn unconditional_test_gets_a_true_condition() -> Result<(), Box<dyn std::error::Error>> {
+        let root: ModulePath = "package::main".parse()?;
+        let mut inner = ModuleResolver {
+            modules: VirtualResolver::new(),
+            filenames: HashMap::new(),
+            files: None,
+        };
+        inner
+            .modules
+            .add_module(root.clone(), "@test fn selected() {}".to_owned().into());
+        let resolver = TestResolver {
+            inner,
+            root: root.clone(),
+            test_name: "selected".to_owned(),
+            entry_point: "entry".to_owned(),
+        };
+
+        let syntax = resolver.resolve_module(&root)?;
+
+        if !syntax.to_string().contains("@if(true)") {
+            return Err("unconditional test has no true condition".into());
+        }
+        Ok(())
+    }
+}
+
 #[pyfunction]
 pub(super) fn _discover_tests(
     py: Python<'_>,

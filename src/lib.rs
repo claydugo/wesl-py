@@ -499,7 +499,7 @@ fn check_syntax(py: Python<'_>, source: String, filename: String) -> PyResult<()
     .map_err(|failure| failure.into_pyerr(py))
 }
 
-#[pymodule]
+#[pymodule(gil_used = false)]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<Diagnostic>()?;
     module.add_class::<CompileResult>()?;

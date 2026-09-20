@@ -40,13 +40,13 @@ Their READMEs describe targeted Python and native WESL tests.
 Run the SDF checks without opening a window:
 
 ```bash
-pixi run -e examples python -m pytest tests/test_sdf.py -q
+pixi run -e examples python -m pytest tests/examples/test_sdf.py -q
 ```
 
 Compare the multiscale GPU results with NumPy:
 
 ```bash
-pixi run -e examples python -m examples.multiscale.verify
+pixi run test tests/examples/test_multiscale.py
 ```
 
 Add `--image` to verify the full TIFF as well as synthetic inputs.
@@ -54,11 +54,11 @@ Synthetic checks do not download the TIFF.
 
 ## Shader tests
 
-The [testing examples](testing/README.md) use pytest without an interactive window.
+The [testing examples](../tests/examples/testing/README.md) use pytest without an interactive window.
 They cover compilation, native WESL tests, compute dispatch, and fragment images.
 The tour also covers resources from Python fixtures, a texture shared between
 compute and rendering, stored baselines, and an explicit failure demo.
 
 ```bash
-pixi run -e testing python -m pytest examples/testing -v
+pixi run -e testing python -m pytest tests/examples/testing -v
 ```

@@ -397,7 +397,7 @@ def test_failure_traceback_styles(pytester: pytest.Pytester, style: str) -> None
         )
     else:
         result.stdout.fnmatch_lines(
-            ["*python/wesl/pytest_plugin.py*", "*ShaderAssertionError:*"],
+            ["*wesl?pytest_plugin.py*", "*ShaderAssertionError:*"],
         )
 
 

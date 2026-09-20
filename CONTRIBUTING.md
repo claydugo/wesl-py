@@ -11,29 +11,32 @@ pixi install --locked
 pixi reinstall wesl-py
 pixi run lint
 pixi run format-check
-pixi run -e dev stubtest
-pixi run -e testing ty check python/wesl tools/benchmark.py tools/profile_startup.py
-pixi run rust-format-check
-pixi run clippy
-pixi run machete
-pixi run deny
-pixi run audit
-pixi run licenses
+pixi run test-freethreading
+pixi run check-dependencies
 ```
 
-The local `dev` environment provides mypy for stubtest.
+The local `dev` environment provides mypy for stubtest, plus ty, Pyrefly, and Pyright.
+The `typechecking` extra declares the three type checkers for other environments.
 
-Stubtest checks the compiled extension. Run `ty` in the `testing` environment
-to check the Python API with its optional dependencies.
+Stubtest checks the compiled extension. The type checkers check the Python API.
+The `dev` environment includes
+the optional GPU dependencies needed to resolve their types.
+
+`pixi run lint` runs Ruff, Clippy, all three type checkers, and stubtest.
+`pixi run format` applies Ruff and rustfmt. `pixi run format-check` checks both.
+Ruff discovers Python files from the repository root.
+All tests and verification scripts live under `tests/`.
+Application examples live under `examples/`.
 
 Cargo denies Clippy's `all` and `pedantic` groups and selected restriction
 and nursery lints. `clippy.toml` sets the complexity limits. The Python
 binding uses reasoned `expect` attributes for its argument count and length.
 
-Pixi installs the dependency tools. Machete checks the binding manifest.
+`pixi run check-dependencies` runs Machete and Cargo-deny.
+Machete checks the binding manifest.
 Cargo-deny checks dependencies against the license list in `deny.toml`.
-Cargo-deny and Cargo-audit check the RustSec advisory database.
-The workflow runs the Rust checks, Ruff, formatting, and ty on Linux.
+Cargo-deny also checks the RustSec advisory database.
+The workflow runs the Rust checks, Ruff, formatting, and all three type checkers on Linux.
 The artifact tests run stubtest against installed wheels on each platform.
 
 The project declares MIT in `LICENSE`, `Cargo.toml`, and `pyproject.toml`.
@@ -42,7 +45,8 @@ Maturin includes a CycloneDX SBOM in each wheel's `.dist-info/sboms/` directory.
 The SBOM records Cargo dependencies and their declared licenses.
 It does not replace the license files that accompany each artifact.
 
-`pixi run licenses` checks the dependency licenses against `licenses/THIRDPARTY.yml`.
+`tests/packaging/test_licenses.py` checks the dependency licenses against
+`licenses/THIRDPARTY.yml` as part of the pytest suite.
 It also rejects empty license lists and empty license text.
 After changing dependencies, regenerate the bundle and review its changes:
 
@@ -62,8 +66,7 @@ These versions come from Rust's [library lockfile](https://github.com/rust-lang/
 Refresh these notices when changing the Rust version used for release wheels.
 Use Rust's [copyright documentation](https://github.com/rust-lang/rust/blob/1.97.1/COPYRIGHT) to locate the upstream notices.
 
-Use `pixi run format` to apply Python formatting. Run the test files that
-cover the change:
+Run the test files that cover the change:
 
 ```bash
 pixi run python -m pytest tests/test_compile.py -q
@@ -75,6 +78,34 @@ pixi run -e testing python -m pytest tests/test_testing.py tests/test_pytest_plu
 pixi run -e testing-minimum python -m pytest tests/test_pytest_plugin.py -q
 ```
 
+Use `pixi run test` when you need to run all repository tests and shader examples.
+This task runs one pytest session that collects `tests/`.
+Example tests, shader tests, snapshots, and the license check run in that session.
+Cargo has no standalone unit tests in this binding.
+The Python tests exercise the native Rust extension.
+
+The task selects the `testing` environment for Python tests.
+That environment includes the example dependencies and pytest plugins.
+Directory fixtures select shader roots and keep example parameters local.
+The root configuration uses importlib mode so test filenames can repeat.
+
+`tests/examples/` contains tests for the application examples and shader testing
+examples. `tests/packaging/` contains the license test and artifact verification
+scripts. The artifact scripts take a built wheel or source archive as an argument.
+
+GPU tests require a Vulkan adapter. On Linux, Mesa's software adapter also works.
+Window tests require a display. To include them on a machine without a display,
+install Xvfb and xauth, then run `xvfb-run -a pixi run test`.
+Without a display, pytest skips the two window tests.
+
+The `freethreading` environment installs a separate copy of the extension on
+Python 3.15t. `pixi run test-freethreading` verifies import
+without the GIL and concurrent compilation, diagnostics, and shader instrumentation.
+The native module declares `gil_used = false`. Each native operation copies its
+Python inputs, then detaches from Python while Rust parses or compiles.
+Regular CPython releases the GIL during this work.
+Concurrent calls can share inputs when callers do not modify those inputs.
+
 The pytest plugin delegates parametrization to pytest's collection hook.
 It keeps each collected item and its plugin state.
 It attaches WESL setup and reporting methods to the item.
@@ -85,10 +116,6 @@ The plugin tests cover this private access on the minimum and current pytest ver
 The `pytest_generate_tests` hook exposes each shader callable during collection.
 The collector then removes it from the synthetic module.
 This prevents shader names from becoming Python hooks during subsequent collection.
-
-`pixi run benchmark` measures compilation of 65 in-memory modules.
-`pixi run profile-startup` separates Python startup, import, and Pixi overhead.
-Both commands report their units and measurement settings as JSON.
 
 ## Support
 
@@ -112,19 +139,29 @@ Free-threaded Python 3.13 and 3.14 are outside the first release's scope.
 | --- | --- | --- |
 | `examples` | Interactive graphics and compute examples | Python 3.12 on Linux x86-64 |
 | `testing` | pytest integration for WESL, compute, and fragment tests | Python 3.12 on Linux x86-64 |
+| `typechecking` | ty, Pyrefly, and Pyright | Python 3.12 on Linux x86-64 |
 
 CI installs the extras from PyPI and runs their shaders with Mesa's software
 Vulkan adapter. It verifies numerical results and renders both viewers
 offscreen. Interactive use requires a window server and a supported graphics
 adapter. The artifact workflow does not test window events.
-Extras have no verified free-threaded support yet.
+GPU extras have no verified free-threaded support yet.
+
+Minimum versions define the supported dependency baseline.
+The `testing` extra starts at NumPy 1.26 for
+[Python 3.12 support](https://numpy.org/doc/1.26/release/1.26.0-notes.html).
+The examples require NumPy 2.1 to satisfy pygfx 0.17.
+The examples use rendercanvas 2.7.2 as the baseline for window tests.
+The existing imgui-bundle upper bound preserves compatibility
+with the wgpu ImGui integration.
+Development tools have minimum versions; lockfiles record their exact versions.
 
 ## Artifacts
 
 ```bash
 pixi run maturin build --release --locked --out dist
 pixi run --locked --manifest-path ci/pixi.toml maturin sdist --out dist
-pixi run --locked --manifest-path ci/pixi.toml python tools/test_sdist.py dist/wesl_py-0.1.0.tar.gz
+pixi run --locked --manifest-path ci/pixi.toml python tests/packaging/check_sdist.py dist/wesl_py-0.1.0.tar.gz
 pixi run --locked --manifest-path ci/pixi.toml twine check --strict dist/*
 ```
 
@@ -142,7 +179,7 @@ archive contents and installs the sdist into a temporary Pixi environment.
 Pixi uses build isolation to install the requirements from `pyproject.toml`.
 The test environment provides Python and Rust. It does not provide Maturin.
 
-Use `tools/test_artifact.py` with a wheel filename to test that installation
+Use `tests/packaging/check_artifact.py` with a wheel filename to test that installation
 outside the checkout. Its `--python` option selects Python 3.12 through 3.15.
 Use `--python 3.15t` for the free-threaded interpreter.
 The `--stubtest` option also runs mypy stubtest.
@@ -157,7 +194,7 @@ Its `--platform-tag` option requires the expected wheel tag. CI requires
 `manylinux_2_28_x86_64`, `macosx_11_0_arm64`, or `win_amd64` for each platform.
 The macOS build sets `MACOSX_DEPLOYMENT_TARGET=11.0`.
 
-`tools/test_wheel_native.py` audits each wheel with auditwheel on Linux,
+`tests/packaging/check_wheel_native.py` audits each wheel with auditwheel on Linux,
 delocate on macOS, or delvewheel on Windows. It rejects unsupported Linux
 symbol versions, external libraries, and absolute RPATHs.
 
@@ -167,8 +204,13 @@ x86-64 and the Python DLL for the wheel's ABI. Repair tools run on temporary
 copies. The audit rejects changes to native files or the addition of files.
 These checks do not replace testing on the minimum supported OS.
 
-The workflow builds wheels for Linux, macOS, and Windows with Rust 1.97.1.
-This matches the minimum in `Cargo.toml`.
+The artifact workspace uses `*` for tool requirements and locks their versions
+in `ci/pixi.lock`. Python selectors define the interpreter versions under test.
+`python-gil` selects regular Python 3.15 for the build environment.
+The artifact tests separately select `python-freethreading` for Python 3.15t.
+The Linux wheel builds read Rust and Maturin versions from the locked environment.
+The current lock uses Rust 1.97.1, which matches the minimum in `Cargo.toml`.
+
 The runners use Ubuntu 24.04, macOS 26, and Windows Server 2025.
 The manylinux container and macOS deployment target set wheel compatibility
 independently of the runner version.

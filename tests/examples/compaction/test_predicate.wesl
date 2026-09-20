@@ -1,4 +1,4 @@
-import package::compaction::predicate::selected;
+import package::examples::compaction::predicate::selected;
 import wgsl_test::expectEq;
 
 @test

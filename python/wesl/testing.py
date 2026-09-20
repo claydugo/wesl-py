@@ -1,7 +1,7 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
 from os import PathLike, fspath
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -208,7 +208,9 @@ class _Resources:
                     resource.size,
                 )
             outputs[binding] = (
-                np.frombuffer(data, dtype=array.dtype, count=array.size)
+                np.frombuffer(
+                    cast("memoryview", data), dtype=array.dtype, count=array.size
+                )
                 .reshape(array.shape)
                 .copy()
             )
@@ -322,7 +324,7 @@ class ShaderRunner:
                 (*size, 1),
             )
             return (
-                np.frombuffer(data, dtype=np.float32)
+                np.frombuffer(cast("memoryview", data), dtype=np.float32)
                 .reshape(size[1], size[0], 4)
                 .copy()
             )
