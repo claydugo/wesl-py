@@ -9,11 +9,10 @@ import wesl
 
 if TYPE_CHECKING:
     import wgpu
-    from wesl.testing import ShaderRunner
 
 numpy = pytest.importorskip("numpy")
 pytest.importorskip("wgpu")
-Buffer = import_module("wesl.testing").Buffer
+compute_with_buffers = import_module("wgpu.utils.compute").compute_with_buffers
 normalize = import_module("examples.rmsnorm.compute").normalize
 
 
@@ -34,7 +33,6 @@ def wesl_root_directory() -> Path:
 @pytest.mark.parametrize("epsilon", [1e-6, 0.25])
 def test_normalize(
     wesl_compiler: wesl.Compiler,
-    wesl_runner: ShaderRunner,
     width: int,
     epsilon: float,
 ) -> None:
@@ -45,12 +43,12 @@ def test_normalize(
     residual[0] = 0
     weights = numpy.linspace(-1, 2, width, dtype=numpy.float32)
     resources = {
-        (0, 0): Buffer(data=values),
-        (0, 2): Buffer(data=weights),
-        (0, 3): Buffer(data=numpy.full_like(values, numpy.nan)),
+        0: values,
+        2: weights,
+        3: numpy.full_like(values, numpy.nan),
     }
     if wesl_compiler.options.features.flags["residual"]:
-        resources[0, 1] = Buffer(data=residual)
+        resources[1] = residual
         combined = (values + residual).astype(numpy.float64)
     else:
         combined = values.astype(numpy.float64)
@@ -59,13 +57,14 @@ def test_normalize(
         / numpy.sqrt(numpy.mean(combined**2, axis=1, keepdims=True) + epsilon)
         * weights
     )
-    output = wesl_runner.compute(
-        wesl_compiler.compile_file("rmsnorm/normalize.wesl"),
-        resources=resources,
-        workgroups=3,
+    output = compute_with_buffers(
+        resources,
+        {3: (3, width, "f")},
+        wesl_compiler.compile_file("rmsnorm/normalize.wesl").wgsl,
+        n=3,
         constants={"0": width, "1": epsilon},
     )
-    numpy.testing.assert_allclose(output[0, 3], expected, rtol=2e-5, atol=2e-6)
+    numpy.testing.assert_allclose(output[3], expected, rtol=2e-5, atol=2e-6)
 
 
 @pytest.mark.gpu

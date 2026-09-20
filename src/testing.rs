@@ -8,8 +8,8 @@ use wesl::{
 use wgsl_parse::{
     SyntaxNode,
     syntax::{
-        Attribute, DeclarationKind, Expression, GlobalDeclaration, LiteralExpression, PathOrigin,
-        Spanned, Statement, TranslationUnit,
+        Attribute, DeclarationKind, Expression, GlobalDeclaration, Ident, ImportContent,
+        LiteralExpression, PathOrigin, Spanned, Statement, TranslationUnit,
     },
 };
 
@@ -59,7 +59,7 @@ impl Resolver for TestResolver {
             {
                 if let GlobalDeclaration::Function(function) = &mut **declaration {
                     let mut wrapper: TranslationUnit = format!(
-                        "@compute @workgroup_size(1) fn {}() {{ wgsl_test::begin(); {}(); wgsl_test::finish(); }}",
+                        "@compute @workgroup_size(1) fn {}() {{ wgsl_test::TestResult::initTestResult(); {}(); wgsl_test::TestResult::testResult.completed = 1u; }}",
                         self.entry_point, self.test_name,
                     ).parse().map_err(|error| ResolveError::Error(wesl::Diagnostic::from(error)))?;
                     let mut conditions: Vec<_> = function
@@ -136,9 +136,9 @@ mod tests {
         if !source.contains("@compute @workgroup_size(1)") || !source.contains("fn entry()") {
             return Err("compute entry point is missing".into());
         }
-        if !source.contains("wgsl_test::begin();")
+        if !source.contains("wgsl_test::TestResult::initTestResult();")
             || !source.contains("selected();")
-            || !source.contains("wgsl_test::finish();")
+            || !source.contains("wgsl_test::TestResult::testResult.completed = 1u;")
         {
             return Err("test tracking calls are missing from the wrapper".into());
         }
@@ -173,7 +173,7 @@ mod tests {
 }
 
 #[pyfunction]
-pub(super) fn _discover_tests(
+pub(super) fn discover_tests(
     py: Python<'_>,
     source: String,
     filename: String,
@@ -216,7 +216,7 @@ type CompiledTest = Option<(String, String, Vec<Diagnostic>, HashMap<String, Str
     clippy::cognitive_complexity,
     reason = "The binding compiles and instruments one shader while detached from Python"
 )]
-pub(super) fn _compile_test(
+pub(super) fn compile_test(
     py: Python<'_>,
     modules: &Bound<'_, PyMapping>,
     root: String,
@@ -279,6 +279,17 @@ pub(super) fn _compile_test(
                 "shader test {test_name:?} does not exist"
             )));
         }
+        let mut imports: Vec<_> = syntax.imports.iter().map(|import| &import.content).collect();
+        while let Some(content) = imports.pop() {
+            match content {
+                ImportContent::Item(item) => names.push(
+                    item.rename.as_ref().unwrap_or(&item.ident).name().to_string(),
+                ),
+                ImportContent::Collection(collection) => {
+                    imports.extend(collection.iter().map(|import| &import.content));
+                }
+            }
+        }
         let mut entry_point = "wesl_test_entry".to_owned();
         while names.contains(&entry_point) {
             entry_point.push('_');
@@ -286,8 +297,14 @@ pub(super) fn _compile_test(
         let assertion_module = module_path("wgsl_test")?;
         resolver.modules.add_module(
             assertion_module.clone(),
-            include_str!("../python/wesl/_assertions.wesl")
-                .replace("WESL_TEST_BINDING", &result_binding.to_string())
+            include_str!("../python/wesl/wgsl_test/lib.wesl").into(),
+        );
+        let result_module = module_path("wgsl_test::TestResult")?;
+        resolver.modules.add_module(
+            result_module.clone(),
+            include_str!("../python/wesl/wgsl_test/TestResult.wesl")
+                .replace("@binding(0)", &format!("@binding({result_binding})"))
+                .replace("expected: vec4f,", "expected: vec4f, site: u32, completed: u32, checks: u32,")
                 .into(),
         );
         options.keep = Some(vec![entry_point.clone()]);
@@ -303,9 +320,16 @@ pub(super) fn _compile_test(
         compiler.set_options(options);
         compiler.set_mangler(wesl::ManglerKind::Escape);
         compiler.use_sourcemap(false);
-        let mut result = compiler
-            .compile(&root)
-            .map_err(|error| Failure::from_diagnostic(error.diagnostic()))?;
+        let mut result = compiler.compile(&root).map_err(|error| {
+            let mut diagnostic = error.diagnostic();
+            if diagnostic.detail.source.is_none()
+                && let Some(module) = &diagnostic.detail.module_path
+                && let Ok(source) = compiler.resolver().resolve_source(module)
+            {
+                diagnostic = diagnostic.with_source(source.into_owned());
+            }
+            Failure::from_diagnostic(diagnostic)
+        })?;
         let mut sourcemap = BasicSourceMap::new();
         for module in &result.modules {
             let source = compiler
@@ -327,7 +351,7 @@ pub(super) fn _compile_test(
         }
         result.sourcemap = Some(sourcemap);
         let mut assertions = HashMap::new();
-        let mut location_name = None;
+        let mut result_name = None;
         let mut compiled_entry = None;
         let mut overrides = HashMap::new();
         for declaration in &result.syntax.global_declarations {
@@ -337,9 +361,9 @@ pub(super) fn _compile_test(
                 if module == &assertion_module {
                     if name.starts_with("expect") {
                         assertions.insert(ident.name().to_string(), name.to_owned());
-                    } else if name == "location" {
-                        location_name = Some(ident.name().to_string());
                     }
+                } else if module == &result_module && name == "testResult" {
+                    result_name = Some(ident.name().to_string());
                 } else if module == &root {
                     if name == entry_point {
                         compiled_entry = Some(ident.name().to_string());
@@ -371,7 +395,11 @@ pub(super) fn _compile_test(
         let Some(compiled_entry) = compiled_entry else {
             return Ok(None);
         };
+        let result_name = result_name.ok_or_else(|| {
+            Failure::Message("shader test result is missing".to_owned())
+        })?;
         let mut sites = Vec::new();
+        let mut wrappers = Vec::new();
         for declaration in &mut result.syntax.global_declarations {
             let GlobalDeclaration::Function(function) = &mut **declaration else {
                 continue;
@@ -386,53 +414,52 @@ pub(super) fn _compile_test(
             else {
                 continue;
             };
-            if module == assertion_module {
+            if module == assertion_module || module == result_module {
                 if assertions.contains_key(&*function.ident.name()) {
-                    let location = location_name.as_ref().ok_or_else(|| {
-                        Failure::Message("assertion location is missing".to_owned())
-                    })?;
+                    let name = function.ident.name();
+                    let arguments = function.parameters.iter()
+                        .map(|parameter| parameter.ident.name().to_string())
+                        .collect::<Vec<_>>().join(", ");
                     let mut wrapper: TranslationUnit = format!(
-                        "fn wrapper(wesl_test_location: u32) {{ {location} = wesl_test_location; }}"
-                    )
-                    .parse()
-                    .map_err(|error| Failure::from_diagnostic(wesl::Diagnostic::from(error)))?;
-                    if let GlobalDeclaration::Function(wrapper) =
-                        &mut *wrapper.global_declarations.remove(0)
+                        "fn {name}_wesl_test(wesl_test_location: u32) {{ {name}({arguments}); {result_name}.checks += 1u; if {result_name}.failCount > 0u && {result_name}.site == 0u {{ {result_name}.site = wesl_test_location; }} }}"
+                    ).parse().map_err(|error| Failure::from_diagnostic(wesl::Diagnostic::from(error)))?;
+                    if let GlobalDeclaration::Function(wrapper_function) =
+                        &mut *wrapper.global_declarations[0]
                     {
-                        function.parameters.append(&mut wrapper.parameters);
-                        function
-                            .body
-                            .statements
-                            .splice(0..0, wrapper.body.statements.drain(..));
+                        wrapper_function.parameters.splice(0..0, function.parameters.iter().cloned());
                     }
+                    wrappers.extend(wrapper.global_declarations);
                 }
                 continue;
             }
             let mut pending: Vec<_> = function.body.statements.iter_mut().collect();
             while let Some(statement) = pending.pop() {
                 let span = statement.span();
-                match &mut **statement {
-                    Statement::FunctionCall(call) => {
-                        if let Some(name) = assertions.get(&*call.call.ty.ident.name()) {
-                            let range = span.range();
-                            sites.push(Diagnostic {
-                                message: name.clone(),
-                                module: Some(module.to_string()),
-                                filename: result
-                                    .sourcemap
-                                    .get_display_name(&module)
-                                    .map(str::to_owned),
-                                source: result.sourcemap.get_source(&module).map(str::to_owned),
-                                span: Some((range.start, range.end)),
-                            });
-                            let site = u32::try_from(sites.len())
-                                .map_err(|error| Failure::Message(error.to_string()))?;
-                            call.call.arguments.push(Spanned::new(
-                                Expression::Literal(LiteralExpression::U32(site)),
-                                span,
-                            ));
-                        }
+                if let Statement::FunctionCall(call) = &mut **statement {
+                    let name = assertions.get(&*call.call.ty.ident.name());
+                    if let Some(name) = name {
+                        let range = span.range();
+                        sites.push(Diagnostic {
+                            message: name.clone(),
+                            module: Some(module.to_string()),
+                            filename: result
+                                .sourcemap
+                                .get_display_name(&module)
+                                .map(str::to_owned),
+                            source: result.sourcemap.get_source(&module).map(str::to_owned),
+                            span: Some((range.start, range.end)),
+                        });
+                        let site = u32::try_from(sites.len())
+                            .map_err(|error| Failure::Message(error.to_string()))?;
+                        let wrapper_name = format!("{}_wesl_test", call.call.ty.ident.name());
+                        call.call.ty.ident = Ident::new(wrapper_name);
+                        call.call.arguments.push(Spanned::new(
+                            Expression::Literal(LiteralExpression::U32(site)), span,
+                        ));
                     }
+                    continue;
+                }
+                match &mut **statement {
                     Statement::Compound(compound) => pending.extend(&mut compound.statements),
                     Statement::If(conditional) => {
                         pending.extend(&mut conditional.if_clause.body.statements);
@@ -464,6 +491,7 @@ pub(super) fn _compile_test(
                 }
             }
         }
+        result.syntax.global_declarations.extend(wrappers);
         Ok(Some((result.to_string(), compiled_entry, sites, overrides)))
     })
     .map_err(|failure: Failure| failure.into_pyerr(py))

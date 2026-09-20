@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING
@@ -14,15 +13,13 @@ from . import (
     Compiler,
     Diagnostic,
     _native,
-    compile_source,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Iterator, Mapping, Sequence
+    from typing import Any
 
     import wgpu
-
-    from .testing import Binding, Resource, ShaderRunner
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -31,13 +28,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--wesl-gpu",
         choices=("required", "optional"),
         default="required",
-        help="Fail or skip shader tests when no GPU adapter is available",
-    )
-    parser.addini(
-        "wesl_files",
-        "Patterns for WESL test files",
-        type="args",
-        default=["test_*.wesl", "*_test.wesl", "*.test.wesl"],
+        help="Fail or skip shader tests when no WebGPU adapter is available",
     )
     parser.addini(
         "wesl_root",
@@ -48,6 +39,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "wesl: executes a WESL shader test")
+    config.addinivalue_line(
+        "markers", "gpu: requires a WebGPU adapter (hardware or software)"
+    )
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -60,8 +54,7 @@ def pytest_collect_file(
     file_path: Path, parent: pytest.Collector
 ) -> pytest.Module | None:
     if file_path.suffix == ".wesl" and (
-        any(file_path.match(pattern) for pattern in parent.config.getini("wesl_files"))
-        or parent.session.isinitpath(file_path)
+        file_path.name.endswith(".test.wesl") or parent.session.isinitpath(file_path)
     ):
         return WeslModule.from_parent(parent, path=file_path)
     return None
@@ -70,9 +63,8 @@ def pytest_collect_file(
 class WeslModule(pytest.Module):
     def collect(self) -> Iterator[pytest.Item | pytest.Collector]:
         source = self.path.read_text(encoding="utf-8")
-        self.source = source
         try:
-            tests = _native._discover_tests(source, str(self.path))
+            tests = _native.discover_tests(source, str(self.path))
         except CompileError as error:
             raise self.CollectError(str(error)) from error
         module = ModuleType(self.path.stem)
@@ -87,16 +79,16 @@ class WeslModule(pytest.Module):
 
             def run_shader(
                 *,
-                wesl_runner: ShaderRunner,
+                wesl_device: wgpu.GPUDevice,
                 wesl_compiler: Compiler,
-                wesl_resources: Mapping[Binding, Resource],
+                wesl_resources: Mapping[int, Sequence[dict[str, Any]]],
                 wesl_constants: Mapping[str, float],
                 shader_path: Path = self.path,
                 shader_source: str = source,
                 shader_name: str = name,
             ) -> None:
                 __tracebackhide__ = True
-                from .testing import ShaderTestDisabledError
+                from .testing import ShaderTestDisabledError, run_test
 
                 root_directory = (
                     shader_path.parent
@@ -111,7 +103,8 @@ class WeslModule(pytest.Module):
                         "the test module is already present in wesl_modules"
                     )
                 try:
-                    wesl_runner.run_test(
+                    run_test(
+                        wesl_device,
                         {**wesl_compiler.modules, root: shader_source},
                         shader_name,
                         root=root,
@@ -130,6 +123,7 @@ class WeslModule(pytest.Module):
             run_shader.__module__ = module.__name__
             vars(run_shader)["__test__"] = True
             pytest.mark.wesl(run_shader)
+            pytest.mark.gpu(run_shader)
             try:
                 items = self.ihook.pytest_pycollect_makeitem(
                     collector=self, name=name, obj=run_shader
@@ -141,7 +135,6 @@ class WeslModule(pytest.Module):
             for item in items if isinstance(items, list) else [items]:
                 if isinstance(item, pytest.Function):
                     shader = WeslTest(item, self, name)
-                    item.setup = shader.setup
                     item.reportinfo = shader.reportinfo
                     item.repr_failure = shader.repr_failure
                 yield item
@@ -152,7 +145,6 @@ class WeslTest:
         self.item = item
         self.module = module
         self.name = name
-        self.setup_item = item.setup
         self.repr_item_failure = item.repr_failure
 
     def reportinfo(self) -> tuple[Path, int, str]:
@@ -187,24 +179,6 @@ class WeslTest:
             representation.reprcrash.message = f"{diagnostic.message} failed"
         return representation
 
-    def setup(self) -> None:
-        compiler = self.item._request.getfixturevalue("wesl_compiler")
-        source = compile_source(
-            self.module.source,
-            options=replace(
-                compiler.options,
-                imports=False,
-                strip=False,
-                lower=False,
-                validate=False,
-                mangle_root=False,
-            ),
-        )
-        tests = _native._discover_tests(str(source), str(self.item.path))
-        if not any(name == self.name for name, _, _ in tests):
-            pytest.skip("WESL conditions disable this test")
-        self.setup_item()
-
 
 @pytest.fixture(scope="session")
 def wesl_device(request: pytest.FixtureRequest) -> Iterator[wgpu.GPUDevice]:
@@ -212,14 +186,14 @@ def wesl_device(request: pytest.FixtureRequest) -> Iterator[wgpu.GPUDevice]:
         import wgpu
     except ModuleNotFoundError:
         if request.config.getoption("--wesl-gpu") == "optional":
-            pytest.skip("install wesl-py[testing] to run GPU tests")
-        pytest.fail("install wesl-py[testing] to run GPU tests", pytrace=False)
+            pytest.skip("install wesl-py[testing] to run shader tests")
+        pytest.fail("install wesl-py[testing] to run shader tests", pytrace=False)
     try:
         adapter = wgpu.gpu.request_adapter_sync()
     except RuntimeError as error:
         if request.config.getoption("--wesl-gpu") == "optional":
             pytest.skip(str(error))
-        pytest.fail(f"no GPU adapter is available: {error}", pytrace=False)
+        pytest.fail(f"no WebGPU adapter is available: {error}", pytrace=False)
     device = adapter.request_device_sync()
     yield device
     device.destroy()
@@ -241,14 +215,7 @@ def wesl_compiler(
 
 
 @pytest.fixture
-def wesl_runner(wesl_device: wgpu.GPUDevice) -> ShaderRunner:
-    from .testing import ShaderRunner
-
-    return ShaderRunner(wesl_device)
-
-
-@pytest.fixture
-def wesl_resources() -> Mapping[Binding, Resource]:
+def wesl_resources() -> Mapping[int, Sequence[dict[str, Any]]]:
     return {}
 
 
@@ -274,4 +241,4 @@ def wesl_constants() -> Mapping[str, float]:
 
 @pytest.fixture
 def wesl_root_directory(pytestconfig: pytest.Config) -> Path:
-    return (pytestconfig.rootpath / pytestconfig.getini("wesl_root")).resolve()
+    return (pytestconfig.rootpath / pytestconfig.getini("wesl_root")).absolute()

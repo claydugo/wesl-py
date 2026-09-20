@@ -26,7 +26,7 @@ jobs:
       - run: pixi run --locked format-check
       - run: pixi run --locked test-freethreading
       - run: pixi run --locked check-dependencies
-      - run: pixi run --locked python -m pytest tests/packaging/test_licenses.py
+      - run: pixi run --locked -e test python -m pytest tests/packaging/test_licenses.py
 
   sdist:
     runs-on: ubuntu-24.04
@@ -108,10 +108,21 @@ jobs:
           args: --release --locked --out ../dist -i python3.15
       - if: runner.os != 'Linux'
         run: pixi run --locked --manifest-path ci/pixi.toml -e python315 maturin build --manifest-path source/Cargo.toml --release --locked --out dist -i python
-      - run: pixi run --locked --manifest-path ci/pixi.toml twine check --strict dist/*.whl
-      - name: Audit native dependencies
+      - name: Repair macOS wheels
+        if: runner.os == 'macOS'
         shell: bash
-        run: pixi run --locked --manifest-path ci/pixi.toml python source/tests/packaging/check_wheel_native.py dist/*.whl
+        run: |
+          pixi run --locked --manifest-path ci/pixi.toml delocate-wheel --require-archs arm64 --wheel-dir wheelhouse dist/*.whl
+          mv wheelhouse/*.whl dist/
+      - name: Repair Windows wheels
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          for wheel in dist/*.whl; do
+            pixi run --locked --manifest-path ci/pixi.toml delvewheel repair --wheel-dir wheelhouse "$wheel"
+          done
+          mv wheelhouse/*.whl dist/
+      - run: pixi run --locked --manifest-path ci/pixi.toml twine check --strict dist/*.whl
       - name: Audit Python ABI
         shell: bash
         run: pixi run --locked --manifest-path ci/pixi.toml abi3audit --strict --summary dist/*-cp312-abi3-*.whl

@@ -15,3 +15,8 @@ Cargo.lock records their sources and checksums.
 
 This package uses PyO3 under the MIT or Apache-2.0 licenses.
 https://github.com/PyO3/pyo3
+
+This package includes the wgsl-test assertion shaders under the MIT license.
+licenses/WGSL-TEST-MIT contains the upstream license.
+The shader files come from wesl-js revision 37db2325b40cdb8aa504582cbc01cb4d41109a36.
+https://github.com/webgpu-tools/wesl-js/tree/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test/shaders

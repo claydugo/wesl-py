@@ -3,7 +3,10 @@
 The root Pixi workspace supports Linux.
 Source builds require Rust 1.97.1 or later and a native linker.
 The `ci` workspace also supports macOS arm64 and Windows x86-64.
-Pixi installs the Rust toolchain, Python tools, and the editable extension.
+Pixi's default environment provides Python, Rust, Maturin, and the editable
+extension. The `test` environment adds pytest, PyYAML, and cargo-bundle-licenses.
+The `dev` environment adds the development tools and GPU dependencies.
+The `testing` environment selects both the `testing` and `examples` extras.
 Reinstall the extension after changing Rust source.
 
 ```bash
@@ -16,7 +19,7 @@ pixi run check-dependencies
 ```
 
 The local `dev` environment provides mypy for stubtest, plus ty, Pyrefly, and Pyright.
-The `typechecking` extra declares the three type checkers for other environments.
+These tools are development dependencies in `pixi.toml`.
 
 Stubtest checks the compiled extension. The type checkers check the Python API.
 The `dev` environment includes
@@ -51,7 +54,7 @@ It also rejects empty license lists and empty license text.
 After changing dependencies, regenerate the bundle and review its changes:
 
 ```bash
-pixi run cargo bundle-licenses --format yaml --prefer MIT --previous licenses/THIRDPARTY.yml --output licenses/THIRDPARTY.yml
+pixi run -e dev cargo bundle-licenses --format yaml --prefer MIT --previous licenses/THIRDPARTY.yml --output licenses/THIRDPARTY.yml
 ```
 
 Fill the missing license texts before accepting the bundle.
@@ -69,10 +72,10 @@ Use Rust's [copyright documentation](https://github.com/rust-lang/rust/blob/1.97
 Run the test files that cover the change:
 
 ```bash
-pixi run python -m pytest tests/test_compile.py -q
-pixi run python -m pytest tests/test_check_syntax.py -q
-pixi run python -m pytest tests/test_diagnostics.py -q
-pixi run python -m pytest tests/test_sources.py -q
+pixi run -e test python -m pytest tests/test_compile.py -q
+pixi run -e test python -m pytest tests/test_check_syntax.py -q
+pixi run -e test python -m pytest tests/test_diagnostics.py -q
+pixi run -e test python -m pytest tests/test_sources.py -q
 pixi run -e gpu python -m pytest tests/test_compute.py -q
 pixi run -e testing python -m pytest tests/test_testing.py tests/test_pytest_plugin.py tests/shaders -q
 pixi run -e testing-minimum python -m pytest tests/test_pytest_plugin.py -q
@@ -81,7 +84,7 @@ pixi run -e testing-minimum python -m pytest tests/test_pytest_plugin.py -q
 Use `pixi run test` when you need to run all repository tests and shader examples.
 This task runs one pytest session that collects `tests/`.
 Example tests, shader tests, snapshots, and the license check run in that session.
-Cargo has no standalone unit tests in this binding.
+Cargo tests cover the shader entry wrapper.
 The Python tests exercise the native Rust extension.
 
 The task selects the `testing` environment for Python tests.
@@ -108,10 +111,10 @@ Concurrent calls can share inputs when callers do not modify those inputs.
 
 The pytest plugin delegates parametrization to pytest's collection hook.
 It keeps each collected item and its plugin state.
-It attaches WESL setup and reporting methods to the item.
-Enabled tests call the item's original setup method.
-It uses `_request` to check WESL conditions before GPU fixtures run.
-The plugin tests cover this private access on the minimum and current pytest versions.
+It attaches WESL reporting methods to the item.
+Pytest controls fixture setup, including autouse fixtures.
+The runner checks conditional tests after fixture setup.
+The plugin tests cover the minimum and current pytest versions.
 
 The `pytest_generate_tests` hook exposes each shader callable during collection.
 The collector then removes it from the synthetic module.
@@ -139,7 +142,6 @@ Free-threaded Python 3.13 and 3.14 are outside the first release's scope.
 | --- | --- | --- |
 | `examples` | Interactive graphics and compute examples | Python 3.12 on Linux x86-64 |
 | `testing` | pytest integration for WESL, compute, and fragment tests | Python 3.12 on Linux x86-64 |
-| `typechecking` | ty, Pyrefly, and Pyright | Python 3.12 on Linux x86-64 |
 
 CI installs the extras from PyPI and runs their shaders with Mesa's software
 Vulkan adapter. It verifies numerical results and renders both viewers
@@ -194,14 +196,10 @@ Its `--platform-tag` option requires the expected wheel tag. CI requires
 `manylinux_2_28_x86_64`, `macosx_11_0_arm64`, or `win_amd64` for each platform.
 The macOS build sets `MACOSX_DEPLOYMENT_TARGET=11.0`.
 
-`tests/packaging/check_wheel_native.py` audits each wheel with auditwheel on Linux,
-delocate on macOS, or delvewheel on Windows. It rejects unsupported Linux
-symbol versions, external libraries, and absolute RPATHs.
-
-The macOS audit checks arm64 and compatibility with macOS 11.
-The Windows audit checks
-x86-64 and the Python DLL for the wheel's ABI. Repair tools run on temporary
-copies. The audit rejects changes to native files or the addition of files.
+Maturin audits and repairs Linux wheels in the manylinux container.
+CI repairs macOS wheels with delocate and Windows wheels with delvewheel.
+Delocate checks arm64 and targets macOS 11.
+Tests of installed wheels verify imports and the Python ABI on each platform.
 These checks do not replace testing on the minimum supported OS.
 
 The artifact workspace uses `*` for tool requirements and locks their versions
@@ -263,26 +261,5 @@ before a package release. These include Python 3.15 and 3.15t coverage.
 The [support table](#support) defines the initial targets.
 
 The artifact workflow builds and tests packages. It does not upload to PyPI
-or TestPyPI. Publishing automation, account setup, and remaining release checks
-are in [TODO.md](TODO.md). Complete those tasks before publication.
-The planned release procedure is:
-
-1. Update the Cargo version and [release notes](CHANGELOG.md).
-   Record WESL upgrades, WGSL output changes, and diagnostic changes.
-   Refresh dependency notices when needed.
-2. Run the required checks on the release revision. Review one sdist and
-   six wheels, with both ABI families for each platform.
-3. Rehearse publication and installation on TestPyPI with those artifacts.
-4. Create the matching version tag and GitHub release. Upload the tested
-   artifacts through Trusted Publishing without rebuilding.
-5. Verify the PyPI file hashes and installation in a fresh Pixi environment.
-   Compile a shader and check its syntax. Verify the GitHub release attachments.
-
-For a partial upload, retain the original artifacts. Compare hashes of files
-already on PyPI before uploading the missing files. For a broken release,
-yank it with a reason and publish a corrected version. Never reuse its version.
-See [PyPI's upload rules](https://docs.pypi.org/api/upload/) and
-[yanking guidance](https://docs.pypi.org/project-management/yanking/).
-
-Conda-forge submission follows the first PyPI release. Additional platforms,
-free-threaded Python 3.13/3.14, and broader extras coverage can follow later.
+or TestPyPI. Follow [publish.md](publish.md) for account setup, publication,
+and recovery from failed releases.

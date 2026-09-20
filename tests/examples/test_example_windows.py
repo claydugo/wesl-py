@@ -1,9 +1,11 @@
-# ruff: noqa: SLF001
+from __future__ import annotations
 
+import asyncio
 import os
 import runpy
 import sys
 from importlib import import_module
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -13,6 +15,41 @@ pytest.importorskip("pygfx")
 imgui = pytest.importorskip("imgui_bundle.imgui")
 common = import_module("examples.common")
 loop = import_module("rendercanvas.glfw").loop
+
+
+if TYPE_CHECKING:
+    from rendercanvas import BaseRenderCanvas
+
+
+def draw(
+    canvas: BaseRenderCanvas, render_loop: asyncio.Runner, event: dict | None = None
+) -> None:
+    rendered = render_loop.get_loop().create_future()
+    delivered = event is None
+
+    def observe(received: dict) -> None:
+        nonlocal delivered
+        if received is event:
+            delivered = True
+        elif (
+            received["event_type"] == "before_draw"
+            and delivered
+            and not rendered.done()
+        ):
+            rendered.set_result(None)
+
+    canvas.add_event_handler(observe, "before_draw", order=-100)
+    if event is not None:
+        canvas.add_event_handler(observe, event["event_type"], order=-100)
+    try:
+        if event is not None:
+            canvas.submit_event(event)
+        canvas.request_draw()
+        render_loop.run(asyncio.wait_for(rendered, timeout=5))
+    finally:
+        canvas.remove_event_handler(observe, "before_draw")
+        if event is not None:
+            canvas.remove_event_handler(observe, event["event_type"])
 
 
 @pytest.mark.gpu
@@ -42,39 +79,54 @@ def test_native_pointer_coordinates(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(imgui, "checkbox", record_checkbox)
     viewer = runpy.run_module("examples.multiscale", run_name="__main__")
     canvas = viewer["canvas"]
-    try:
-        for dimensions in (None, (1024, 768)):
-            if dimensions is not None:
-                canvas.set_logical_size(*dimensions)
-            for _ in range(3):
-                glfw.poll_events()
-                canvas._events.flush()
-                canvas.force_draw()
-            canvas._on_cursor_enter(canvas._window, entered=True)
-            window_width, window_height = glfw.get_window_size(canvas._window)
-            logical_width, logical_height = canvas.get_logical_size()
-            for channel, label in enumerate(labels):
-                lower, upper = rectangles[label]
-                x = lower[0] + 8
-                y = (lower[1] + upper[1]) / 2
-                previous = viewer["visible"][channel]
-                canvas._on_cursor_pos(
-                    canvas._window,
-                    x * window_width / logical_width,
-                    y * window_height / logical_height,
-                )
-                canvas._events.flush()
-                canvas.force_draw()
-                numpy.testing.assert_allclose(tuple(imgui.get_io().mouse_pos), (x, y))
-                for action in (glfw.PRESS, glfw.RELEASE):
-                    canvas._on_mouse_button(
-                        canvas._window, glfw.MOUSE_BUTTON_LEFT, action, 0
+    glfw.poll_events()
+    monkeypatch.setattr(glfw, "poll_events", lambda: None)
+    imgui.get_io().config_input_trickle_event_queue = False
+    with asyncio.Runner() as render_loop:
+        render_loop.get_loop().create_task(loop.run_async())
+        try:
+            for dimensions in (None, (1024, 768)):
+                if dimensions is not None:
+                    canvas.set_logical_size(*dimensions)
+                for _ in range(3):
+                    draw(canvas, render_loop)
+                for channel, label in enumerate(labels):
+                    lower, upper = rectangles[label]
+                    x = lower[0] + 8
+                    y = (lower[1] + upper[1]) / 2
+                    previous = viewer["visible"][channel]
+                    draw(
+                        canvas,
+                        render_loop,
+                        {
+                            "event_type": "pointer_move",
+                            "x": x,
+                            "y": y,
+                            "buttons": (),
+                            "modifiers": (),
+                        },
                     )
-                    canvas._events.flush()
-                    canvas.force_draw()
-                assert viewer["visible"][channel] is not previous
-    finally:
-        canvas.close()
+                    numpy.testing.assert_allclose(
+                        tuple(imgui.get_io().mouse_pos), (x, y)
+                    )
+                    for event_type in ("pointer_down", "pointer_up"):
+                        draw(
+                            canvas,
+                            render_loop,
+                            {
+                                "event_type": event_type,
+                                "x": x,
+                                "y": y,
+                                "button": 1,
+                                "buttons": (1,) if event_type == "pointer_down" else (),
+                                "modifiers": (),
+                            },
+                        )
+                    assert viewer["visible"][channel] is not previous
+        finally:
+            canvas.close()
+            loop.stop(force=True)
+            render_loop.run(asyncio.sleep(0))
 
 
 @pytest.mark.gpu
@@ -101,42 +153,57 @@ def test_sdf_pointer_controls(monkeypatch: pytest.MonkeyPatch) -> None:
     canvas = rendercanvas.RenderCanvas()
     canvas.set_logical_size(1440, 900)
     viewer = viewer_module.Viewer(canvas)
-    try:
-        for dimensions in (None, (1024, 768)):
-            if dimensions is not None:
-                canvas.set_logical_size(*dimensions)
-            for _ in range(3):
-                glfw.poll_events()
-                canvas._events.flush()
-                canvas.force_draw()
-            canvas._on_cursor_enter(canvas._window, entered=True)
-            window_width, window_height = glfw.get_window_size(canvas._window)
-            logical_width, logical_height = canvas.get_logical_size()
-            for label in ("Cut a tunnel", "Pause"):
-                lower, upper = rectangles[label]
-                previous = (viewer.cutout, viewer.paused)
-                canvas._on_cursor_pos(
-                    canvas._window,
-                    (lower[0] + 8) * window_width / logical_width,
-                    (lower[1] + upper[1]) / 2 * window_height / logical_height,
-                )
-                canvas._events.flush()
-                canvas.force_draw()
-                for action in (glfw.PRESS, glfw.RELEASE):
-                    canvas._on_mouse_button(
-                        canvas._window, glfw.MOUSE_BUTTON_LEFT, action, 0
+    glfw.poll_events()
+    monkeypatch.setattr(glfw, "poll_events", lambda: None)
+    imgui.get_io().config_input_trickle_event_queue = False
+    with asyncio.Runner() as render_loop:
+        render_loop.get_loop().create_task(loop.run_async())
+        try:
+            for dimensions in (None, (1024, 768)):
+                if dimensions is not None:
+                    canvas.set_logical_size(*dimensions)
+                for _ in range(3):
+                    draw(canvas, render_loop)
+                for label in ("Cut a tunnel", "Pause"):
+                    lower, upper = rectangles[label]
+                    previous = (viewer.cutout, viewer.paused)
+                    x = lower[0] + 8
+                    y = (lower[1] + upper[1]) / 2
+                    draw(
+                        canvas,
+                        render_loop,
+                        {
+                            "event_type": "pointer_move",
+                            "x": x,
+                            "y": y,
+                            "buttons": (),
+                            "modifiers": (),
+                        },
                     )
-                    canvas._events.flush()
-                    canvas.force_draw()
-                if label == "Cut a tunnel":
-                    assert (viewer.cutout, viewer.paused) == (
-                        not previous[0],
-                        previous[1],
-                    )
-                else:
-                    assert (viewer.cutout, viewer.paused) == (
-                        previous[0],
-                        not previous[1],
-                    )
-    finally:
-        canvas.close()
+                    for event_type in ("pointer_down", "pointer_up"):
+                        draw(
+                            canvas,
+                            render_loop,
+                            {
+                                "event_type": event_type,
+                                "x": x,
+                                "y": y,
+                                "button": 1,
+                                "buttons": (1,) if event_type == "pointer_down" else (),
+                                "modifiers": (),
+                            },
+                        )
+                    if label == "Cut a tunnel":
+                        assert (viewer.cutout, viewer.paused) == (
+                            not previous[0],
+                            previous[1],
+                        )
+                    else:
+                        assert (viewer.cutout, viewer.paused) == (
+                            previous[0],
+                            not previous[1],
+                        )
+        finally:
+            canvas.close()
+            loop.stop(force=True)
+            render_loop.run(asyncio.sleep(0))

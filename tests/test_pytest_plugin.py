@@ -1,4 +1,6 @@
+import sys
 import xml.etree.ElementTree as ET
+from importlib.util import find_spec
 
 import pytest
 
@@ -10,26 +12,61 @@ def test_collect_without_gpu_dependencies(pytester: pytest.Pytester) -> None:
         sys.modules["numpy"] = None
     """)
     pytester.makefile(
-        ".wesl",
-        test_math="""
+        ".test.wesl",
+        math="""
         @test fn first() {}
         @if(enabled) @test fn second() {}
         fn helper() {}
     """,
+    )
+    pytester.makefile(
+        ".wesl",
         noise="@test fn ignored() {}",
+        test_prefix="@test fn ignored() {}",
+        suffix_test="@test fn ignored() {}",
     )
     result = pytester.runpytest_subprocess("--collect-only", "-q")
     result.stdout.fnmatch_lines(
-        ["test_math.wesl::first", "test_math.wesl::second", "*2 tests collected*"]
+        ["math.test.wesl::first", "math.test.wesl::second", "*2 tests collected*"]
     )
+    assert result.ret == 0
+    result = pytester.runpytest_subprocess("--collect-only", "-q", "-m", "not gpu")
+    result.stdout.fnmatch_lines(["*2 deselected*"])
+    assert result.ret == pytest.ExitCode.NO_TESTS_COLLECTED
+    result = pytester.runpytest_subprocess("--collect-only", "-q", "noise.wesl")
+    result.stdout.fnmatch_lines(["noise.wesl::ignored", "*1 test collected*"])
     assert result.ret == 0
 
 
 def test_collection_errors(pytester: pytest.Pytester) -> None:
-    pytester.makefile(".wesl", test_invalid="@test fn broken(")
+    pytester.makefile(".test.wesl", invalid="@test fn broken(")
     result = pytester.runpytest_subprocess("--collect-only", "-q")
     result.assert_outcomes(errors=1)
-    result.stdout.fnmatch_lines(["*test_invalid.wesl*"])
+    result.stdout.fnmatch_lines(["*invalid.test.wesl*"])
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Symlinks require Windows privileges."
+)
+def test_symlink_root_preserves_relative_imports(pytester: pytest.Pytester) -> None:
+    pytester.makeini("""
+        [pytest]
+        wesl_root = linked
+    """)
+    shaders = pytester.path / "shaders"
+    (shaders / "nested").mkdir(parents=True)
+    (shaders / "nested/helper.wesl").write_text("fn value() -> u32 { return 7u; }")
+    source = pytester.makefile(
+        ".wesl",
+        source="""
+            import super::helper::value;
+            @test fn selected() { wgsl_test::expectEq(value(), 7u); }
+        """,
+    )
+    (shaders / "nested/math.test.wesl").symlink_to(source)
+    (pytester.path / "linked").symlink_to(shaders, target_is_directory=True)
+    result = pytester.runpytest_subprocess("linked", "-q")
+    result.assert_outcomes(passed=1)
 
 
 def test_compiler_without_gpu_dependencies(pytester: pytest.Pytester) -> None:
@@ -120,6 +157,7 @@ def test_compiler_without_gpu_dependencies(pytester: pytest.Pytester) -> None:
     result.stdout.fnmatch_lines(["*test_file[[]enabled] PASSED*"])
 
 
+@pytest.mark.gpu
 def test_compiler_override_controls_native_skips(pytester: pytest.Pytester) -> None:
     pytester.makeconftest("""
         import pytest
@@ -137,11 +175,8 @@ def test_compiler_override_controls_native_skips(pytester: pytest.Pytester) -> N
         def wesl_options():
             pytest.fail("the compiler fixture provides the options")
 
-        @pytest.fixture(scope="session")
-        def wesl_device():
-            pytest.fail("disabled tests must not request a GPU")
     """)
-    pytester.makefile(".wesl", test_disabled="@if(enabled) @test fn disabled() {}")
+    pytester.makefile(".test.wesl", disabled="@if(enabled) @test fn disabled() {}")
     result = pytester.runpytest_subprocess("-q")
     result.assert_outcomes(skipped=1)
 
@@ -160,13 +195,14 @@ def test_hidden_parameter_ids(pytester: pytest.Pytester) -> None:
                 [pytest.param(wesl.CompileOptions(), id=pytest.HIDDEN_PARAM)],
             )
     """)
-    pytester.makefile(".wesl", test_hidden="@test fn selected() {}")
+    pytester.makefile(".test.wesl", hidden="@test fn selected() {}")
     result = pytester.runpytest_subprocess("--collect-only", "-q")
     assert result.ret == 0
-    assert "test_hidden.wesl::selected" in result.stdout.lines
-    assert "test_hidden.wesl::selected[]" not in result.stdout.lines
+    assert "hidden.test.wesl::selected" in result.stdout.lines
+    assert "hidden.test.wesl::selected[]" not in result.stdout.lines
 
 
+@pytest.mark.gpu
 def test_generate_tests_with_direct_parameters(pytester: pytest.Pytester) -> None:
     pytester.makeconftest("""
         import pytest
@@ -181,10 +217,10 @@ def test_generate_tests_with_direct_parameters(pytester: pytest.Pytester) -> Non
         def wesl_options():
             pytest.fail("direct parameters must replace the fixture")
     """)
-    pytester.makefile(".wesl", test_direct="@if(false) @test fn selected() {}")
+    pytester.makefile(".test.wesl", direct="@if(false) @test fn selected() {}")
     result = pytester.runpytest_subprocess("-v")
     result.assert_outcomes(skipped=1)
-    assert "test_direct.wesl::selected[direct] SKIPPED" in result.stdout.str()
+    assert "direct.test.wesl::selected[direct] SKIPPED" in result.stdout.str()
 
 
 def test_collection_hook_markers(pytester: pytest.Pytester) -> None:
@@ -203,12 +239,13 @@ def test_collection_hook_markers(pytester: pytest.Pytester) -> None:
         def wesl_options():
             pytest.fail("marked tests must skip before WESL setup")
     """)
-    pytester.makefile(".wesl", test_marked="@test fn selected() {}")
+    pytester.makefile(".test.wesl", marked="@test fn selected() {}")
     result = pytester.runpytest_subprocess("-q", "-rs")
     result.assert_outcomes(skipped=1)
     result.stdout.fnmatch_lines(["*marked by a plugin*"])
 
 
+@pytest.mark.gpu
 def test_collection_hook_state(pytester: pytest.Pytester) -> None:
     pytester.makeconftest("""
         import pytest
@@ -237,7 +274,7 @@ def test_collection_hook_state(pytester: pytest.Pytester) -> None:
             assert request.node.stash[key] == "configured"
             yield wesl.CompileOptions()
     """)
-    pytester.makefile(".wesl", test_state="@if(false) @test fn disabled() {}")
+    pytester.makefile(".test.wesl", state="@if(false) @test fn disabled() {}")
     result = pytester.runpytest_subprocess(
         "-q", "-k", "configured_shader", "--junitxml=results.xml"
     )
@@ -248,14 +285,13 @@ def test_collection_hook_state(pytester: pytest.Pytester) -> None:
     assert property_element.attrib["value"] == "configured"
 
 
+@pytest.mark.gpu
 def test_custom_function_setup(pytester: pytest.Pytester) -> None:
     pytester.makeconftest("""
-        from unittest.mock import Mock
         import pytest
 
         class CustomFunction(pytest.Function):
             def setup(self):
-                assert self.name == "enabled"
                 self.user_properties.append(("custom_setup", "ran"))
                 super().setup()
 
@@ -272,13 +308,13 @@ def test_custom_function_setup(pytester: pytest.Pytester) -> None:
             return items
 
         @pytest.fixture
-        def wesl_runner(request):
-            assert request.node.name == "enabled"
-            return Mock()
+        def wesl_resources(request):
+            assert ("custom_setup", "ran") in request.node.user_properties
+            return {}
     """)
     pytester.makefile(
-        ".wesl",
-        test_custom="""
+        ".test.wesl",
+        custom="""
             @if(false) @test fn disabled() {}
             @test fn enabled() {}
         """,
@@ -296,22 +332,31 @@ def test_custom_function_setup(pytester: pytest.Pytester) -> None:
 @pytest.mark.gpu
 def test_fixtures_parametrization_and_selection(pytester: pytest.Pytester) -> None:
     pytester.makeconftest("""
-        import numpy as np
+        from struct import pack
+        import sys
         import pytest
         import wesl
-        from wesl.testing import Buffer
+        import wgpu
+
+        sys.modules["numpy"] = None
 
         @pytest.fixture(params=[3, 7], ids=["three", "seven"])
-        def wesl_resources(request):
-            return {(1, 2): Buffer(data=np.array([request.param], dtype=np.uint32))}
+        def wesl_resources(request, wesl_device):
+            buffer = wesl_device.create_buffer_with_data(
+                data=pack("<I", request.param), usage=wgpu.BufferUsage.STORAGE,
+            )
+            try:
+                yield {1: [{"binding": 2, "resource": {"buffer": buffer}}]}
+            finally:
+                buffer.destroy()
 
         @pytest.fixture
         def wesl_modules():
             return {"library": "fn double(value: u32) -> u32 { return value * 2u; }"}
     """)
     pytester.makefile(
-        ".wesl",
-        test_math="""
+        ".test.wesl",
+        math="""
         import library::double;
         import wgsl_test::expectEq;
         @group(1) @binding(2) var<storage, read_write> values: array<u32>;
@@ -320,7 +365,7 @@ def test_fixtures_parametrization_and_selection(pytester: pytest.Pytester) -> No
     """,
     )
     result = pytester.runpytest_subprocess(
-        "-q", "test_math.wesl::doubling", "-k", "seven"
+        "-q", "math.test.wesl::doubling", "-k", "seven"
     )
     result.assert_outcomes(passed=1, deselected=1)
     result = pytester.runpytest_subprocess("-q", "-m", "wesl")
@@ -331,8 +376,8 @@ def test_fixtures_parametrization_and_selection(pytester: pytest.Pytester) -> No
 @pytest.mark.parametrize("style", ["auto", "line"])
 def test_failure_reports_and_junit(pytester: pytest.Pytester, style: str) -> None:
     pytester.makefile(
-        ".wesl",
-        test_math="""
+        ".test.wesl",
+        math="""
         import wgsl_test::expectEq;
         @test fn failing() {
             expectEq(4294967295u, 4294967294u);
@@ -346,13 +391,13 @@ def test_failure_reports_and_junit(pytester: pytest.Pytester, style: str) -> Non
     if style == "auto":
         result.stdout.fnmatch_lines(
             [
-                "*test_math.wesl:3:5: expectEq failed*",
-                "*actual:   *4294967295*",
-                "*expected: *4294967294*",
+                "*math.test.wesl:3:5: expectEq failed*",
+                "*actual:   *4294967296.0*",
+                "*expected: *4294967296.0*",
             ]
         )
     else:
-        result.stdout.fnmatch_lines(["*test_math.wesl:3: expectEq failed*"])
+        result.stdout.fnmatch_lines(["*math.test.wesl:3: expectEq failed*"])
     report = ET.parse(pytester.path / "results.xml")  # noqa: S314
     case = report.find(".//testcase")
     assert case is not None
@@ -361,7 +406,7 @@ def test_failure_reports_and_junit(pytester: pytest.Pytester, style: str) -> Non
     assert failure is not None
     assert "expectEq failed" in failure.attrib["message"]
     assert failure.text is not None
-    assert "test_math.wesl:3:5: expectEq failed" in failure.text
+    assert "math.test.wesl:3:5: expectEq failed" in failure.text
     if style == "auto":
         assert "4294967295" in failure.text
 
@@ -370,18 +415,18 @@ def test_failure_reports_and_junit(pytester: pytest.Pytester, style: str) -> Non
 @pytest.mark.parametrize("style", ["line", "no", "native", "full-trace"])
 def test_failure_traceback_styles(pytester: pytest.Pytester, style: str) -> None:
     pytester.makefile(
-        ".wesl",
-        test_failure="@test fn failing() { wgsl_test::expect(false); }",
+        ".test.wesl",
+        failure="@test fn failing() { wgsl_test::expect(false); }",
     )
     result = pytester.runpytest_subprocess(
         "-q", "--full-trace" if style == "full-trace" else f"--tb={style}"
     )
     result.assert_outcomes(failed=1)
     if style == "line":
-        result.stdout.fnmatch_lines(["*test_failure.wesl:1: expect failed"])
+        result.stdout.fnmatch_lines(["*failure.test.wesl:1: expect failed"])
         assert (
             sum(
-                line.endswith("test_failure.wesl:1: expect failed")
+                line.endswith("failure.test.wesl:1: expect failed")
                 for line in result.stdout.lines
             )
             == 1
@@ -404,15 +449,14 @@ def test_failure_traceback_styles(pytester: pytest.Pytester, style: str) -> None
 @pytest.mark.gpu
 def test_python_failure_uses_pytest_reporting(pytester: pytest.Pytester) -> None:
     pytester.makepyfile("""
-        import numpy as np
         import wesl
         from wesl.testing import ShaderAssertionError
 
         def test_failure():
             raise ShaderAssertionError(
                 wesl.Diagnostic("expect", filename="shader.wesl"),
-                actual=np.array([False]), expected=np.array([True]),
-                failures=1, checks=1, tolerance="",
+                actual=(0.0,), expected=(1.0,),
+                failures=1, checks=1,
             )
     """)
     result = pytester.runpytest_subprocess("-q", "--tb=short")
@@ -444,8 +488,8 @@ def test_skip_xfail_and_conditional_fixtures(pytester: pytest.Pytester) -> None:
                     item.add_marker(pytest.mark.skip(reason="not selected"))
     """)
     pytester.makefile(
-        ".wesl",
-        test_marks="""
+        ".test.wesl",
+        marks="""
         import wgsl_test::expect;
         @if(enabled) @test fn conditional() { expect(true); }
         @test fn known_failure() { expect(false); }
@@ -471,7 +515,7 @@ def test_unavailable_adapter(
 
         wgpu.gpu.request_adapter_sync = unavailable
     """)
-    pytester.makefile(".wesl", test_adapter="@test fn dispatch() {}")
+    pytester.makefile(".test.wesl", adapter="@test fn dispatch() {}")
     result = pytester.runpytest_subprocess("-q", f"--wesl-gpu={policy}")
     result.assert_outcomes(**{outcome: 1})
 
@@ -481,8 +525,8 @@ def test_unavailable_adapter(
 def test_xdist(pytester: pytest.Pytester, style: str) -> None:
     pytest.importorskip("xdist")
     pytester.makefile(
-        ".wesl",
-        test_parallel="""
+        ".test.wesl",
+        parallel="""
         import wgsl_test::expectEq;
         @test fn first() { expectEq(1u, 1u); }
         @test fn second() { expectEq(2u, 2u); }
@@ -494,13 +538,13 @@ def test_xdist(pytester: pytest.Pytester, style: str) -> None:
         "-q", "-n", "2", f"--tb={style}", "--junitxml=results.xml"
     )
     result.assert_outcomes(passed=3, failed=1)
-    result.stdout.fnmatch_lines(["*test_parallel.wesl*expectEq failed*"])
+    result.stdout.fnmatch_lines(["*parallel.test.wesl*expectEq failed*"])
     report = ET.parse(pytester.path / "results.xml")  # noqa: S314
     failure = report.find(".//failure")
     assert failure is not None
     assert failure.attrib["message"] == "expectEq failed"
     assert failure.text is not None
-    assert "test_parallel.wesl:5:22: expectEq failed" in failure.text
+    assert "parallel.test.wesl:5:22: expectEq failed" in failure.text
     if style == "auto":
         assert "actual:" in failure.text
 
@@ -515,8 +559,8 @@ def test_shader_names_do_not_register_hooks(pytester: pytest.Pytester) -> None:
             return wesl_device
     """)
     pytester.makefile(
-        ".wesl",
-        test_hooks="""
+        ".test.wesl",
+        hooks="""
             @test fn setup_function() { wgsl_test::expect(true); }
             @test fn teardown_function() { wgsl_test::expect(true); }
             @test fn setup_module() { wgsl_test::expect(true); }
@@ -529,34 +573,37 @@ def test_shader_names_do_not_register_hooks(pytester: pytest.Pytester) -> None:
     result.assert_outcomes(passed=12)
 
 
-def test_disabled_without_gpu_dependencies(pytester: pytest.Pytester) -> None:
+@pytest.mark.skipif(
+    find_spec("wgpu") is None,
+    reason="requires wesl-py[testing]",
+)
+def test_autouse_fixtures_run_before_compiler(pytester: pytest.Pytester) -> None:
     pytester.makeconftest("""
-        import sys
+        import os
+        from unittest.mock import Mock
         import pytest
         import wesl
 
-        sys.modules["wgpu"] = None
-        sys.modules["numpy"] = None
+        @pytest.fixture(autouse=True)
+        def configure(monkeypatch):
+            monkeypatch.setenv("WESL_TEST_CONFIGURED", "1")
+            monkeypatch.setattr("wesl.testing.run_test", Mock())
 
         @pytest.fixture
         def wesl_options():
-            return wesl.CompileOptions(
-                features=wesl.Features(flags={"enabled": False}),
-            )
+            assert os.environ["WESL_TEST_CONFIGURED"] == "1"
+            return wesl.CompileOptions()
 
-        @pytest.fixture(scope="session")
+        @pytest.fixture
         def wesl_device():
-            pytest.fail("disabled tests must not request a device")
+            return Mock()
     """)
     pytester.makefile(
-        ".wesl",
-        test_disabled="""
-            @if(enabled) @test fn conditional() { unavailable::call(); }
-            @if(false) @test fn disabled() {}
-        """,
+        ".test.wesl",
+        order="@test fn configured() {}",
     )
     result = pytester.runpytest_subprocess("-q")
-    result.assert_outcomes(skipped=2)
+    result.assert_outcomes(passed=1)
 
 
 @pytest.mark.gpu
@@ -569,8 +616,8 @@ def test_named_override_fixture(pytester: pytest.Pytester) -> None:
             return {"offset": 7}
     """)
     pytester.makefile(
-        ".wesl",
-        test_override="""
+        ".test.wesl",
+        override="""
             override offset: u32 = 0u;
             @test fn selected() { wgsl_test::expectEq(offset, 7u); }
         """,

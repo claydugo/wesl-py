@@ -8,12 +8,9 @@ rust = "*"
 maturin = "*"
 abi3audit = "*"
 packaging = "*"
-pefile = "*"
-pyelftools = "*"
+pytest = "*"
+tomli-w = "*"
 twine = "*"
-
-[target.linux-64.dependencies]
-auditwheel = "*"
 
 [target.osx-arm64.dependencies]
 delocate = "*"

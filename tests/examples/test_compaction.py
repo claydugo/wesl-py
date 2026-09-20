@@ -11,11 +11,10 @@ import pytest
 if TYPE_CHECKING:
     import wesl
     import wgpu
-    from wesl.testing import ShaderRunner
 
 numpy = pytest.importorskip("numpy")
 pytest.importorskip("wgpu")
-Buffer = import_module("wesl.testing").Buffer
+compute_with_buffers = import_module("wgpu.utils.compute").compute_with_buffers
 compact = import_module("examples.compaction.compute").compact
 
 
@@ -26,25 +25,20 @@ def wesl_root_directory() -> Path:
 
 @pytest.mark.gpu
 @pytest.mark.parametrize("element_count", [1, 127, 128, 129, 16385])
-def test_scan(
-    wesl_compiler: wesl.Compiler, wesl_runner: ShaderRunner, element_count: int
-) -> None:
+def test_scan(wesl_compiler: wesl.Compiler, element_count: int) -> None:
     wesl_compiler.options.features.flags = {"select_values": False, "keep_below": False}
     values = numpy.random.default_rng(3).integers(
         0, 1000, element_count, dtype=numpy.uint32
     )
-    output = wesl_runner.compute(
-        wesl_compiler.compile_file("compaction/scan.wesl"),
-        resources={
-            (0, 0): Buffer(data=values),
-            (0, 1): Buffer(data=numpy.full_like(values, 0xFFFFFFFF)),
-            (0, 2): Buffer(
-                data=numpy.full(
-                    (element_count + 127) // 128, 0xFFFFFFFF, dtype=numpy.uint32
-                )
-            ),
+    output = compute_with_buffers(
+        {
+            0: values,
+            1: numpy.full_like(values, 0xFFFFFFFF),
+            2: numpy.full((element_count + 127) // 128, 0xFFFFFFFF, dtype=numpy.uint32),
         },
-        workgroups=(element_count + 127) // 128,
+        {1: (element_count, "I"), 2: ((element_count + 127) // 128, "I")},
+        wesl_compiler.compile_file("compaction/scan.wesl").wgsl,
+        n=(element_count + 127) // 128,
     )
     expected = numpy.empty_like(values)
     totals = []
@@ -52,8 +46,8 @@ def test_scan(
         block = values[start : start + 128].astype(numpy.uint64)
         expected[start : start + 128] = numpy.cumsum(block) - block
         totals.append(block.sum())
-    numpy.testing.assert_array_equal(output[0, 1], expected)
-    numpy.testing.assert_array_equal(output[0, 2], totals)
+    numpy.testing.assert_array_equal(output[1], expected)
+    numpy.testing.assert_array_equal(output[2], totals)
 
 
 @pytest.mark.gpu

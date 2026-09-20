@@ -1,7 +1,14 @@
+from collections.abc import Iterator
+from contextlib import ExitStack
 from pathlib import Path
+from struct import pack
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import wesl
+
+if TYPE_CHECKING:
+    import wgpu
 
 
 @pytest.fixture(params=[False, True], ids=["plain", "residual"])
@@ -17,13 +24,26 @@ def wesl_root_directory() -> Path:
 
 
 @pytest.fixture
-def wesl_resources(wesl_options: wesl.CompileOptions) -> dict:
-    numpy = pytest.importorskip("numpy")
-    testing = pytest.importorskip("wesl.testing")
-    resources = {(0, 0): testing.Buffer(data=numpy.array([2, -2], dtype=numpy.float32))}
-    if wesl_options.features.flags["residual"]:
-        resources[0, 1] = testing.Buffer(data=numpy.array([1, -1], dtype=numpy.float32))
-    return resources
+def wesl_resources(
+    wesl_options: wesl.CompileOptions,
+    wesl_device: "wgpu.GPUDevice",
+) -> Iterator[dict[int, list[dict[str, Any]]]]:
+    wgpu = pytest.importorskip("wgpu")
+    with ExitStack() as stack:
+        buffer = wesl_device.create_buffer_with_data(
+            data=pack("<2f", 2, -2),
+            usage=wgpu.BufferUsage.STORAGE,
+        )
+        stack.callback(buffer.destroy)
+        entries = [{"binding": 0, "resource": {"buffer": buffer}}]
+        if wesl_options.features.flags["residual"]:
+            buffer = wesl_device.create_buffer_with_data(
+                data=pack("<2f", 1, -1),
+                usage=wgpu.BufferUsage.STORAGE,
+            )
+            stack.callback(buffer.destroy)
+            entries.append({"binding": 1, "resource": {"buffer": buffer}})
+        yield {0: entries}
 
 
 @pytest.fixture

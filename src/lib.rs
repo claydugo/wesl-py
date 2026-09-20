@@ -516,7 +516,7 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     )?;
     module.add_function(wrap_pyfunction!(compile, module)?)?;
     module.add_function(wrap_pyfunction!(check_syntax, module)?)?;
-    module.add_function(wrap_pyfunction!(testing::_discover_tests, module)?)?;
-    module.add_function(wrap_pyfunction!(testing::_compile_test, module)?)?;
+    module.add_function(wrap_pyfunction!(testing::discover_tests, module)?)?;
+    module.add_function(wrap_pyfunction!(testing::compile_test, module)?)?;
     Ok(())
 }

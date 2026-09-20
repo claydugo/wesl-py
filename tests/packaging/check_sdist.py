@@ -1,12 +1,15 @@
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import tarfile
 import tempfile
 import tomllib
 from email import message_from_bytes
 from pathlib import Path
+
+import tomli_w
 
 parser = argparse.ArgumentParser()
 parser.add_argument("archive", type=Path)
@@ -36,18 +39,17 @@ with tempfile.TemporaryDirectory(prefix="wesl-sdist-") as temporary_directory:
         "Cargo.lock",
         "pyproject.toml",
         "build.rs",
-        "ci/pixi.toml",
-        "ci/pixi.lock",
         "wesl.toml",
-        "TODO.md",
-        "ROADMAP.md",
         *(
             path.relative_to(project_directory)
             for path in project_directory.glob("python/wesl/*.py")
         ),
         "python/wesl/_native.pyi",
         "python/wesl/py.typed",
-        "python/wesl/_assertions.wesl",
+        *(
+            path.relative_to(project_directory)
+            for path in project_directory.glob("python/wesl/wgsl_test/*.wesl")
+        ),
         *project["license-files"],
         *(
             path.relative_to(project_directory)
@@ -75,34 +77,59 @@ with tempfile.TemporaryDirectory(prefix="wesl-sdist-") as temporary_directory:
     assert metadata["License-Expression"] == project.get("license")
     assert set(metadata.get_all("License-File", [])) == set(project["license-files"])
     (directory / "pixi.toml").write_text(
-        '[workspace]\nname = "wesl-sdist"\nchannels = ["conda-forge"]\n'
-        "platforms = [" + json.dumps(platform) + "]\n"
-        '[dependencies]\npython = "3.12.*"\nrust = '
-        + json.dumps("==" + package["rust-version"])
-        + "\n[pypi-dependencies]\nwesl-py = { path = "
-        + json.dumps(arguments.archive.as_posix())
-        + " }\n[target.linux-64.activation.env]\n"
-        'CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER = "cc"\n'
+        tomli_w.dumps(
+            {
+                "workspace": {
+                    "name": "wesl-sdist",
+                    "channels": ["conda-forge"],
+                    "platforms": [platform],
+                },
+                "dependencies": {
+                    "python": "3.12.*",
+                    "rust": "==" + package["rust-version"],
+                    "pytest": "*",
+                },
+                "pypi-dependencies": {
+                    "wesl-py": {"path": arguments.archive.as_posix()}
+                },
+                "target": {
+                    "linux-64": {
+                        "activation": {
+                            "env": {
+                                "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER": "cc"
+                            }
+                        }
+                    }
+                },
+            }
+        )
     )
+    (directory / "installation.json").write_text(
+        json.dumps(
+            {
+                "kind": "sdist",
+                "version": package["version"],
+                "python": "3.12",
+                "freethreading": False,
+                "extra": None,
+                "compute": False,
+            }
+        )
+    )
+    for filename in ("conftest.py", "test_installed.py"):
+        shutil.copyfile(Path(__file__).with_name(filename), directory / filename)
     subprocess.run(
         [
             "pixi",
             "run",
             "python",
-            "-c",
-            (
-                "import sys, wesl; from pathlib import Path; "
-                "from importlib.metadata import version; "
-                "from importlib.util import find_spec; "
-                "assert Path(wesl.__file__).is_relative_to(sys.prefix); "
-                "assert wesl.__version__ == version('wesl-py') == sys.argv[1]; "
-                "assert find_spec('maturin') is None; "
-                "result = wesl.compile_source("
-                "'@compute @workgroup_size(1) fn main() {}'); "
-                "assert 'fn main(' in result.wgsl"
-            ),
-            package["version"],
+            "-m",
+            "pytest",
+            "test_installed.py",
+            "--installation=installation.json",
+            "-q",
         ],
         cwd=directory,
+        env={**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"},
         check=True,
     )

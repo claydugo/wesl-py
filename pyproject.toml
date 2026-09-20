@@ -9,7 +9,7 @@ description = "Python bindings for the Rust WESL compiler"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
-license-files = ["LICENSE", "licenses/RUST.html", "licenses/NOTICE", "licenses/THIRDPARTY.yml"]
+license-files = ["LICENSE", "licenses/RUST.html", "licenses/NOTICE", "licenses/THIRDPARTY.yml", "licenses/WGSL-TEST-MIT"]
 classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -24,8 +24,10 @@ Issues = "https://github.com/claydugo/wesl-py/issues"
 Changelog = "https://github.com/claydugo/wesl-py/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-testing = ["numpy>=1.26", "pytest>=8.2", "wgpu>=0.31.1"]
-typechecking = ["ty>=0.0.80", "pyrefly>=1.3", "pyright>=1.1.400"]
+testing = [
+    "pytest>=8.2",
+    "wgpu>=0.31.1",
+]
 examples = [
     "glfw>=2.7",
     "imageio>=2.37",
@@ -63,8 +65,8 @@ convention = "numpy"
 
 [tool.ruff.lint.per-file-ignores]
 "python/wesl/*.py" = ["D101", "D103", "D104", "EM101", "EM102", "PLR0913", "TRY003"]
-"python/wesl/testing.py" = ["D100", "D102", "PLR2004", "SLF001"]
-"python/wesl/pytest_plugin.py" = ["D100", "D102", "PLC0415", "SLF001"]
+"python/wesl/testing.py" = ["D100", "PLR2004"]
+"python/wesl/pytest_plugin.py" = ["D100", "D102", "PLC0415"]
 "tests/*.py" = ["D100", "D103", "INP001", "S101"]
 "tests/test_testing.py" = ["E402", "PLR2004"]
 "tests/examples/testing/*.py" = ["ICN001"]
@@ -75,4 +77,4 @@ convention = "numpy"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["--import-mode=importlib"]
-markers = ["gpu: requires a GPU adapter"]
+markers = ["gpu: requires a WebGPU adapter (hardware or software)"]

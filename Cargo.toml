@@ -11,8 +11,7 @@ include = [
     "src/**", "/build.rs", "/Cargo.toml", "/Cargo.lock", "python/**",
     "/pyproject.toml", "/README.md", "/CONTRIBUTING.md", "/API.md", "/CHANGELOG.md", "/LICENSE", "licenses/**", "tests/**",
     "examples/**", "/pixi.toml", "/pixi.lock", "/clippy.toml", "/deny.toml",
-    "recipe/**", "/ci/pixi.toml", "/ci/pixi.lock", "/wesl.toml",
-    "/TODO.md", "/ROADMAP.md", "/TESTING.md",
+    "/wesl.toml", "/TESTING.md",
 ]
 
 [lib]

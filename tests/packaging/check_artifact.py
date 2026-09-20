@@ -1,6 +1,7 @@
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -9,6 +10,7 @@ import zipfile
 from email import message_from_bytes
 from pathlib import Path
 
+import tomli_w
 from packaging.markers import Marker
 from packaging.requirements import Requirement
 from packaging.tags import parse_tag
@@ -80,13 +82,18 @@ with zipfile.ZipFile(wheel) as archive:
     }
     for filename in (
         "py.typed",
-        "_assertions.wesl",
+        *(
+            path.relative_to(project_directory / "python/wesl").as_posix()
+            for path in (project_directory / "python/wesl/wgsl_test").glob("*.wesl")
+        ),
         *(path.name for path in (project_directory / "python/wesl").glob("*.py*")),
     ):
-        assert (
-            archive.read(f"wesl/{filename}")
-            == (project_directory / "python" / "wesl" / filename).read_bytes()
-        ), filename
+        assert f"wesl/{filename}" in archive.namelist(), filename
+        if not filename.endswith(".py"):
+            assert (
+                archive.read(f"wesl/{filename}")
+                == (project_directory / "python" / "wesl" / filename).read_bytes()
+            ), filename
     wheel_metadata = message_from_bytes(archive.read(f"{metadata_directory}/WHEEL"))
     (extension_path,) = (
         name
@@ -105,44 +112,52 @@ platform = json.loads(subprocess.check_output(["pixi", "info", "--json"], text=T
 
 with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory:
     directory = Path(temporary_directory)
-    (directory / "pixi.toml").write_text(
-        '[workspace]\nname = "wesl-artifact"\nchannels = ["conda-forge"]\n'
-        "platforms = [" + json.dumps(platform) + "]\n"
-        "[dependencies]\npython = "
-        + json.dumps(f"{python_version}.*")
-        + '\npytest = "*"\n'
-        + (
-            'python-freethreading = "*"\n'
-            if arguments.python.endswith("t")
-            else ('python-gil = "*"\n' if python_version != "3.12" else "")
+    manifest = {
+        "workspace": {
+            "name": "wesl-artifact",
+            "channels": ["conda-forge"],
+            "platforms": [platform],
+        },
+        "dependencies": {"python": f"{python_version}.*", "pytest": "*"},
+        "pypi-dependencies": {"wesl-py": {}},
+    }
+    if arguments.python.endswith("t"):
+        manifest["dependencies"]["python-freethreading"] = "*"
+    elif python_version != "3.12":
+        manifest["dependencies"]["python-gil"] = "*"
+    if arguments.stubtest:
+        manifest["dependencies"]["mypy"] = "*"
+    if arguments.extra == "testing":
+        manifest["dependencies"].update(
+            {"numpy": ">=1.26", "pytest-regressions": "*", "pytest-xdist": "*"}
         )
-        + ('mypy = "*"\n' if arguments.stubtest else "")
-        + (
-            'pytest-regressions = "*"\npytest-xdist = "*"\n'
-            if arguments.extra == "testing"
-            else ""
-        )
-        + "[pypi-dependencies]\nwesl-py = { "
-        + (
-            "version = " + json.dumps(f"=={version}")
-            if arguments.find_links
-            else "path = " + json.dumps(wheel.as_posix())
-        )
-        + (", extras = " + json.dumps([arguments.extra]) if arguments.extra else "")
-        + " }\n"
-        + (
-            '[pypi-options]\nno-build = ["wesl-py"]\nfind-links = [{ path = '
-            + json.dumps(arguments.find_links.resolve(strict=True).as_posix())
-            + " }]\n"
-            if arguments.find_links
-            else ""
-        )
-        + (
-            '[feature.prerelease]\nchannels = ["conda-forge", '
-            '"conda-forge/label/python_rc"]\n'
-            '[environments]\ndefault = { features = ["prerelease"] }\n'
-            if python_version == "3.15"
-            else ""
+    if arguments.find_links:
+        manifest["pypi-dependencies"]["wesl-py"]["version"] = f"=={version}"
+        manifest["pypi-options"] = {
+            "no-build": ["wesl-py"],
+            "find-links": [
+                {"path": arguments.find_links.resolve(strict=True).as_posix()}
+            ],
+        }
+    else:
+        manifest["pypi-dependencies"]["wesl-py"]["path"] = wheel.as_posix()
+    if arguments.extra:
+        manifest["pypi-dependencies"]["wesl-py"]["extras"] = [arguments.extra]
+    if python_version == "3.15":
+        manifest["workspace"]["channels"].append("conda-forge/label/python_rc")
+    (directory / "pixi.toml").write_text(tomli_w.dumps(manifest))
+    (directory / "installation.json").write_text(
+        json.dumps(
+            {
+                "kind": "wheel",
+                "version": str(version),
+                "python": python_version,
+                "freethreading": arguments.python.endswith("t"),
+                "tags": wheel_metadata.get_all("Tag"),
+                "extension_hash": extension_hash,
+                "extra": arguments.extra,
+                "compute": arguments.compute,
+            }
         )
     )
     shutil.copyfile(project_directory / "pyproject.toml", directory / "pyproject.toml")
@@ -162,46 +177,14 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
             "pixi",
             "run",
             "python",
-            "-c",
-            (
-                "import hashlib, json, os, sys, sysconfig; from pathlib import Path; "
-                "from email import message_from_string; "
-                "from importlib.metadata import distribution, version; "
-                "from importlib.util import find_spec; "
-                "assert sys.version_info[:2] == "
-                "tuple(map(int, sys.argv[2].split('.'))); "
-                "assert bool(sysconfig.get_config_var('Py_GIL_DISABLED')) "
-                "== (sys.argv[3] == 'true'); "
-                "assert sys.argv[3] != 'true' or 'PYTHON_GIL' not in os.environ; "
-                "assert sys.argv[3] != 'true' or not sys._is_gil_enabled(); "
-                "import wesl; "
-                "assert sys.argv[3] != 'true' or not sys._is_gil_enabled(); "
-                "from wesl import _native; "
-                "assert hashlib.sha256(Path(_native.__file__).read_bytes())"
-                ".hexdigest() == sys.argv[6]; "
-                "assert set(message_from_string(distribution('wesl-py').read_text("
-                "'WHEEL')).get_all('Tag')) == set(json.loads(sys.argv[4])); "
-                "assert wesl.__version__ == version('wesl-py') == sys.argv[1]; "
-                "assert Path(_native.__file__).is_relative_to(sys.prefix); "
-                "assert Path(wesl.__file__).is_relative_to(sys.prefix); "
-                "assert Path(wesl.__file__).with_name('py.typed').is_file(); "
-                "assert Path(wesl.__file__).with_name('_native.pyi').is_file(); "
-                "assert 'wgpu' not in sys.modules; "
-                "assert (find_spec('wgpu') is None) == (sys.argv[5] == 'true'); "
-                "assert not list((Path(sys.prefix) / 'conda-meta')"
-                ".glob('rust-*.json')); "
-                "print(json.dumps({'python': sys.version, "
-                "'extension': _native.__file__, "
-                "'binding': wesl.__version__, 'compiler': wesl.compiler_version}))"
-            ),
-            str(version),
-            python_version,
-            json.dumps(arguments.python.endswith("t")),
-            json.dumps(wheel_metadata.get_all("Tag")),
-            json.dumps(arguments.extra is None),
-            extension_hash,
+            "-m",
+            "pytest",
+            "tests/packaging/test_installed.py",
+            "--installation=installation.json",
+            "-q",
         ],
         cwd=directory,
+        env={**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"},
         check=True,
     )
     if arguments.stubtest:
@@ -218,45 +201,18 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
             cwd=directory,
             check=True,
         )
+    test_paths = []
     if arguments.extra == "examples":
-        subprocess.run(
+        test_paths.extend(
             [
-                "pixi",
-                "run",
-                "python",
-                "-c",
-                (
-                    "import imageio, numpy, wgpu; "
-                    "import imgui_bundle, glfw, pygfx, rendercanvas, tifffile"
-                ),
-            ],
-            cwd=directory,
-            check=True,
-        )
-    if arguments.extra == "examples":
-        subprocess.run(
-            [
-                "pixi",
-                "run",
-                "python",
-                "-m",
-                "pytest",
                 "tests/examples/test_multiscale.py",
                 "tests/examples/test_example_render.py",
                 "tests/examples/test_sdf.py",
-                "-q",
-            ],
-            cwd=directory,
-            check=True,
+            ]
         )
     if arguments.extra == "testing":
-        subprocess.run(
+        test_paths.extend(
             [
-                "pixi",
-                "run",
-                "python",
-                "-m",
-                "pytest",
                 "tests/test_testing.py",
                 "tests/test_pytest_plugin.py",
                 "tests/examples/test_rmsnorm.py",
@@ -265,44 +221,23 @@ with tempfile.TemporaryDirectory(prefix="wesl-artifact-") as temporary_directory
                 "tests/examples/rmsnorm",
                 "tests/examples/compaction",
                 "tests/examples/testing",
-                "-q",
-            ],
-            cwd=directory,
-            check=True,
+            ]
         )
     if arguments.compute:
-        subprocess.run(
-            [
-                "pixi",
-                "run",
-                "python",
-                "-c",
-                (
-                    "import wgpu; "
-                    "adapter = wgpu.gpu.request_adapter_sync(); "
-                    "assert adapter.info['adapter_type'] == 'CPU'; "
-                    "assert adapter.info['backend_type'] == 'Vulkan'; "
-                    "print(adapter.info)"
-                ),
-            ],
-            cwd=directory,
-            check=True,
-        )
-        subprocess.run(
-            ["pixi", "run", "python", "-m", "pytest", "tests/test_compute.py", "-q"],
-            cwd=directory,
-            check=True,
-        )
+        test_paths.append("tests/test_compute.py")
     if arguments.extra is None:
-        for filename in (
-            "test_compile.py",
-            "test_check_syntax.py",
-            "test_threading.py",
-            "test_diagnostics.py",
-            "test_sources.py",
-        ):
-            subprocess.run(
-                ["pixi", "run", "python", "-m", "pytest", f"tests/{filename}", "-q"],
-                cwd=directory,
-                check=True,
-            )
+        test_paths.extend(
+            [
+                "tests/test_compile.py",
+                "tests/test_check_syntax.py",
+                "tests/test_threading.py",
+                "tests/test_diagnostics.py",
+                "tests/test_sources.py",
+            ]
+        )
+    if test_paths:
+        subprocess.run(
+            ["pixi", "run", "python", "-m", "pytest", *test_paths, "-q"],
+            cwd=directory,
+            check=True,
+        )

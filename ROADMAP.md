@@ -3,6 +3,11 @@
 ## Compiler upgrade
 
 - [ ] Upgrade `wesl` and `wgsl-parse` to 0.5.0. Follow the new `Compiler` API. Move `mangler` and `sourcemap` into `CompileOptions`, adopt `mangle_main` and `keep_main`, and remove `lazy`. Verify the known import and lowering defects before changing the release pin. [Upstream API](https://github.com/webgpu-tools/wesl-rs/blob/63a3627ba31258565df177f3f553beed8ff45338/crates/wesl/src/frontend.rs)
+- [ ] Verify source locations for errors in imported modules before the upgrade. WESL 0.5.0 can attach the root source to a diagnostic from an imported module. Keep `test_imported_undefined_symbol_has_byte_span` as a regression test.
+
+WESL 0.5.0 still loses constant types and forward references during lowering.
+It also resolves imports when `imports=False`.
+The upgrade does not resolve these limitations.
 
 ## API additions
 
@@ -21,6 +26,15 @@ memory use for shared types and verified handling of explicit alignment.
 Type spelling and override defaults must preserve their source meaning.
 Constant generation must verify each declaration name before emission.
 Keep cache policy and GPU execution in applications.
+
+## API reductions
+
+The [shader testing proposal](TESTING_PROPOSAL.md) defines the proposed API
+and the tradeoffs for review.
+
+- [ ] Remove `Compiler`. It duplicates the compilation functions. Keep `compile`, `compile_source`, and `compile_file`. Update the pytest fixtures that store compiler settings.
+- [ ] Reduce shader testing to WESL `@test` functions and upstream `wgsl-test` assertions. Keep pytest reporting and support devices supplied by the caller. Review the general compute and fragment runners separately.
+- [ ] Keep a small compilation example and a compute example in the release checks. Review the interactive applications separately. Keep optional example dependencies in the `examples` extra.
 
 ## Dawn support
 

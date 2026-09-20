@@ -60,7 +60,7 @@ It is not a kernel benchmark.
 pixi run test tests/examples/test_rmsnorm.py tests/examples/rmsnorm -q
 ```
 
-`ShaderRunner.compute()` compares the shader with a float64 NumPy reference.
+`wgpu.utils.compute.compute_with_buffers()` compares the shader with a float64 NumPy reference.
 Widths 1, 63, 64, 65, and 1025 cover idle invocations and strided tails.
 The kernel cases include all-zero rows, signed weights, and both feature variants.
 They exercise epsilon values of `1e-6` and `0.25`.
@@ -70,7 +70,7 @@ Separate tests exercise the Python driver and invalid dimensions.
 They also verify transposed inputs and sliced weights.
 Boundary tests reject a subnormal epsilon and accept the smallest normal f32 epsilon.
 
-Pytest discovers [test_row.wesl](../../tests/examples/rmsnorm/test_row.wesl) as native shader tests.
+Pytest discovers [row.test.wesl](../../tests/examples/rmsnorm/row.test.wesl) as native shader tests.
 [conftest.py](../../tests/examples/rmsnorm/conftest.py) supplies feature variants, buffers, and pipeline constants.
 The tests import the same input and scale functions as the compute kernel.
 

@@ -55,6 +55,36 @@ def test_imported_undefined_symbol_has_byte_span(modules: dict[str, str]) -> Non
     assert diagnostic.span == (start, start + len(b"absent"))
 
 
+@pytest.mark.parametrize("module", ["package::main", "package::helper"])
+def test_shader_test_error_preserves_source_context(module: str) -> None:
+    source = "fn fail() {\n    let café = 1u;\n    let item = missing;\n}\n"
+    modules = {
+        "package::main": "@test fn selected() { package::helper::fail(); }",
+    }
+    if module == "package::main":
+        source += "@test fn selected() { fail(); }"
+    modules[module] = source
+    with pytest.raises(wesl.CompileError) as caught:
+        _native.compile_test(
+            modules,
+            "package::main",
+            "selected",
+            wesl.CompileOptions(),
+            {module: "shader.wesl"},
+            None,
+            0,
+        )
+    (diagnostic,) = caught.value.diagnostics
+    assert diagnostic.module == module
+    assert diagnostic.filename == "shader.wesl"
+    assert diagnostic.source == source
+    start = source.encode().index(b"missing")
+    assert diagnostic.span == (start, start + len(b"missing"))
+    assert (diagnostic.line, diagnostic.column) == (3, 16)
+    assert "shader.wesl:3:16" in str(caught.value)
+    assert "let item = missing;" in str(caught.value)
+
+
 def test_linked_argument_error_preserves_missing_metadata() -> None:
     source = "import package::helper::consume; fn main() -> u32 { return consume(); }"
     with pytest.raises(wesl.CompileError, match="number of arguments") as caught:

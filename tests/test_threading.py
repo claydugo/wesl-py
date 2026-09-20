@@ -32,9 +32,9 @@ def test_concurrent_shader_instrumentation() -> None:
             f"@test fn test_{index}() {{ expectEq({index}u, {index}u); }}"
         )
         filename = f"shader_{index}.wesl"
-        [(name, _, _)] = _native._discover_tests(source, filename)  # noqa: SLF001
+        [(name, _, _)] = _native.discover_tests(source, filename)
         assert name == f"test_{index}"
-        compiled = _native._compile_test(  # noqa: SLF001
+        compiled = _native.compile_test(
             {"package::main": source},
             "package::main",
             name,

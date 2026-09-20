@@ -18,7 +18,7 @@ pixi run python -m pytest tests/examples/testing/shaders --collect-only -q
 ```
 
 The `wesl_compiler` fixture reads the shared compilation configuration.
-The `wesl_runner` fixture provides GPU execution.
+The `wesl_device` fixture supplies a WebGPU device.
 The `wesl_root_directory` fixture sets `shaders/` as the package root.
 Calls to `wesl_compiler.compile_file()` resolve relative paths from that root.
 
@@ -28,8 +28,8 @@ fragment tests, and native WESL tests.
 
 | Test | Behavior |
 | --- | --- |
-| [Native tests](shaders/test_levels.wesl) | Import a shared function and select conditional test definitions. |
-| [Native buffers](shaders/buffers/test_exposure.wesl) | Combine NumPy resources, pipeline overrides, and feature flags through Python fixtures. |
+| [Native tests](shaders/levels.test.wesl) | Import a shared function and select conditional test definitions. |
+| [Native buffers](shaders/buffers/exposure.test.wesl) | Combine native buffers, pipeline overrides, and feature flags through Python fixtures. |
 | [Compilation tests](test_compilation.py) | Compile imports and verify an expected error without a GPU. |
 | [Compute test](test_compute.py) | Verify a single element, a full workgroup, and partial workgroups with two input buffers and two output buffers. |
 | [Fragment test](test_fragment.py) | Bind a texture, sampler, and uniform buffer. Compare square, wide, and tall images with NumPy. |
@@ -39,7 +39,7 @@ fragment tests, and native WESL tests.
 
 ## Native tests and Python fixtures
 
-Start with [test_levels.wesl](shaders/test_levels.wesl).
+Start with [levels.test.wesl](shaders/levels.test.wesl).
 Each `@test` function becomes a pytest item.
 The root [conftest.py](conftest.py) selects the `linear` and `clamped` variants.
 Conditional definitions give each variant its own expected result.
@@ -53,6 +53,7 @@ pixi run -e testing python -m pytest tests/examples/testing/shaders/buffers -v
 
 The local [conftest.py](shaders/buffers/conftest.py) supplies two buffers through
 `wesl_resources`. One contains input values. The other contains the NumPy reference.
+The fixture yields native bind-group entries and destroys its buffers after each test.
 
 Its `wesl_constants` fixture selects two values for the shader's `gain` override.
 These values combine with both feature variants to produce four named cases.
@@ -63,7 +64,7 @@ These fixture overrides apply only to this directory.
 
 The fragment test computes its expected image from the input pixels.
 It does not maintain snapshot files.
-Each `Buffer` and `Texture` uploads fresh data for each execution.
+Each fixture or Python test creates and releases its resources.
 
 The compute cases contain 1, 4, 6, and 9 elements with four invocations per
 workgroup. Output buffers start with NaNs so an unwritten element fails the test.
@@ -80,10 +81,10 @@ The [pipeline test](test_pipeline.py) joins compute and rendering:
 pixi run -e testing python -m pytest tests/examples/testing/test_pipeline.py -v
 ```
 
-The test creates a texture and passes it to both calls.
+The test creates a texture and binds it in both passes.
 Compute writes an exposure gradient. The fragment shader samples that texture
 and applies a tint. The intermediate image stays on the GPU.
-The test compares the final image with NumPy and destroys the texture in `finally`.
+The test compares the final image with NumPy and releases resources through `ExitStack`.
 This demonstrates ownership when a test supplies a GPU resource.
 
 ## Stored baselines
@@ -109,9 +110,9 @@ Keep the baseline files in version control.
 ## Inspect a failure
 
 The [failure demo](shaders/failure_demo.wesl) uses a deliberately incorrect
-reference value. Its filename does not match the normal collection patterns.
+reference value. Its filename does not end in `.test.wesl`.
 Select the file explicitly to see the shader location, actual value, expected
-value, tolerance, and assertion count:
+value and assertion count:
 
 ```bash
 pixi run -e testing python -m pytest tests/examples/testing/shaders/failure_demo.wesl -k clamped -v --junitxml=failure.xml

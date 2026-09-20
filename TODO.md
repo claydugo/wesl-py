@@ -20,3 +20,7 @@ One root pytest configuration collects the suite. Directory fixtures select shad
 - [x] Review pyproject.toml and pixi.toml for current packaging conventions. Set the minimum version of each dependency to exclude unsupported releases.
 - [x] Make sure that the pixi.toml can run the tests in full so I can tell contributors to use pixi
 - [x] Brige the rust and python gap here with convienent pixi tasks. pixi run test pixi run lint pixi run format. have them do both rust and python (object to this if you think its wrong)
+
+## Shader tests
+
+- [ ] Make floating-point assertions fail on nonfinite operands or tolerances. Check the exponent bits before scalar and vector comparisons. Add regressions for matching NaNs, matching infinities, infinity versus a finite value, and overflow from finite operands. Document that WGSL can produce an indeterminate finite result after overflow.
