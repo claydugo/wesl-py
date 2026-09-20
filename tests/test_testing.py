@@ -32,7 +32,7 @@ def test_assertions_and_imports(wesl_device: wgpu.GPUDevice) -> None:
             """,
             "library": """
                 import wgsl_test::{expectWithinVec2, expectNearVec3, expectUlpVec4};
-                fn verify() {
+                public fn verify() {
                     expectWithinVec2(vec2f(1.0, 2.0), vec2f(1.01, 2.0), 0.02, 0.0);
                     expectNearVec3(vec3f(0.0), vec3f(0.0000001));
                     expectUlpVec4(
@@ -48,7 +48,7 @@ def test_assertions_and_imports(wesl_device: wgpu.GPUDevice) -> None:
 
 def test_failure_in_imported_helper(wesl_device: wgpu.GPUDevice) -> None:
     source = (
-        "import wgsl_test::expectEq;\nfn verify() {\n"
+        "import wgsl_test::expectEq;\npublic fn verify() {\n"
         "    expectEq(4294967295u, 4294967294u);\n"
         "    expectEq(1u, 2u);\n}"
     )
@@ -77,13 +77,24 @@ def test_failure_in_imported_helper(wesl_device: wgpu.GPUDevice) -> None:
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-def test_conditional_test(wesl_device: wgpu.GPUDevice, *, enabled: bool) -> None:
+@pytest.mark.parametrize(
+    "source",
+    [
+        (
+            "@if(enabled) @test fn selected() { expect(true); } "
+            "@else @test fn fallback() { expect(true); }"
+        ),
+        (
+            "@if(enabled) { @test fn selected() { expect(true); } } "
+            "@else { @test fn fallback() { expect(true); } }"
+        ),
+    ],
+)
+def test_conditional_test(
+    wesl_device: wgpu.GPUDevice, source: str, *, enabled: bool
+) -> None:
     modules = {
-        "package::main": """
-            import wgsl_test::expect;
-            @if(enabled) @test fn selected() { expect(true); }
-            @else @test fn fallback() { expect(true); }
-        """,
+        "package::main": f"import wgsl_test::expect; {source}",
     }
     options = wesl.CompileOptions(features=wesl.Features(flags={"enabled": enabled}))
     run_test(
@@ -186,7 +197,7 @@ def test_named_and_numeric_overrides(wesl_device: wgpu.GPUDevice) -> None:
             """,
             "library": """
                 override offset: u32 = 19u;
-                fn read() -> u32 { return offset; }
+                public fn read() -> u32 { return offset; }
             """,
         },
         "overrides",
@@ -261,10 +272,10 @@ def test_entry_name_avoids_imports(
                     f"@test fn selected() {{ {call}; }}"
                 ),
                 "library": (
-                    "fn wesl_test_entry() { wgsl_test::expect(false); }\n"
-                    "fn verify() { wgsl_test::expect(false); }"
+                    "public fn wesl_test_entry() { wgsl_test::expect(false); }\n"
+                    "public fn verify() { wgsl_test::expect(false); }"
                 ),
-                "library::helpers": "fn verify() { wgsl_test::expect(false); }",
+                "library::helpers": "public fn verify() { wgsl_test::expect(false); }",
             },
             "selected",
         )

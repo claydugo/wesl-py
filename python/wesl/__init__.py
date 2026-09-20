@@ -65,10 +65,11 @@ class CompileOptions:
     strip: bool = True
     lower: bool = False
     validate: bool = True
-    lazy: bool = True
-    mangle_root: bool = False
+    sourcemap: bool = True
+    mangler: ManglerKind = ManglerKind.Escape
+    mangle_main: bool = False
     keep: Sequence[str] | None = None
-    keep_root: bool = False
+    keep_main: bool = False
     features: Features = field(default_factory=Features)
 
 
@@ -77,8 +78,6 @@ def compile(
     *,
     root: str = "package::main",
     options: CompileOptions | None = None,
-    mangler: ManglerKind = ManglerKind.Escape,
-    use_sourcemap: bool = True,
     filenames: Mapping[str, str | os.PathLike[str]] | None = None,
     root_directory: str | os.PathLike[str] | None = None,
 ) -> CompileResult:
@@ -88,14 +87,12 @@ def compile(
         raise TypeError("filenames must be a mapping or None")
     if options is not None and not isinstance(options, CompileOptions):
         raise TypeError("options must be CompileOptions or None")
-    if not isinstance(mangler, ManglerKind):
+    if options is not None and not isinstance(options.mangler, ManglerKind):
         raise TypeError("mangler must be ManglerKind")
     return _native.compile(
         modules,
         root,
         options,
-        mangler.value,
-        use_sourcemap,
         {}
         if filenames is None
         else {name: os.fspath(path) for name, path in filenames.items()},
@@ -110,8 +107,6 @@ def compile_source(
     root: str = "package::main",
     filename: str | os.PathLike[str] = "<string>",
     options: CompileOptions | None = None,
-    mangler: ManglerKind = ManglerKind.Escape,
-    use_sourcemap: bool = True,
     filenames: Mapping[str, str | os.PathLike[str]] | None = None,
     root_directory: str | os.PathLike[str] | None = None,
 ) -> CompileResult:
@@ -129,8 +124,6 @@ def compile_source(
         copied_modules,
         root=root,
         options=options,
-        mangler=mangler,
-        use_sourcemap=use_sourcemap,
         filenames=copied_filenames,
         root_directory=root_directory,
     )
@@ -142,8 +135,6 @@ def compile_file(
     modules: Mapping[str, str] | None = None,
     root_directory: str | os.PathLike[str] | None = None,
     options: CompileOptions | None = None,
-    mangler: ManglerKind = ManglerKind.Escape,
-    use_sourcemap: bool = True,
     filenames: Mapping[str, str | os.PathLike[str]] | None = None,
 ) -> CompileResult:
     path = Path(filename).absolute()
@@ -160,8 +151,6 @@ def compile_file(
         root=root,
         filename=path,
         options=options,
-        mangler=mangler,
-        use_sourcemap=use_sourcemap,
         filenames=filenames,
         root_directory=directory,
     )
@@ -180,8 +169,6 @@ class Compiler:
         *,
         root: str = "package::main",
         filename: str | os.PathLike[str] = "<string>",
-        mangler: ManglerKind = ManglerKind.Escape,
-        use_sourcemap: bool = True,
     ) -> CompileResult:
         return compile_source(
             source,
@@ -189,8 +176,6 @@ class Compiler:
             root=root,
             filename=filename,
             options=self.options,
-            mangler=mangler,
-            use_sourcemap=use_sourcemap,
             filenames=self.filenames,
             root_directory=self.root_directory,
         )
@@ -198,9 +183,6 @@ class Compiler:
     def compile_file(  # noqa: D102
         self,
         filename: str | os.PathLike[str],
-        *,
-        mangler: ManglerKind = ManglerKind.Escape,
-        use_sourcemap: bool = True,
     ) -> CompileResult:
         path = (
             Path(filename)
@@ -212,8 +194,6 @@ class Compiler:
             modules=self.modules,
             root_directory=self.root_directory,
             options=self.options,
-            mangler=mangler,
-            use_sourcemap=use_sourcemap,
             filenames=self.filenames,
         )
 

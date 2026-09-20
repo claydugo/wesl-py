@@ -2,8 +2,10 @@ use std::{borrow::Cow, collections::HashMap, path::PathBuf};
 
 use pyo3::{prelude::*, types::PyMapping};
 use wesl::{
-    BasicSourceMap, EscapeMangler, FileResolver, Mangler, ModulePath, ResolveError, Resolver,
-    SourceMap, SyntaxUtil, VirtualResolver, Wesl,
+    error::ResolveError,
+    resolver::{FileResolver, Resolver, VirtualResolver},
+    sourcemap::{SourceMap, SourceMapFile},
+    syntax::ModulePath,
 };
 use wgsl_parse::{
     SyntaxNode,
@@ -36,139 +38,19 @@ impl Resolver for TestResolver {
     }
 
     fn resolve_source<'a>(&'a self, path: &ModulePath) -> Result<Cow<'a, str>, ResolveError> {
-        self.inner.resolve_source(path)
+        let source = self.inner.resolve_source(path)?;
+        if path == &self.root {
+            Ok(format!(
+                "{source}\n@compute @workgroup_size(1) fn {}() {{ wgsl_test::TestResult::initTestResult(); {}(); wgsl_test::TestResult::testResult.completed = 1u; }}",
+                self.entry_point, self.test_name,
+            ).into())
+        } else {
+            Ok(source)
+        }
     }
 
     fn display_name(&self, path: &ModulePath) -> Option<String> {
         self.inner.display_name(path)
-    }
-
-    fn resolve_module(&self, path: &ModulePath) -> Result<TranslationUnit, ResolveError> {
-        let mut syntax = self.inner.resolve_module(path)?;
-        if path != &self.root {
-            return Ok(syntax);
-        }
-        let mut pending: Vec<_> = syntax.global_declarations.iter_mut().collect();
-        while let Some(declaration) = pending.pop() {
-            let span = declaration.span();
-            if matches!(&**declaration, GlobalDeclaration::Function(function)
-            if *function.ident.name() == self.test_name
-                && function.attributes.iter().any(|attribute| {
-                    matches!(&**attribute, Attribute::Custom(custom) if custom.name == "test")
-                }))
-            {
-                if let GlobalDeclaration::Function(function) = &mut **declaration {
-                    let mut wrapper: TranslationUnit = format!(
-                        "@compute @workgroup_size(1) fn {}() {{ wgsl_test::TestResult::initTestResult(); {}(); wgsl_test::TestResult::testResult.completed = 1u; }}",
-                        self.entry_point, self.test_name,
-                    ).parse().map_err(|error| ResolveError::Error(wesl::Diagnostic::from(error)))?;
-                    let mut conditions: Vec<_> = function
-                        .attributes
-                        .iter()
-                        .filter(|attribute| attribute.is_condcomp())
-                        .cloned()
-                        .collect();
-                    if conditions.is_empty() {
-                        conditions.push(Spanned::new(
-                            Attribute::If(Spanned::new(
-                                Expression::Literal(LiteralExpression::Bool(true)),
-                                span,
-                            )),
-                            span,
-                        ));
-                    }
-                    function
-                        .attributes
-                        .retain(|attribute| !attribute.is_condcomp());
-                    let original = declaration.clone();
-                    *declaration = Spanned::new(
-                        GlobalDeclaration::Compound(
-                            wgsl_parse::syntax::CompoundGlobalDeclaration {
-                                attributes: conditions,
-                                body: vec![original, wrapper.global_declarations.remove(0)],
-                            },
-                        ),
-                        span,
-                    );
-                }
-            } else if let GlobalDeclaration::Compound(compound) = &mut **declaration {
-                pending.extend(&mut compound.body);
-            }
-        }
-        syntax.retarget_idents();
-        Ok(syntax)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn selected_test_and_entry_point_share_conditional_attributes()
-    -> Result<(), Box<dyn std::error::Error>> {
-        let root: ModulePath = "package::main".parse()?;
-        let mut inner = ModuleResolver {
-            modules: VirtualResolver::new(),
-            filenames: HashMap::new(),
-            files: None,
-        };
-        inner.modules.add_module(
-            root.clone(),
-            "@if(enabled) @test fn selected() {}".to_owned().into(),
-        );
-        let resolver = TestResolver {
-            inner,
-            root: root.clone(),
-            test_name: "selected".to_owned(),
-            entry_point: "entry".to_owned(),
-        };
-
-        let syntax = resolver.resolve_module(&root)?;
-        let source = syntax.to_string();
-
-        if !source.contains("@if(enabled)") {
-            return Err("conditional attribute is missing".into());
-        }
-        if !source.contains("@test") || !source.contains("fn selected()") {
-            return Err("selected test is missing".into());
-        }
-        if !source.contains("@compute @workgroup_size(1)") || !source.contains("fn entry()") {
-            return Err("compute entry point is missing".into());
-        }
-        if !source.contains("wgsl_test::TestResult::initTestResult();")
-            || !source.contains("selected();")
-            || !source.contains("wgsl_test::TestResult::testResult.completed = 1u;")
-        {
-            return Err("test tracking calls are missing from the wrapper".into());
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn unconditional_test_gets_a_true_condition() -> Result<(), Box<dyn std::error::Error>> {
-        let root: ModulePath = "package::main".parse()?;
-        let mut inner = ModuleResolver {
-            modules: VirtualResolver::new(),
-            filenames: HashMap::new(),
-            files: None,
-        };
-        inner
-            .modules
-            .add_module(root.clone(), "@test fn selected() {}".to_owned().into());
-        let resolver = TestResolver {
-            inner,
-            root: root.clone(),
-            test_name: "selected".to_owned(),
-            entry_point: "entry".to_owned(),
-        };
-
-        let syntax = resolver.resolve_module(&root)?;
-
-        if !syntax.to_string().contains("@if(true)") {
-            return Err("unconditional test has no true condition".into());
-        }
-        Ok(())
     }
 }
 
@@ -180,7 +62,7 @@ pub(super) fn discover_tests(
 ) -> PyResult<Vec<(String, usize, usize)>> {
     py.detach(move || {
         let syntax: TranslationUnit = source.parse().map_err(|error| {
-            let mut diagnostic = wesl::Diagnostic::from(error).with_source(source);
+            let mut diagnostic = wesl::error::Diagnostic::from(error).with_source(source);
             diagnostic.detail.display_name = Some(filename);
             Failure::from_diagnostic(diagnostic)
         })?;
@@ -252,9 +134,14 @@ pub(super) fn compile_test(
             }
             resolver.modules.add_module(path, source.into());
         }
-        let syntax = resolver
-            .resolve_module(&root)
-            .map_err(|error| Failure::from_diagnostic(wesl::Diagnostic::from(error)))?;
+        let source = resolver.resolve_source(&root)
+            .map_err(|error| Failure::from_diagnostic(wesl::error::Diagnostic::from(error)))?
+            .into_owned();
+        let mut syntax: TranslationUnit = source.parse().map_err(|error| {
+            Failure::from_diagnostic(wesl::error::Diagnostic::from(error)
+                .with_source(source.clone())
+                .with_module_path(root.clone(), resolver.display_name(&root)))
+        })?;
         let mut pending: Vec<_> = syntax.global_declarations.iter().collect();
         let mut names = Vec::new();
         let mut test_exists = false;
@@ -294,6 +181,31 @@ pub(super) fn compile_test(
         while names.contains(&entry_point) {
             entry_point.push('_');
         }
+        wesl::pass::condcomp(&mut syntax, &options.features).map_err(|error| {
+            Failure::from_diagnostic(wesl::error::Diagnostic::from(error)
+                .with_source(source.clone())
+                .with_module_path(root.clone(), resolver.display_name(&root)))
+        })?;
+        let Some(declaration) = syntax.global_declarations.iter().find(|declaration| {
+            matches!(&***declaration, GlobalDeclaration::Function(function)
+                if *function.ident.name() == test_name
+                    && function.attributes.iter().any(|attribute| {
+                        matches!(&**attribute, Attribute::Custom(custom) if custom.name == "test")
+                    }))
+        }) else {
+            return Ok(None);
+        };
+        if let GlobalDeclaration::Function(function) = &**declaration
+            && (!function.parameters.is_empty()
+                || function.return_type.is_some()
+                || function.attributes.iter().any(|attribute| attribute.is_entry_point()))
+        {
+            return Err(Failure::from_diagnostic(wesl::Error::Custom(
+                "@test requires a function without parameters, a return value, or a shader stage".to_owned(),
+            ).diagnostic().with_source(source)
+                .with_module_path(root.clone(), resolver.display_name(&root))
+                .with_span(declaration.span())));
+        }
         let assertion_module = module_path("wgsl_test")?;
         resolver.modules.add_module(
             assertion_module.clone(),
@@ -308,56 +220,36 @@ pub(super) fn compile_test(
                 .into(),
         );
         options.keep = Some(vec![entry_point.clone()]);
-        options.keep_root = false;
-        options.mangle_root = true;
+        options.keep_main = false;
+        options.mangle_main = true;
         let resolver = TestResolver {
             inner: resolver,
             root: root.clone(),
             test_name: test_name.clone(),
             entry_point: entry_point.clone(),
         };
-        let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
-        compiler.set_options(options);
-        compiler.set_mangler(wesl::ManglerKind::Escape);
-        compiler.use_sourcemap(false);
-        let mut result = compiler.compile(&root).map_err(|error| {
-            let mut diagnostic = error.diagnostic();
-            if diagnostic.detail.source.is_none()
-                && let Some(module) = &diagnostic.detail.module_path
-                && let Ok(source) = compiler.resolver().resolve_source(module)
-            {
-                diagnostic = diagnostic.with_source(source.into_owned());
-            }
-            Failure::from_diagnostic(diagnostic)
+        options.mangler = wesl::ManglerKind::Escape;
+        options.sourcemap = true;
+        let mut result = wesl::compile(&root, &options, &resolver).map_err(|error| {
+            Failure::from_diagnostic(error.diagnostic())
         })?;
-        let mut sourcemap = BasicSourceMap::new();
-        for module in &result.modules {
-            let source = compiler
-                .resolver()
-                .resolve_source(module)
-                .map_err(|error| Failure::from_diagnostic(wesl::Diagnostic::from(error)))?;
-            sourcemap.add_source(
-                module.clone(),
-                compiler.resolver().display_name(module),
-                source.into_owned(),
-            );
+        if let Some(sourcemap) = &mut result.sourcemap {
+            sourcemap.add_file(root.clone(), SourceMapFile {
+                source,
+                display_name: resolver.display_name(&root),
+                path: None,
+            });
         }
-        for declaration in &result.syntax.global_declarations {
-            if let Some(ident) = declaration.ident()
-                && let Some((module, name)) = EscapeMangler.unmangle(&ident.name())
-            {
-                sourcemap.add_decl(ident.name().to_string(), module, name);
-            }
-        }
-        result.sourcemap = Some(sourcemap);
         let mut assertions = HashMap::new();
         let mut result_name = None;
         let mut compiled_entry = None;
         let mut overrides = HashMap::new();
         for declaration in &result.syntax.global_declarations {
             if let Some(ident) = declaration.ident()
-                && let Some((module, name)) = result.sourcemap.get_decl(&ident.name())
+                && let Some(entry) = result.sourcemap.item(&ident.name())
             {
+                let module = &entry.path;
+                let name = &entry.name;
                 if module == &assertion_module {
                     if name.starts_with("expect") {
                         assertions.insert(ident.name().to_string(), name.to_owned());
@@ -365,29 +257,13 @@ pub(super) fn compile_test(
                 } else if module == &result_module && name == "testResult" {
                     result_name = Some(ident.name().to_string());
                 } else if module == &root {
-                    if name == entry_point {
+                    if *name == entry_point {
                         compiled_entry = Some(ident.name().to_string());
                     }
                     if matches!(&**declaration, GlobalDeclaration::Declaration(value)
                         if value.kind == DeclarationKind::Override)
                     {
                         overrides.insert(name.to_owned(), ident.name().to_string());
-                    }
-                    if name == test_name
-                        && let GlobalDeclaration::Function(function) = &**declaration
-                        && function.attributes.iter().any(|attribute| {
-                            matches!(&**attribute, Attribute::Custom(custom) if custom.name == "test")
-                        })
-                        && (!function.parameters.is_empty()
-                            || function.return_type.is_some()
-                            || function.attributes.iter().any(|attribute| attribute.is_entry_point()))
-                    {
-                        return Err(Failure::from_diagnostic(wesl::Error::Custom(
-                            "@test requires a function without parameters, a return value, or a shader stage".to_owned(),
-                        ).diagnostic().with_source(
-                            result.sourcemap.get_source(module).unwrap_or_default().to_owned(),
-                        ).with_module_path(module.clone(), result.sourcemap.get_display_name(module).map(str::to_owned))
-                        .with_span(declaration.span())));
                     }
                 }
             }
@@ -409,8 +285,8 @@ pub(super) fn compile_test(
             });
             let Some(module) = result
                 .sourcemap
-                .get_decl(&function.ident.name())
-                .map(|(module, _)| module.clone())
+                .item(&function.ident.name())
+                .map(|entry| entry.path.clone())
             else {
                 continue;
             };
@@ -422,7 +298,7 @@ pub(super) fn compile_test(
                         .collect::<Vec<_>>().join(", ");
                     let mut wrapper: TranslationUnit = format!(
                         "fn {name}_wesl_test(wesl_test_location: u32) {{ {name}({arguments}); {result_name}.checks += 1u; if {result_name}.failCount > 0u && {result_name}.site == 0u {{ {result_name}.site = wesl_test_location; }} }}"
-                    ).parse().map_err(|error| Failure::from_diagnostic(wesl::Diagnostic::from(error)))?;
+                    ).parse().map_err(|error| Failure::from_diagnostic(wesl::error::Diagnostic::from(error)))?;
                     if let GlobalDeclaration::Function(wrapper_function) =
                         &mut *wrapper.global_declarations[0]
                     {
@@ -444,9 +320,9 @@ pub(super) fn compile_test(
                             module: Some(module.to_string()),
                             filename: result
                                 .sourcemap
-                                .get_display_name(&module)
+                                .display_name(&module)
                                 .map(str::to_owned),
-                            source: result.sourcemap.get_source(&module).map(str::to_owned),
+                            source: result.sourcemap.source(&module).map(str::to_owned),
                             span: Some((range.start, range.end)),
                         });
                         let site = u32::try_from(sites.len())

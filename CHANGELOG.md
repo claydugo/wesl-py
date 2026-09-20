@@ -9,6 +9,9 @@
 - Load modules from directories and Python package resources with `load_modules()`.
 - Preserve dependency-qualified package names, the upstream order of modules, symlinks, and parent components in file paths.
 - Expose the binding version, upstream compiler version, and optional build revision.
-- Use published WESL and wgsl-parse 0.4.4 crates without local patches. See [API.md](API.md) for known limitations of `imports=False` and `lower=True`.
+- Use published WESL and wgsl-parse 0.5.0 crates without local patches. See [API.md](API.md) for known limitations of `imports=False` and `lower=True`.
+- Adopt `keep_main` and `mangle_main`. Remove `lazy`. Move `mangler` and `sourcemap` into `CompileOptions`.
+- Require public declarations for imports from named packages. Unknown or disabled names in `keep` raise `CompileError`.
+- Use the upstream frontend for compilation and shader tests. WESL 0.5.0 can lose module context in validation errors.
 - Provide compute, fractal, heightfield, and image-processing examples. The target GPU runtime validates generated shaders and pipelines.
 - Build wheels with a stable ABI for CPython 3.12 and later and free-threaded CPython 3.15 and later. See [CONTRIBUTING.md](CONTRIBUTING.md#support) for release targets and verification status.

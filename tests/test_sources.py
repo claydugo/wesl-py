@@ -86,7 +86,7 @@ def test_compile_source_returns_emitted_names_and_dependencies() -> None:
             "package::helper": "fn value() -> u32 { return 7u; }",
             "package::unused": "fn broken( }",
         },
-        options=wesl.CompileOptions(mangle_root=True),
+        options=wesl.CompileOptions(mangle_main=True),
     )
     assert isinstance(result, wesl.CompileResult)
     assert result.modules == ("package::main", "package::helper")
@@ -105,19 +105,52 @@ def test_named_packages_resolve_local_and_external_dependencies() -> None:
             "noise::lib": """
                 import package::settings::enabled;
                 import arithmetic::one;
-                fn value() -> u32 { return enabled + one; }
+                public fn value() -> u32 { return enabled + one; }
             """,
-            "noise::settings": "const enabled = 2u;",
-            "noise/arithmetic": "const one = 1u;",
+            "noise::settings": "public const enabled = 2u;",
+            "noise/arithmetic": "public const one = 1u;",
         },
         options=wesl.CompileOptions(keep=["main"]),
     )
-    assert result.modules == (
+    assert result.modules[0] == "package::main"
+    assert set(result.modules) == {
         "package::main",
         "noise::lib",
         "noise::settings",
         "noise/arithmetic",
+    }
+
+
+@pytest.mark.parametrize("visibility", ["", "private ", "public "])
+def test_package_imports_require_public_declarations(visibility: str) -> None:
+    modules = {
+        "package::main": "@compute @workgroup_size(1) fn main() { library::value(); }",
+        "library": f"{visibility}fn value() {{}}",
+    }
+    if visibility == "public ":
+        result = wesl.compile(modules)
+        assert "fn library_value(" in result.wgsl
+        assert "public " not in result.wgsl
+    else:
+        with pytest.raises(wesl.CompileError, match="visibility"):
+            wesl.compile(modules)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=wesl.CompileError,
+    reason="WESL 0.5.0 requires public visibility for local imports in named packages",
+)
+def test_named_package_local_imports_allow_package_visibility() -> None:
+    result = wesl.compile_source(
+        "@compute @workgroup_size(1) fn main() { library::value(); }",
+        modules={
+            "library": "import package::helper::value as helper; "
+            "public fn value() { helper(); }",
+            "library::helper": "fn value() {}",
+        },
     )
+    assert "fn library_helper_value(" in result.wgsl
 
 
 def test_compile_file_resolves_nested_imports_and_wgsl(tmp_path: Path) -> None:
@@ -281,7 +314,7 @@ def test_resource_loader_preserves_bytes_and_module_names(tmp_path: Path) -> Non
     directory = tmp_path / "shaders"
     (directory / "nested").mkdir(parents=True)
     (directory / "nested" / "helper.wesl").write_bytes(
-        "fn café() -> u32 {\r\n    return 2u;\r\n}".encode(),
+        "public fn café() -> u32 {\r\n    return 2u;\r\n}".encode(),
     )
     (directory / "nested" / "helper.wgsl").write_text("fn ignored() {}")
     (directory / "notes.txt").write_text("not a shader")
@@ -305,7 +338,7 @@ def test_resource_loader_preserves_bytes_and_module_names(tmp_path: Path) -> Non
         "import imaging::nested::helper::café; fn main() -> u32 { return café(); }",
         modules={
             **packaged.modules,
-            "imaging::nested::helper": "fn café() -> u32 { return 7u; }",
+            "imaging::nested::helper": "public fn café() -> u32 { return 7u; }",
         },
         options=wesl.CompileOptions(keep=["main"]),
     )
@@ -359,21 +392,22 @@ def test_package_dependencies_do_not_share_a_flat_namespace() -> None:
             @compute @workgroup_size(1) fn main() { let sum = first() + second(); }
         """,
         "alpha": "import common::value as common_value; "
-        "fn value() -> u32 { return common_value(); }",
+        "public fn value() -> u32 { return common_value(); }",
         "beta": "import common::value as common_value; "
-        "fn value() -> u32 { return common_value(); }",
-        "alpha/common": "fn value() -> u32 { return 3u; }",
-        "beta/common": "fn value() -> u32 { return 7u; }",
-        "common": "fn value() -> u32 { return 99u; }",
+        "public fn value() -> u32 { return common_value(); }",
+        "alpha/common": "public fn value() -> u32 { return 3u; }",
+        "beta/common": "public fn value() -> u32 { return 7u; }",
+        "common": "public fn value() -> u32 { return 99u; }",
     }
     result = wesl.compile(modules)
-    assert result.modules == (
+    assert result.modules[0] == "package::main"
+    assert set(result.modules) == {
         "package::main",
         "alpha",
         "alpha/common",
         "beta",
         "beta/common",
-    )
+    }
     assert "3u" in result.wgsl
     assert "7u" in result.wgsl
     assert "99u" not in result.wgsl
@@ -394,7 +428,9 @@ def test_source_mapping_can_be_disabled() -> None:
     )
     modules = {"package::helper": "fn value() {}"}
     mapped = wesl.compile_source(source, modules=modules)
-    unmapped = wesl.compile_source(source, modules=modules, use_sourcemap=False)
+    unmapped = wesl.compile_source(
+        source, modules=modules, options=wesl.CompileOptions(sourcemap=False)
+    )
     assert unmapped.wgsl == mapped.wgsl
     assert unmapped.modules == mapped.modules
     assert unmapped.entry_points == mapped.entry_points

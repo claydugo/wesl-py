@@ -23,8 +23,7 @@ result = wesl.compile(modules, options=options)
 print(result.wgsl)
 ```
 
-`compile(modules, *, root="package::main", options=None,
-mangler=ManglerKind.Escape, use_sourcemap=True, filenames=None,
+`compile(modules, *, root="package::main", options=None, filenames=None,
 root_directory=None)` returns a `CompileResult`.
 
 Module keys and `root` use names such as `package::main` and
@@ -63,25 +62,26 @@ The compile boundary checks field types.
 Applications can pass these values to process workers.
 
 The retention options use the names, defaults, and behavior of
-[wesl-rs `CompileOptions`](https://github.com/webgpu-tools/wesl-rs/blob/666362633e5235fa56c6a351d0aea5a502fa42e3/crates/wesl/src/lib.rs#L68-L150).
+[wesl-rs `CompileOptions`](https://github.com/webgpu-tools/wesl-rs/blob/63a3627ba31258565df177f3f553beed8ff45338/crates/wesl/src/frontend.rs#L27-L95).
 
 | Option | Effect |
 | --- | --- |
 | `strip=True` | Keep selected root declarations and their dependencies. |
-| `strip=False` | Disable stripping and resolve imports eagerly. |
+| `strip=False` | Preserve all declarations in each loaded module and resolve their dependencies. |
 | `keep=None` | Select entry points when stripping is enabled. |
 | `keep=["answer"]` | Select these original root names when stripping is enabled. |
 | `keep=[]` | Select no root declarations when stripping is enabled. |
-| `keep_root=True` | Select all active root declarations when stripping is enabled. |
+| `keep_main=True` | Select all active root declarations when stripping is enabled. |
 
-`strip=False` overrides `keep_root` and `keep`.
-`keep_root=True` overrides `keep`.
-Unknown names in `keep` select nothing. This includes declarations that conditional
-translation removes. The binding does not run a separate selection check.
+`strip=False` overrides `keep_main` and `keep`.
+`keep_main=True` overrides `keep`.
+Unknown names in `keep` raise `CompileError`. This includes declarations that conditional
+translation removes.
 A root with only unused helpers produces empty WGSL under the default options.
-Eager resolution follows imports. It does not scan every file in a package.
+The compiler loads modules when declarations depend on them. It does not scan every file in a package.
+WESL 0.5 removes the `lazy` option.
 
-Set `mangle_root=True` to rename root declarations as well as imported declarations.
+Set `mangle_main=True` to rename root declarations as well as imported declarations.
 This name and its default also come from wesl-rs.
 Selections always use original names, independent of mangling.
 
@@ -89,19 +89,19 @@ The remaining `CompileOptions` fields also use upstream names and defaults:
 
 | Option | Effect |
 | --- | --- |
-| `imports=True` | Resolve imports. Disabling this removes imports without loading their sources. |
+| `imports=True` | Request import resolution. WESL 0.5.0 ignores this setting. |
 | `condcomp=True` | Evaluate conditional translation attributes. |
-| `lazy=True` | Load declarations on demand when `strip=True`. |
 | `lower=False` | Enable upstream lowering when set to `True`. This build inlines aliases and constants. |
 | `validate=True` | Run upstream compiler checks. |
+| `sourcemap=True` | Record source text and declaration names. |
+| `mangler=ManglerKind.Escape` | Select the declaration naming scheme. |
 
 The build does not enable upstream generics or evaluation.
 `CompileOptions` does not expose the inactive generics option.
 
-The pinned wesl-rs 0.4.4 release has two known compiler limitations:
+The pinned wesl-rs 0.5.0 release has two known compiler limitations:
 
-- `imports=False` can emit empty WGSL with the default stripping options.
-  Set `strip=False` when imports are disabled.
+- `imports=False` still resolves imports.
 - `lower=True` can lose explicit constant types or leave unresolved constant references.
   Keep `lower=False` for runtime shaders until upstream fixes these cases.
 
@@ -111,7 +111,7 @@ The binding uses the published crates without local compiler patches.
 `ManglerKind.Unicode`, or `ManglerKind.None_`.
 `None_` represents the Rust `None` variant and disables mangling.
 The Unicode mangler keeps paths in names. A WGSL runtime can reject these names.
-Set `use_sourcemap=False` to skip source-map recording.
+Set `CompileOptions(sourcemap=False)` to skip source-map recording.
 Escape mangling and source-map recording are upstream defaults.
 
 Invalid argument types raise `TypeError`. Invalid module names raise
@@ -146,7 +146,7 @@ File paths and root directories can contain `..`.
 Invalid root file paths raise the corresponding Python file exception.
 A file outside `root_directory` raises `ValueError`.
 
-Both functions accept `options`, `mangler`, and `use_sourcemap` from `compile()`.
+Both functions accept `options` from `compile()`.
 Files load only when the compiler resolves an import.
 The resolver first checks the supplied `modules` mapping.
 It then looks for a `.wesl` file, with `.wgsl` as a fallback.
@@ -157,11 +157,16 @@ Named libraries also use `modules`:
 ```python
 result = wesl.compile_source(
     "import noise::lib::value; fn main() -> u32 { return value(); }",
-    modules={"noise::lib": "fn value() -> u32 { return 7u; }"},
+    modules={"noise::lib": "public fn value() -> u32 { return 7u; }"},
     options=wesl.CompileOptions(keep=["main"]),
 )
 ```
 
+Imports across package boundaries require `public` declarations.
+Declarations without a visibility modifier remain accessible within their package.
+`private` declarations remain accessible only within their module.
+WESL 0.5.0 also requires `public` for imports between modules in a named library.
+This upstream limitation affects `package::` and relative imports within that library.
 Within a library, `package::` and relative imports refer to that library.
 Dependencies use the exact package paths that upstream's virtual resolver receives.
 If `noise::lib` imports `arithmetic::one`, supply that dependency under
@@ -189,7 +194,7 @@ Use `result.wgsl` to pass the shader to wgpu-py.
 
 Each access to `sources` returns a dictionary copy.
 The source text comes from the upstream source map.
-With `use_sourcemap=False`, `sources` is empty.
+With `CompileOptions(sourcemap=False)`, `sources` is empty.
 These records adapt the upstream result for Python. The binding emits WGSL once
 and reads the existing syntax tree for names. It does not parse the output again.
 
@@ -262,6 +267,9 @@ except wesl.CompileError as error:
 `CompileError.diagnostics` is a tuple. A manually constructed exception
 starts with an empty tuple.
 Error text contains no terminal color codes.
+WESL 0.5.0 can omit module context from validation errors.
+An error in an imported module can show the root source with a span from the imported source.
+Syntax errors retain their module context.
 
 `Diagnostic(message, module=None, filename=None, source=None, span=None)`
 is an immutable value. It supports equality, hashing, and pickle.
@@ -293,7 +301,7 @@ File imports use their filesystem paths when reporting errors.
 `wesl.__version__` identifies the binding. `wesl.compiler_version`
 identifies the WESL compiler.
 `wesl.__version__` matches Python distribution metadata. This package uses the published WESL and
-`wgsl-parse` 0.4.4 crates without local patches.
+`wgsl-parse` 0.5.0 crates without local patches.
 Report parser defects to the [upstream issue tracker](https://github.com/webgpu-tools/wesl-rs/issues).
 See [NOTICE](licenses/NOTICE) for source provenance.
 

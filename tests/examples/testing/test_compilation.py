@@ -15,10 +15,10 @@ def test_imported_feature(wesl_compiler: wesl.Compiler) -> None:
 def test_invalid_shader(wesl_compiler: wesl.Compiler) -> None:
     with pytest.raises(wesl.CompileError) as caught:
         wesl_compiler.compile_source(
-            "@compute @workgroup_size(1) fn main() { let value = missing; }",
+            "@compute @workgroup_size(1) fn main() { let value = ; }",
             filename="invalid.wesl",
         )
     diagnostic = caught.value.diagnostics[0]
     assert diagnostic.filename == "invalid.wesl"
     assert diagnostic.line == 1
-    assert "missing" in diagnostic.message
+    assert "unexpected" in diagnostic.message

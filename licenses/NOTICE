@@ -10,7 +10,7 @@ Copyright (c) The webgpu-tools Contributors.
 These projects use the MIT or Apache-2.0 licenses.
 https://github.com/webgpu-tools/wesl-rs
 
-This package uses the published WESL and wgsl-parse 0.4.4 crates.
+This package uses the published WESL and wgsl-parse 0.5.0 crates.
 Cargo.lock records their sources and checksums.
 
 This package uses PyO3 under the MIT or Apache-2.0 licenses.

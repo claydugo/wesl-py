@@ -85,8 +85,6 @@ def compile(
     modules: Mapping[str, str],
     root: str,
     options: _CompileOptions | None,
-    mangler: str,
-    use_sourcemap: bool,
     filenames: dict[str, str],
     root_directory: str | None,
 ) -> CompileResult: ...

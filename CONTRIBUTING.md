@@ -58,7 +58,7 @@ pixi run -e dev cargo bundle-licenses --format yaml --prefer MIT --previous lice
 ```
 
 Fill the missing license texts before accepting the bundle.
-The WESL 0.4.4 entries use the [upstream MIT text](https://github.com/webgpu-tools/wesl-rs/blob/666362633e5235fa56c6a351d0aea5a502fa42e3/LICENSE-MIT).
+The WESL 0.5.0 entries use the [upstream MIT text](https://github.com/webgpu-tools/wesl-rs/blob/63a3627ba31258565df177f3f553beed8ff45338/LICENSE-MIT).
 Their copyright notice comes from [NOTICE](licenses/NOTICE).
 
 `licenses/RUST.html` contains the Rust 1.97.1 standard library notices.
@@ -84,8 +84,7 @@ pixi run -e testing-minimum python -m pytest tests/test_pytest_plugin.py -q
 Use `pixi run test` when you need to run all repository tests and shader examples.
 This task runs one pytest session that collects `tests/`.
 Example tests, shader tests, snapshots, and the license check run in that session.
-Cargo tests cover the shader entry wrapper.
-The Python tests exercise the native Rust extension.
+The Python tests exercise the native Rust extension and the shader entry wrapper.
 
 The task selects the `testing` environment for Python tests.
 That environment includes the example dependencies and pytest plugins.

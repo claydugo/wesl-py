@@ -14,20 +14,20 @@ fn recordFailure(actual: vec4f, expected: vec4f) {
   testResult.failCount += 1u;
 }
 
-fn expect(condition: bool) {
+public fn expect(condition: bool) {
   if (!condition) {
     // no values to report; -999 matches the unwritten-slot sentinel
     recordFailure(vec4f(-999.0), vec4f(-999.0));
   }
 }
 
-fn expectEq(actual: u32, expected: u32) {
+public fn expectEq(actual: u32, expected: u32) {
   if (actual != expected) {
     recordFailure(vec4f(f32(actual), 0.0, 0.0, 0.0), vec4f(f32(expected), 0.0, 0.0, 0.0));
   }
 }
 
-fn expectWithin(actual: f32, expected: f32, relTol: f32, absTol: f32) {
+public fn expectWithin(actual: f32, expected: f32, relTol: f32, absTol: f32) {
   let diff = abs(actual - expected);
   let tolerance = max(absTol, relTol * max(abs(actual), abs(expected)));
   if (diff > tolerance) {
@@ -35,11 +35,11 @@ fn expectWithin(actual: f32, expected: f32, relTol: f32, absTol: f32) {
   }
 }
 
-fn expectNear(actual: f32, expected: f32) {
+public fn expectNear(actual: f32, expected: f32) {
   expectWithin(actual, expected, relTol, absTol);
 }
 
-fn expectWithinVec2(actual: vec2f, expected: vec2f, relTol: f32, absTol: f32) {
+public fn expectWithinVec2(actual: vec2f, expected: vec2f, relTol: f32, absTol: f32) {
   let diff = abs(actual - expected);
   let tolerance = max(vec2f(absTol), relTol * max(abs(actual), abs(expected)));
   if (any(diff > tolerance)) {
@@ -47,11 +47,11 @@ fn expectWithinVec2(actual: vec2f, expected: vec2f, relTol: f32, absTol: f32) {
   }
 }
 
-fn expectNearVec2(actual: vec2f, expected: vec2f) {
+public fn expectNearVec2(actual: vec2f, expected: vec2f) {
   expectWithinVec2(actual, expected, relTol, absTol);
 }
 
-fn expectWithinVec3(actual: vec3f, expected: vec3f, relTol: f32, absTol: f32) {
+public fn expectWithinVec3(actual: vec3f, expected: vec3f, relTol: f32, absTol: f32) {
   let diff = abs(actual - expected);
   let tolerance = max(vec3f(absTol), relTol * max(abs(actual), abs(expected)));
   if (any(diff > tolerance)) {
@@ -59,11 +59,11 @@ fn expectWithinVec3(actual: vec3f, expected: vec3f, relTol: f32, absTol: f32) {
   }
 }
 
-fn expectNearVec3(actual: vec3f, expected: vec3f) {
+public fn expectNearVec3(actual: vec3f, expected: vec3f) {
   expectWithinVec3(actual, expected, relTol, absTol);
 }
 
-fn expectWithinVec4(actual: vec4f, expected: vec4f, relTol: f32, absTol: f32) {
+public fn expectWithinVec4(actual: vec4f, expected: vec4f, relTol: f32, absTol: f32) {
   let diff = abs(actual - expected);
   let tolerance = max(vec4f(absTol), relTol * max(abs(actual), abs(expected)));
   if (any(diff > tolerance)) {
@@ -71,7 +71,7 @@ fn expectWithinVec4(actual: vec4f, expected: vec4f, relTol: f32, absTol: f32) {
   }
 }
 
-fn expectNearVec4(actual: vec4f, expected: vec4f) {
+public fn expectNearVec4(actual: vec4f, expected: vec4f) {
   expectWithinVec4(actual, expected, relTol, absTol);
 }
 
@@ -91,7 +91,7 @@ fn ulpDiff(actual: f32, expected: f32) -> u32 {
   return max(a, b) - min(a, b);
 }
 
-fn expectUlp(actual: f32, expected: f32, maxUlp: u32) {
+public fn expectUlp(actual: f32, expected: f32, maxUlp: u32) {
   if (actual == expected) { return; }  // handles +0 == -0, exact match
   let diff = ulpDiff(actual, expected);
   if (diff > maxUlp) {
@@ -99,7 +99,7 @@ fn expectUlp(actual: f32, expected: f32, maxUlp: u32) {
   }
 }
 
-fn expectUlpVec2(actual: vec2f, expected: vec2f, maxUlp: u32) {
+public fn expectUlpVec2(actual: vec2f, expected: vec2f, maxUlp: u32) {
   if (all(actual == expected)) { return; }
   let d0 = ulpDiff(actual.x, expected.x);
   let d1 = ulpDiff(actual.y, expected.y);
@@ -108,7 +108,7 @@ fn expectUlpVec2(actual: vec2f, expected: vec2f, maxUlp: u32) {
   }
 }
 
-fn expectUlpVec3(actual: vec3f, expected: vec3f, maxUlp: u32) {
+public fn expectUlpVec3(actual: vec3f, expected: vec3f, maxUlp: u32) {
   if (all(actual == expected)) { return; }
   let d0 = ulpDiff(actual.x, expected.x);
   let d1 = ulpDiff(actual.y, expected.y);
@@ -118,7 +118,7 @@ fn expectUlpVec3(actual: vec3f, expected: vec3f, maxUlp: u32) {
   }
 }
 
-fn expectUlpVec4(actual: vec4f, expected: vec4f, maxUlp: u32) {
+public fn expectUlpVec4(actual: vec4f, expected: vec4f, maxUlp: u32) {
   if (all(actual == expected)) { return; }
   let d0 = ulpDiff(actual.x, expected.x);
   let d1 = ulpDiff(actual.y, expected.y);

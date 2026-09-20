@@ -97,7 +97,7 @@ def test_compiler_without_gpu_dependencies(pytester: pytest.Pytester) -> None:
                     "@if(enabled) fn value() -> u32 { return 7u; } "
                     "@else fn value() -> u32 { return 3u; }"
                 ),
-                "package::broken": "fn value() -> u32 { return absent; }",
+                "package::broken": "fn value() -> u32 { return ; ) }",
             }
 
         @pytest.fixture
@@ -149,7 +149,7 @@ def test_compiler_without_gpu_dependencies(pytester: pytest.Pytester) -> None:
                 )
             diagnostic = caught.value.diagnostics[0]
             assert diagnostic.filename == "generated/broken.wesl"
-            assert diagnostic.source == "fn value() -> u32 { return absent; }"
+            assert diagnostic.source == "fn value() -> u32 { return ; ) }"
     """)
     result = pytester.runpytest_subprocess("-v")
     result.assert_outcomes(passed=6)
@@ -352,7 +352,9 @@ def test_fixtures_parametrization_and_selection(pytester: pytest.Pytester) -> No
 
         @pytest.fixture
         def wesl_modules():
-            return {"library": "fn double(value: u32) -> u32 { return value * 2u; }"}
+            return {
+                "library": "public fn double(value: u32) -> u32 { return value * 2u; }"
+            }
     """)
     pytester.makefile(
         ".test.wesl",
