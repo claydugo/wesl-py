@@ -87,7 +87,8 @@ The floating-point functions also have `Vec2`, `Vec3`, and `Vec4` suffixes.
 For example, `expectNearVec3` accepts two `vec3f` values.
 Each component must pass. Near comparisons use
 `abs(actual - expected) <= max(absolute, relative * max(abs(actual), abs(expected)))`.
-Use finite inputs. GPU floating-point behavior still applies.
+Use finite operands and tolerances. The upstream assertions can accept NaN and
+infinity. GPU floating-point behavior still applies.
 
 A failure reports the first failing assertion, its original file and source line,
 actual and expected values, and the total failure count.
@@ -134,7 +135,10 @@ def test_double(wesl_compiler):
         }
     """)
     output = compute_with_buffers(
-        {0: array("f", [1, 2, 3])}, {0: (3, "f")}, shader.wgsl, n=3,
+        {0: array("f", [1, 2, 3])},
+        {0: (3, "f")},
+        shader.wgsl,
+        n=3,
     )
     assert output[0].tolist() == [2.0, 4.0, 6.0]
 ```
@@ -165,7 +169,8 @@ import wgpu
 @pytest.fixture
 def wesl_resources(wesl_device):
     buffer = wesl_device.create_buffer_with_data(
-        data=pack("<3f", 1, 2, 3), usage=wgpu.BufferUsage.STORAGE,
+        data=pack("<3f", 1, 2, 3),
+        usage=wgpu.BufferUsage.STORAGE,
     )
     try:
         yield {0: [{"binding": 0, "resource": {"buffer": buffer}}]}

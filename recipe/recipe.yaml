@@ -51,6 +51,7 @@ about:
     - licenses/RUST.html
     - licenses/NOTICE
     - licenses/THIRDPARTY.yml
+    - licenses/WGSL-TEST-MIT
   summary: Python bindings for the Rust WESL compiler
 
 extra:

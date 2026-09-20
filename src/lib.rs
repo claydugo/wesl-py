@@ -332,10 +332,24 @@ impl Resolver for ModuleResolver {
 impl Diagnostic {
     fn position(&self, offset: usize) -> Option<(usize, usize)> {
         let prefix = self.source.as_ref()?.get(..offset)?;
-        Some((
-            prefix.bytes().filter(|byte| *byte == b'\n').count() + 1,
-            prefix.rsplit('\n').next()?.chars().count() + 1,
-        ))
+        let mut line = 1;
+        let mut column = 1;
+        let mut characters = prefix.chars().peekable();
+        while let Some(character) = characters.next() {
+            if matches!(
+                character,
+                '\n' | '\u{000B}' | '\u{000C}' | '\r' | '\u{0085}' | '\u{2028}' | '\u{2029}'
+            ) {
+                line += 1;
+                column = 1;
+                if character == '\r' && characters.peek() == Some(&'\n') {
+                    characters.next();
+                }
+            } else {
+                column += 1;
+            }
+        }
+        Some((line, column))
     }
 }
 

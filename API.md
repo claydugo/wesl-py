@@ -179,6 +179,23 @@ These keys identify virtual modules. The binding does not construct an upstream
 package dependency graph or deduplicate package instances.
 The resolver does not search the filesystem for named libraries.
 
+## Reuse compilation settings
+
+`Compiler` stores `options`, `modules`, `filenames`, and `root_directory`.
+All four are optional keyword arguments. Each instance owns its default settings.
+Supplied settings and mappings remain shared with the caller.
+
+```python
+compiler = wesl.Compiler(root_directory="shaders")
+result = compiler.compile_file("main.wesl")
+result = compiler.compile_source("@compute @workgroup_size(1) fn main() {}")
+```
+
+`compile_source(source, *, root="package::main", filename="<string>")`
+uses the stored settings. `compile_file(filename)` resolves relative paths
+from `root_directory`, or the working directory when no root is set.
+Each call compiles again. The object does not cache results.
+
 ## Compilation results
 
 All compilation functions return an immutable `CompileResult`.

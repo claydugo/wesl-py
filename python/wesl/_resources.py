@@ -1,6 +1,6 @@
 import os
 from importlib.resources.abc import Traversable
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import NamedTuple
 
 
@@ -29,7 +29,7 @@ def load_modules(
             if child.is_dir():
                 directories.append(((*parts, child.name), child, ancestors))
                 continue
-            filename = Path(child.name)
+            filename = PurePosixPath(child.name)
             if filename.suffix not in {".wesl", ".wgsl"}:
                 continue
             module_path = (*parts, filename.stem)

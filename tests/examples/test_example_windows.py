@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import runpy
 import sys
@@ -58,7 +59,9 @@ def draw(
     and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")),
     reason="requires a window server",
 )
-def test_native_pointer_coordinates(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_native_pointer_coordinates(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     channels = numpy.full((3, 19, 37), 0.25, dtype=numpy.float32)
     colors = numpy.ones((3, 256, 4), dtype=numpy.float32)
     labels = ["Brightfield", "GFP", "RFP"]
@@ -127,6 +130,7 @@ def test_native_pointer_coordinates(monkeypatch: pytest.MonkeyPatch) -> None:
             canvas.close()
             loop.stop(force=True)
             render_loop.run(asyncio.sleep(0))
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
 
 
 @pytest.mark.gpu
@@ -135,7 +139,9 @@ def test_native_pointer_coordinates(monkeypatch: pytest.MonkeyPatch) -> None:
     and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")),
     reason="requires a window server",
 )
-def test_sdf_pointer_controls(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sdf_pointer_controls(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     rendercanvas = import_module("rendercanvas.glfw")
     viewer_module = import_module("examples.sdf.viewer")
     rectangles = {}
@@ -207,3 +213,4 @@ def test_sdf_pointer_controls(monkeypatch: pytest.MonkeyPatch) -> None:
             canvas.close()
             loop.stop(force=True)
             render_loop.run(asyncio.sleep(0))
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]

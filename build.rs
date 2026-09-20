@@ -3,7 +3,6 @@ use std::{env, fs, path::PathBuf, process::Command};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=Cargo.lock");
     println!("cargo:rerun-if-changed=Cargo.toml");
-    println!("cargo:rerun-if-changed=src/lib.rs");
     println!("cargo:rerun-if-env-changed=WESL_PY_BUILD_REVISION");
     let lock: toml::Table = fs::read_to_string("Cargo.lock")?.parse()?;
     let compiler = lock["package"]

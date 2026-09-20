@@ -57,7 +57,7 @@ See the [API reference](https://github.com/claydugo/wesl-py/blob/main/API.md) fo
 ## Shader tests
 
 Collect WESL `@test` functions with pytest, or test compute and fragment shaders
-from Python with NumPy inputs and assertions. See [TESTING.md](TESTING.md).
+from Python with NumPy inputs and assertions. See [TESTING.md](https://github.com/claydugo/wesl-py/blob/main/TESTING.md).
 
 ```bash
 pixi run -e testing python -m pytest tests/shaders -v
@@ -65,8 +65,8 @@ pixi run -e testing python -m pytest tests/shaders -v
 
 ## Examples
 
-- [SDF playground](examples/sdf/README.md) shares geometry between rendering and particle collisions.
-- [Multiscale fluorescence](examples/multiscale/README.md) shares convolution across image axes, scales, and implementations.
+- [SDF playground](https://github.com/claydugo/wesl-py/blob/main/examples/sdf/README.md) shares geometry between rendering and particle collisions.
+- [Multiscale fluorescence](https://github.com/claydugo/wesl-py/blob/main/examples/multiscale/README.md) shares convolution across image axes, scales, and implementations.
 
 Both examples open interactive windows:
 
@@ -74,6 +74,9 @@ Both examples open interactive windows:
 pixi run -e examples python -m examples.sdf
 pixi run -e examples python -m examples.multiscale
 ```
+
+The [RMSNorm and compaction examples](https://github.com/claydugo/wesl-py/blob/main/examples/README.md#headless-compute)
+run without a window or downloaded data.
 
 ## Contributing
 

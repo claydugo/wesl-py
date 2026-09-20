@@ -149,12 +149,14 @@ adapter. The artifact workflow does not test window events.
 GPU extras have no verified free-threaded support yet.
 
 Minimum versions define the supported dependency baseline.
-The `testing` extra starts at NumPy 1.26 for
-[Python 3.12 support](https://numpy.org/doc/1.26/release/1.26.0-notes.html).
+The `testing` extra requires pytest and wgpu-py. The executor does not import NumPy.
+The GPU test environment supplies NumPy for Python reference calculations.
 The examples require NumPy 2.1 to satisfy pygfx 0.17.
 The examples use rendercanvas 2.7.2 as the baseline for window tests.
-The existing imgui-bundle upper bound preserves compatibility
-with the wgpu ImGui integration.
+The imgui-bundle upper bound excludes 1.92.900 because PyPI wgpu 0.32.0
+still accesses its removed `cmd_lists_count` attribute.
+Conda applies a [backend patch](https://github.com/conda-forge/wgpu-py-feedstock/blob/main/recipe/0001-Use-len-draw_data.cmd_lists-in-imgui-backend.patch).
+Verify PyPI wheels before raising the bound.
 Development tools have minimum versions; lockfiles record their exact versions.
 
 ## Artifacts

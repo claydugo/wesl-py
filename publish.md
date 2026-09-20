@@ -2,7 +2,7 @@
 
 Publish to GitHub, then PyPI, then conda-forge.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for implemented checks.
-See [ROADMAP.md](ROADMAP.md) for compiler upgrades and future integrations.
+See [ROADMAP.md](ROADMAP.md) for unresolved defects and deferred features.
 
 ## Release verification
 

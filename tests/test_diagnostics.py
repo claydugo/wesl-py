@@ -257,9 +257,12 @@ def test_diagnostics_are_immutable_values() -> None:
     assert pickle.loads(pickle.dumps(diagnostic)) == diagnostic  # noqa: S301
 
 
-def test_diagnostic_positions_use_unicode_columns() -> None:
-    source = "fn café() {\r\n    let café = 1u;\n}"
-    start = source.encode().index(b"caf\xc3\xa9", source.encode().index(b"\n"))
+@pytest.mark.parametrize(
+    "line_break", ["\n", "\r\n", "\r", "\v", "\f", "\x85", "\u2028", "\u2029"]
+)
+def test_diagnostic_positions_use_unicode_columns(line_break: str) -> None:
+    source = f"fn café() {{{line_break}    let café = 1u;{line_break}}}"
+    start = source.encode().rindex(b"caf\xc3\xa9")
     diagnostic = wesl.Diagnostic(
         "failed", source=source, span=(start, len(source.encode()))
     )

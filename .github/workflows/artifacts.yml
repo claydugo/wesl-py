@@ -148,7 +148,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       WGPU_BACKEND_TYPE: Vulkan
-      VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+      VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e
