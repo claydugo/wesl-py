@@ -9,12 +9,9 @@ __all__ = [
     "Diagnostic",
     "Source",
     "__version__",
-    "_build_metadata",
-    "build_revision",
     "check_syntax",
     "compile",
     "compile_test",
-    "compiler_version",
     "discover_tests",
 ]
 
@@ -77,9 +74,6 @@ class CompileResult:
     def sources(self) -> dict[str, Source]: ...
 
 __version__: str
-build_revision: str | None
-compiler_version: str
-_build_metadata: str
 
 def compile(
     modules: Mapping[str, str],

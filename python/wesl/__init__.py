@@ -11,8 +11,6 @@ from ._native import (
     Diagnostic,
     Source,
     __version__,
-    build_revision,
-    compiler_version,
 )
 from ._resources import LoadedModules, load_modules
 
@@ -28,12 +26,10 @@ __all__ = [
     "ManglerKind",
     "Source",
     "__version__",
-    "build_revision",
     "check_syntax",
     "compile",
     "compile_file",
     "compile_source",
-    "compiler_version",
     "load_modules",
 ]
 

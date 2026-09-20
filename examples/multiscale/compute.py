@@ -3,17 +3,18 @@ from pathlib import Path
 import numpy
 import wesl
 import wgpu
+from pygfx.renderers.wgpu import get_shared
 from pygfx.utils.compute import ComputeShader
 
 
 def enhance(
-    device: wgpu.GPUDevice,
     channels: numpy.ndarray,
     sigma: float,
     strength: float,
     *,
     tiled: bool = False,
 ) -> tuple[wgpu.GPUBuffer, wgpu.GPUBuffer, wgpu.GPUBuffer, wgpu.GPUBuffer]:
+    device = get_shared().device
     directory = Path(__file__).parent
     _, height, width = channels.shape
     source = device.create_buffer_with_data(

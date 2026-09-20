@@ -37,12 +37,12 @@ settings = {
     "process": False,
     "color": False,
 }
-source, fine, coarse, output = enhance(renderer.device, channels, 6.0, 3.0)
+source, fine, coarse, output = enhance(channels, 6.0, 3.0)
 original_texture, original_shader, original_weights = composite(
-    renderer.device, source, colors, weights, (width, height)
+    source, colors, weights, (width, height)
 )
 processed_texture, processed_shader, processed_weights = composite(
-    renderer.device, output, colors, weights, (width, height)
+    output, colors, weights, (width, height)
 )
 
 scenes = []
@@ -143,7 +143,6 @@ gui_renderer.set_gui(draw_controls)
 def draw_frame() -> None:
     if settings["process"]:
         _, _, _, result = enhance(
-            renderer.device,
             channels,
             float(settings["sigma"]),
             float(settings["strength"]),

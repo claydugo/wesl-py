@@ -21,6 +21,7 @@ Its loop uses imported coefficients, indexing, and boundary handling.
 Then read [compute.py](compute.py) to see how Python generates coefficients
 and compiles the same filter for two directions and two scales.
 The viewer in `__main__.py` connects that computation to the controls and display.
+`enhance()` and `composite()` use pygfx's shared GPU device for their resources.
 
 The scale slider sets `sigma` in source pixels.
 Each Gaussian uses a radius of `ceil(3 * sigma)`.

@@ -1,12 +1,14 @@
 # Development
 
-The root Pixi workspace supports Linux.
+The Pixi environments for development support Linux.
 Source builds require Rust 1.97.1 or later and a native linker.
-The `ci` workspace also supports macOS arm64 and Windows x86-64.
+The artifact environments also support macOS arm64 and Windows x86-64.
+
 Pixi's default environment provides Python, Rust, Maturin, and the editable
-extension. The `test` environment adds pytest, PyYAML, and cargo-bundle-licenses.
+extension. The `test` environment adds pytest.
 The `dev` environment adds the development tools and GPU dependencies.
 The `testing` environment selects both the `testing` and `examples` extras.
+
 Reinstall the extension after changing Rust source.
 
 ```bash
@@ -28,7 +30,7 @@ the optional GPU dependencies needed to resolve their types.
 `pixi run lint` runs Ruff, Clippy, all three type checkers, and stubtest.
 `pixi run format` applies Ruff and rustfmt. `pixi run format-check` checks both.
 Ruff discovers Python files from the repository root.
-All tests and verification scripts live under `tests/`.
+Behavior tests live under `tests/`. The release tooling lives under `tools/`.
 Application examples live under `examples/`.
 
 Cargo denies Clippy's `all` and `pedantic` groups and selected restriction
@@ -40,34 +42,14 @@ Machete checks the binding manifest.
 Cargo-deny checks dependencies against the license list in `deny.toml`.
 Cargo-deny also checks the RustSec advisory database.
 The workflow runs the Rust checks, Ruff, formatting, and all three type checkers on Linux.
-The artifact tests run stubtest against installed wheels on each platform.
+The workflow runs stubtest against the development installation on Linux.
 
 The project declares MIT in `LICENSE`, `Cargo.toml`, and `pyproject.toml`.
-Dependencies retain their own licenses and notices in `licenses/`.
+The copied wgsl-test shaders retain their MIT license and provenance in `licenses/`.
+Binary releases also need notices for the Rust code they incorporate.
 Maturin includes a CycloneDX SBOM in each wheel's `.dist-info/sboms/` directory.
 The SBOM records Cargo dependencies and their declared licenses.
 It does not replace the license files that accompany each artifact.
-
-`tests/packaging/test_licenses.py` checks the dependency licenses against
-`licenses/THIRDPARTY.yml` as part of the pytest suite.
-It also rejects empty license lists and empty license text.
-After changing dependencies, regenerate the bundle and review its changes:
-
-```bash
-pixi run -e dev cargo bundle-licenses --format yaml --prefer MIT --previous licenses/THIRDPARTY.yml --output licenses/THIRDPARTY.yml
-```
-
-Fill the missing license texts before accepting the bundle.
-The WESL 0.5.0 entries use the [upstream MIT text](https://github.com/webgpu-tools/wesl-rs/blob/63a3627ba31258565df177f3f553beed8ff45338/LICENSE-MIT).
-Their copyright notice comes from [NOTICE](licenses/NOTICE).
-
-`licenses/RUST.html` contains the Rust 1.97.1 standard library notices.
-It copies `share/doc/rust/COPYRIGHT-library.html` from that toolchain.
-It also includes the `addr2line` 0.25.1, `adler2` 2.0.1, `miniz_oxide` 0.8.9,
-and `object` 0.37.3 sections from `share/doc/rust/COPYRIGHT.html`.
-These versions come from Rust's [library lockfile](https://github.com/rust-lang/rust/blob/1.97.1/library/Cargo.lock).
-Refresh these notices when changing the Rust version used for release wheels.
-Use Rust's [copyright documentation](https://github.com/rust-lang/rust/blob/1.97.1/COPYRIGHT) to locate the upstream notices.
 
 Run the test files that cover the change:
 
@@ -83,7 +65,7 @@ pixi run -e testing-minimum python -m pytest tests/test_pytest_plugin.py -q
 
 Use `pixi run test` when you need to run all repository tests and shader examples.
 This task runs one pytest session that collects `tests/`.
-Example tests, shader tests, snapshots, and the license check run in that session.
+Example tests, shader tests, and snapshots run in that session.
 The Python tests exercise the native Rust extension and the shader entry wrapper.
 
 The task selects the `testing` environment for Python tests.
@@ -92,8 +74,8 @@ Directory fixtures select shader roots and keep example parameters local.
 The root configuration uses importlib mode so test filenames can repeat.
 
 `tests/examples/` contains tests for the application examples and shader testing
-examples. `tests/packaging/` contains the license test and artifact verification
-scripts. The artifact scripts take a built wheel or source archive as an argument.
+examples. `tools/check_sdist.py` checks a source archive supplied as an argument.
+CI runs installation smoke checks directly in the workflow.
 
 GPU tests require a Vulkan adapter. On Linux, Mesa's software adapter also works.
 Window tests require a display. To include them on a machine without a display,
@@ -142,7 +124,8 @@ Free-threaded Python 3.13 and 3.14 are outside the first release's scope.
 | `examples` | Interactive graphics and compute examples | Python 3.12 on Linux x86-64 |
 | `testing` | pytest integration for WESL, compute, and fragment tests | Python 3.12 on Linux x86-64 |
 
-CI installs the extras from PyPI and runs their shaders with Mesa's software
+CI installs each extra from the built wheel in a separate uv environment.
+It resolves dependencies from PyPI and runs shaders with Mesa's software
 Vulkan adapter. It verifies numerical results and renders both viewers
 offscreen. Interactive use requires a window server and a supported graphics
 adapter. The artifact workflow does not test window events.
@@ -157,79 +140,72 @@ The imgui-bundle upper bound excludes 1.92.900 because PyPI wgpu 0.32.0
 still accesses its removed `cmd_lists_count` attribute.
 Conda applies a [backend patch](https://github.com/conda-forge/wgpu-py-feedstock/blob/main/recipe/0001-Use-len-draw_data.cmd_lists-in-imgui-backend.patch).
 Verify PyPI wheels before raising the bound.
-Development tools have minimum versions; lockfiles record their exact versions.
+Development tools have minimum versions; `pixi.lock` records their exact versions.
 
 ## Artifacts
 
 ```bash
-pixi run maturin build --release --locked --out dist
-pixi run --locked --manifest-path ci/pixi.toml maturin sdist --out dist
-pixi run --locked --manifest-path ci/pixi.toml python tests/packaging/check_sdist.py dist/wesl_py-0.1.0.tar.gz
-pixi run --locked --manifest-path ci/pixi.toml twine check --strict dist/*
+pixi run --locked -e artifacts maturin build --release --locked --out dist
+pixi run --locked -e artifacts maturin sdist --out dist
+pixi run --locked -e artifacts python tools/check_sdist.py dist/wesl_py-0.1.0.tar.gz
+pixi run --locked -e artifacts twine check --strict dist/*
 ```
 
-On macOS arm64 or Windows x86-64, use the artifact workspace:
+The artifact environments support Linux x86-64, macOS arm64, and Windows x86-64:
 
 ```bash
-pixi install --locked --manifest-path ci/pixi.toml
-pixi run --locked --manifest-path ci/pixi.toml maturin build --release --locked --out dist -i python
-pixi run --locked --manifest-path ci/pixi.toml -e python315 maturin build --release --locked --out dist -i python
+pixi install --locked -e artifacts
+pixi run --locked -e artifacts maturin build --release --locked --out dist -i python
+pixi run --locked -e artifacts-py315 maturin build --release --locked --out dist -i python
 ```
 
 The workflow builds one sdist. Each wheel job downloads and extracts that
-archive, then builds and tests its contents. The source test checks the
-archive contents and installs the sdist into a temporary Pixi environment.
-Pixi uses build isolation to install the requirements from `pyproject.toml`.
-The test environment provides Python and Rust. It does not provide Maturin.
+archive, then builds wheels from its contents. The source check verifies the
+archive contents. CI installs that archive into a fresh uv environment on
+Python 3.12 with the minimum Rust version from `Cargo.toml`.
+uv installs the build requirements from `pyproject.toml` in isolation.
+The installation test verifies that the package works without Maturin installed.
 
-Use `tests/packaging/check_artifact.py` with a wheel filename to test that installation
-outside the checkout. Its `--python` option selects Python 3.12 through 3.15.
-Use `--python 3.15t` for the free-threaded interpreter.
-The `--stubtest` option also runs mypy stubtest.
-Use `--extra testing` to verify the pytest plugin and GPU test helpers.
-Use `--extra examples` to install the dependencies and run the examples. `--compute` also
-requires a software Vulkan adapter and runs `tests/test_compute.py`.
+Development checks use the Pixi environments and the editable checkout.
+The installation tests for releases use uv environments without an editable installation.
+Each `test-wheel` job downloads and installs an exact repaired wheel.
 
-The script checks package versions, metadata, typing files, and license files.
-It also verifies the SBOM format, project identity, and direct Cargo dependencies.
-It compares dependency requirements and extras with `pyproject.toml`.
-Its `--platform-tag` option requires the expected wheel tag. CI requires
-`manylinux_2_28_x86_64`, `macosx_11_0_arm64`, or `win_amd64` for each platform.
-The macOS build sets `MACOSX_DEPLOYMENT_TARGET=11.0`.
+The jobs test the `abi3` wheel on Python 3.12, 3.13, 3.14, and 3.15.
+They test the `abi3t` wheel on Python 3.15 and 3.15t.
+Both sets run on Linux x86-64, macOS arm64, and Windows x86-64.
+They verify package resources and run the existing Python API tests.
+
+The `compute` jobs install the `examples` and `testing` extras separately on
+Python 3.12. They run GPU tests, examples, and pytest integration against the
+Linux wheel. The `testing` job also runs the plugin tests with pytest 8.2.0.
+uv checks installed dependencies without using the contributor lockfile.
 
 Maturin audits and repairs Linux wheels in the manylinux container.
 CI repairs macOS wheels with delocate and Windows wheels with delvewheel.
 Delocate checks arm64 and targets macOS 11.
-Tests of installed wheels verify imports and the Python ABI on each platform.
+The macOS build sets `MACOSX_DEPLOYMENT_TARGET=11.0`.
 These checks do not replace testing on the minimum supported OS.
 
-The artifact workspace uses `*` for tool requirements and locks their versions
-in `ci/pixi.lock`. Python selectors define the interpreter versions under test.
-`python-gil` selects regular Python 3.15 for the build environment.
-The artifact tests separately select `python-freethreading` for Python 3.15t.
+The root `pixi.toml` defines the `artifacts` and `artifacts-py315` environments.
+They share Rust and Maturin requirements with the development environments.
+They exclude the editable installation and use the root `pixi.lock`.
+
+`artifacts` uses Python 3.12. `artifacts-py315` uses regular Python 3.15.
+The `freethreading` environment tests Python 3.15t on Linux.
 The Linux wheel builds read Rust and Maturin versions from the locked environment.
-The current lock uses Rust 1.97.1, which matches the minimum in `Cargo.toml`.
 
 The runners use Ubuntu 24.04, macOS 26, and Windows Server 2025.
 The manylinux container and macOS deployment target set wheel compatibility
 independently of the runner version.
 
-Artifact builds use `ci/pixi.lock` and audit the Python ABI with `abi3audit`.
+Artifact builds audit the Python ABI with `abi3audit`.
 Local verification currently covers Linux.
 
 Maturin builds each ABI family with a separate invocation.
 Python 3.12 selects `abi3-py312`. Python 3.15 selects `abi3t-py315`.
-Pass the matching wheel filename to the test script.
-The `abi3t` wheel requires `--abi-tag cp315-abi3.abi3t`.
-Use `--find-links dist` to test installer selection with both wheel families
-present.
-
-The script compares the installed tags and extension hash with
-the expected wheel. It tests `abi3t` on regular and free-threaded Python 3.15.
-It verifies that import leaves the GIL disabled on 3.15t.
 The CPU test files include concurrent compilation and diagnostic checks.
-Python 3.15 environments use conda-forge's `python_rc` label until final
-interpreter builds are available.
+Pixi's Python 3.15 environments use conda-forge's `python_rc` label until final
+interpreter builds are available. The installation tests use uv's interpreters.
 See [Maturin's ABI guidance](https://www.maturin.rs/bindings.html#py_limited_apiabi3).
 
 On Linux, a conda linker can add its environment path to the wheel.
@@ -242,23 +218,15 @@ pixi run env CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=cc maturin build --rel
 Local builds can produce a generic Linux tag. Use the workflow's manylinux
 container for release wheels. Inspect the native dependencies before publishing.
 
-The [conda recipe](recipe/recipe.yaml) builds from this checkout.
-It uses the regular CPython ABI3 extension with a Python 3.12 minimum.
-It does not provide a free-threaded extension. Replace the checkout source
-with the published sdist URL and hash before submission to conda-forge:
-
-```bash
-rattler-build build --recipe recipe/recipe.yaml --output-dir target/conda
-```
-
 ## Releases
 
 `Cargo.toml` is the version source. Maturin supplies the Python package version.
 Use tags of the form `v0.1.0`. The sdist test rejects a tag that does not match
-the Cargo version. Installed wheel tests compare both with `wesl.__version__`.
+the Cargo version. Installation tests compare `wesl.__version__` with the
+installed package metadata.
 
-Require the `checks`, `sdist`, all three `wheel` jobs, and `compute` to pass
-before a package release. These include Python 3.15 and 3.15t coverage.
+Require `checks`, `sdist`, and every `wheel`, `test-wheel`, and `compute` job to
+pass before a package release. These include both ABI families and Python 3.15t.
 The [support table](#support) defines the initial targets.
 
 The artifact workflow builds and tests packages. It does not upload to PyPI

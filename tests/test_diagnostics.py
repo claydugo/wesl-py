@@ -1,4 +1,3 @@
-import json
 import os
 import pickle
 import subprocess
@@ -167,15 +166,8 @@ def test_concurrent_diagnostics_remain_independent() -> None:
         assert diagnostic.source == f"fn function_{index}("
 
 
-def test_versions_and_build_metadata() -> None:
+def test_version() -> None:
     assert wesl.__version__ == version("wesl-py")
-    assert wesl.compiler_version == "0.5.0"
-    metadata = json.loads(_native._build_metadata)  # noqa: SLF001
-    assert metadata["binding_version"] == wesl.__version__
-    assert metadata["binding_revision"] == wesl.build_revision
-    assert metadata["compiler_version"] == wesl.compiler_version
-    assert metadata["compiler_revision"] == "63a3627ba31258565df177f3f553beed8ff45338"
-    assert metadata["compiler_features"] == []
 
 
 def test_import_does_not_load_gpu_packages() -> None:

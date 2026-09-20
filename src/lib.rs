@@ -539,12 +539,6 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     error.setattr("diagnostics", PyTuple::empty(module.py()))?;
     module.add("CompileError", error)?;
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
-    module.add("build_revision", option_env!("WESL_PY_BUILD_REVISION"))?;
-    module.add("compiler_version", env!("WESL_COMPILER_VERSION"))?;
-    module.add(
-        "_build_metadata",
-        include_str!(concat!(env!("OUT_DIR"), "/build-metadata.json")),
-    )?;
     module.add_function(wrap_pyfunction!(compile, module)?)?;
     module.add_function(wrap_pyfunction!(check_syntax, module)?)?;
     module.add_function(wrap_pyfunction!(testing::discover_tests, module)?)?;

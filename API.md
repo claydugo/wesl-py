@@ -315,8 +315,7 @@ File imports use their filesystem paths when reporting errors.
 
 ## Build identity
 
-`wesl.__version__` identifies the binding. `wesl.compiler_version`
-identifies the WESL compiler.
+`wesl.__version__` identifies the binding.
 `wesl.__version__` matches Python distribution metadata. This package uses the published WESL and
 `wgsl-parse` 0.5.0 crates without local patches.
 Report parser defects to the [upstream issue tracker](https://github.com/webgpu-tools/wesl-rs/issues).
@@ -327,14 +326,4 @@ source diagnostics, and upstream validation by default. It disables evaluation
 and generics at build time. Lowering is available through `CompileOptions`.
 Upstream validation does not catch every WGSL error.
 
-`wesl.build_revision` contains the optional `WESL_PY_BUILD_REVISION` value supplied
-at build time. It is `None` when the builder does not supply a revision.
-Use a distinct label for each development build that you distribute:
-
-```sh
-WESL_PY_BUILD_REVISION=owl-test-1 pixi run maturin build --release --locked
-```
-
-The revision identifies the native build. It does not track later edits to Python
-files in an editable installation. It is not a content hash or a complete cache key.
 The unreleased package keeps version `0.1.0`.

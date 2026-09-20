@@ -1,22 +1,10 @@
 Copyright (c) 2026 wesl-py contributors.
 
 This project's code uses the MIT license in LICENSE.
-licenses/THIRDPARTY.yml contains dependency licenses and notices.
-licenses/RUST.html contains notices for the Rust 1.97.1 standard library
-and its backtrace dependencies.
-
-This package links the WESL compiler and wgsl-parse.
-Copyright (c) The webgpu-tools Contributors.
-These projects use the MIT or Apache-2.0 licenses.
-https://github.com/webgpu-tools/wesl-rs
-
-This package uses the published WESL and wgsl-parse 0.5.0 crates.
-Cargo.lock records their sources and checksums.
-
-This package uses PyO3 under the MIT or Apache-2.0 licenses.
-https://github.com/PyO3/pyo3
 
 This package includes the wgsl-test assertion shaders under the MIT license.
 licenses/WGSL-TEST-MIT contains the upstream license.
 The shader files come from wesl-js revision 37db2325b40cdb8aa504582cbc01cb4d41109a36.
 https://github.com/webgpu-tools/wesl-js/tree/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test/shaders
+The files are in third_party/wgsl-test/.
+Local changes add public visibility for WESL 0.5.

@@ -209,12 +209,12 @@ pub(super) fn compile_test(
         let assertion_module = module_path("wgsl_test")?;
         resolver.modules.add_module(
             assertion_module.clone(),
-            include_str!("../python/wesl/wgsl_test/lib.wesl").into(),
+            include_str!("../third_party/wgsl-test/lib.wesl").into(),
         );
         let result_module = module_path("wgsl_test::TestResult")?;
         resolver.modules.add_module(
             result_module.clone(),
-            include_str!("../python/wesl/wgsl_test/TestResult.wesl")
+            include_str!("../third_party/wgsl-test/TestResult.wesl")
                 .replace("@binding(0)", &format!("@binding({result_binding})"))
                 .replace("expected: vec4f,", "expected: vec4f, site: u32, completed: u32, checks: u32,")
                 .into(),

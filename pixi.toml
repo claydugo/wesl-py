@@ -1,12 +1,10 @@
 [workspace]
 name = "wesl-py"
 channels = ["conda-forge"]
-platforms = ["linux-64"]
+platforms = ["linux-64", "osx-arm64", "win-64"]
 
 [dependencies]
 python = "3.12.*"
-rust = ">=1.97.1"
-maturin = ">=1.15,<2"
 
 [pypi-dependencies]
 wesl-py = { path = ".", editable = true }
@@ -14,10 +12,25 @@ wesl-py = { path = ".", editable = true }
 [pypi-options]
 no-build-isolation = ["wesl-py"]
 
+[feature.build.dependencies]
+rust = ">=1.97.1"
+maturin = ">=1.15,<2"
+
+[feature.artifacts.dependencies]
+abi3audit = "*"
+twine = "*"
+
+[feature.artifacts.target.osx-arm64.dependencies]
+delocate = "*"
+
+[feature.artifacts.target.win-64.dependencies]
+delvewheel = "*"
+
+[feature.artifacts.target.osx-arm64.activation.env]
+MACOSX_DEPLOYMENT_TARGET = "11.0"
+
 [feature.test.dependencies]
 pytest = ">=8.2"
-pyyaml = ">=6"
-cargo-bundle-licenses = ">=4.0"
 
 [feature.gpu.dependencies]
 numpy = ">=1.26"
@@ -60,7 +73,6 @@ channels = ["conda-forge", "conda-forge/label/python_rc"]
 [feature.freethreading.dependencies]
 python = "3.15.*"
 python-freethreading = "*"
-rust = ">=1.97.1"
 pytest = ">=8.2"
 
 [feature.freethreading.pypi-dependencies]
@@ -70,14 +82,25 @@ wesl-py = { path = "." }
 test-freethreading = "python -m pytest tests/test_threading.py tests/test_compile.py::test_concurrent_feature_state_isolation tests/test_diagnostics.py::test_concurrent_diagnostics_remain_independent"
 
 [environments]
-default = { solve-group = "default" }
-test = { features = ["test"], solve-group = "default" }
-gpu = { features = ["test", "gpu"], solve-group = "default" }
-examples = { features = ["gpu", "examples"], solve-group = "default" }
-dev = { features = ["dev", "test", "gpu"], solve-group = "default" }
-testing = { features = ["test", "gpu", "examples", "testing"], solve-group = "default" }
-testing-minimum = { features = ["test", "gpu", "testing", "pytest-minimum"] }
-freethreading = { features = ["freethreading"], no-default-feature = true }
+default = { features = ["build"], platforms = ["linux-64"], solve-group = "default" }
+test = { features = ["build", "test"], platforms = ["linux-64"], solve-group = "default" }
+gpu = { features = ["build", "test", "gpu"], platforms = ["linux-64"], solve-group = "default" }
+examples = { features = ["build", "gpu", "examples"], platforms = ["linux-64"], solve-group = "default" }
+dev = { features = ["build", "dev", "test", "gpu"], platforms = ["linux-64"], solve-group = "default" }
+testing = { features = ["build", "test", "gpu", "examples", "testing"], platforms = ["linux-64"], solve-group = "default" }
+testing-minimum = { features = ["build", "test", "gpu", "testing", "pytest-minimum"], platforms = ["linux-64"] }
+freethreading = { features = ["build", "freethreading"], platforms = ["linux-64"], no-default-feature = true }
+
+[environments.artifacts]
+features = ["build", "artifacts"]
+no-default-feature = true
+dependencies = { python = "3.12.*" }
+
+[environments.artifacts-py315]
+features = ["build", "artifacts"]
+no-default-feature = true
+channels = ["conda-forge", "conda-forge/label/python_rc"]
+dependencies = { python = "3.15.*", python-gil = "*" }
 
 [tasks]
 test = { cmd = "cargo test --locked --workspace --all-features && python -m pytest", default-environment = "testing" }

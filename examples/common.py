@@ -5,6 +5,7 @@ import numpy
 import pygfx
 import wesl
 import wgpu
+from pygfx.renderers.wgpu import get_shared
 from pygfx.utils.compute import ComputeShader
 
 
@@ -20,12 +21,12 @@ def load_colony() -> tuple[numpy.ndarray, numpy.ndarray, list[str]]:
 
 
 def composite(
-    device: wgpu.GPUDevice,
     channels: wgpu.GPUBuffer,
     colors: numpy.ndarray,
     weights: numpy.ndarray,
     dimensions: tuple[int, int],
 ) -> tuple[pygfx.Texture, ComputeShader, wgpu.GPUBuffer]:
+    device = get_shared().device
     width, height = dimensions
     directory = Path(__file__).parent
     shader = ComputeShader(

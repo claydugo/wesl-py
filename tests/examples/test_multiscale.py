@@ -55,7 +55,7 @@ def test_multiscale(pytestconfig: pytest.Config) -> None:
             )
             for tiled in (False, True):
                 source, fine, coarse, output = enhance(  # noqa: RUF059
-                    device, channels, sigma, 2.0, tiled=tiled
+                    channels, sigma, 2.0, tiled=tiled
                 )
                 for buffer, reference in zip((fine, coarse), references, strict=True):
                     actual = numpy.frombuffer(

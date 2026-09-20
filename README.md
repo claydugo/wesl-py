@@ -85,4 +85,5 @@ See [CONTRIBUTING.md](https://github.com/claydugo/wesl-py/blob/main/CONTRIBUTING
 ## License
 
 This project's code uses the [MIT license](https://github.com/claydugo/wesl-py/blob/main/LICENSE).
-See [NOTICE](https://github.com/claydugo/wesl-py/blob/main/licenses/NOTICE) and [THIRDPARTY.yml](https://github.com/claydugo/wesl-py/blob/main/licenses/THIRDPARTY.yml) for dependency licenses and notices.
+The copied wgsl-test shaders use the [upstream MIT license](https://github.com/claydugo/wesl-py/blob/main/licenses/WGSL-TEST-MIT).
+See [NOTICE](https://github.com/claydugo/wesl-py/blob/main/licenses/NOTICE) for shader provenance.

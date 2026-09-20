@@ -36,7 +36,7 @@ Revisit these when a consumer needs them:
 - Feature-reference analysis and strict declaration selection.
 - Reflection for entry points, overrides, resources, and buffer layouts.
 - Override specialization and typed constant generation.
-- A pygfx material example and downstream OWL migration.
+- A pygfx material example.
 - Exact mappings for expressions and statements in generated WGSL.
 - File-dependency metadata beyond diagnostic filenames.
 - An FFT phase-correlation example with generated images and a NumPy reference.

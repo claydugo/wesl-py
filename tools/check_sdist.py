@@ -1,24 +1,16 @@
 import argparse
-import json
 import os
-import shutil
-import subprocess
 import tarfile
 import tempfile
 import tomllib
 from email import message_from_bytes
 from pathlib import Path
 
-import tomli_w
-
 parser = argparse.ArgumentParser()
 parser.add_argument("archive", type=Path)
 arguments = parser.parse_args()
 arguments.archive = arguments.archive.resolve(strict=True)
-project_directory = Path(__file__).resolve().parents[2]
-platform = json.loads(subprocess.check_output(["pixi", "info", "--json"], text=True))[
-    "platform"
-]
+project_directory = Path(__file__).resolve().parents[1]
 
 with tempfile.TemporaryDirectory(prefix="wesl-sdist-") as temporary_directory:
     directory = Path(temporary_directory)
@@ -38,7 +30,6 @@ with tempfile.TemporaryDirectory(prefix="wesl-sdist-") as temporary_directory:
     for filename in (
         "Cargo.lock",
         "pyproject.toml",
-        "build.rs",
         "wesl.toml",
         *(
             path.relative_to(project_directory)
@@ -48,7 +39,7 @@ with tempfile.TemporaryDirectory(prefix="wesl-sdist-") as temporary_directory:
         "python/wesl/py.typed",
         *(
             path.relative_to(project_directory)
-            for path in project_directory.glob("python/wesl/wgsl_test/*.wesl")
+            for path in project_directory.glob("third_party/wgsl-test/*.wesl")
         ),
         *project["license-files"],
         *(
@@ -76,60 +67,3 @@ with tempfile.TemporaryDirectory(prefix="wesl-sdist-") as temporary_directory:
     assert metadata["Requires-Python"] == project["requires-python"]
     assert metadata["License-Expression"] == project.get("license")
     assert set(metadata.get_all("License-File", [])) == set(project["license-files"])
-    (directory / "pixi.toml").write_text(
-        tomli_w.dumps(
-            {
-                "workspace": {
-                    "name": "wesl-sdist",
-                    "channels": ["conda-forge"],
-                    "platforms": [platform],
-                },
-                "dependencies": {
-                    "python": "3.12.*",
-                    "rust": "==" + package["rust-version"],
-                    "pytest": "*",
-                },
-                "pypi-dependencies": {
-                    "wesl-py": {"path": arguments.archive.as_posix()}
-                },
-                "target": {
-                    "linux-64": {
-                        "activation": {
-                            "env": {
-                                "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER": "cc"
-                            }
-                        }
-                    }
-                },
-            }
-        )
-    )
-    (directory / "installation.json").write_text(
-        json.dumps(
-            {
-                "kind": "sdist",
-                "version": package["version"],
-                "python": "3.12",
-                "freethreading": False,
-                "extra": None,
-                "compute": False,
-            }
-        )
-    )
-    for filename in ("conftest.py", "test_installed.py"):
-        shutil.copyfile(Path(__file__).with_name(filename), directory / filename)
-    subprocess.run(
-        [
-            "pixi",
-            "run",
-            "python",
-            "-m",
-            "pytest",
-            "test_installed.py",
-            "--installation=installation.json",
-            "-q",
-        ],
-        cwd=directory,
-        env={**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"},
-        check=True,
-    )
