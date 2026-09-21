@@ -1,7 +1,7 @@
-import package::imaging::indexing::linear_index;
-import package::multiscale::boundary::clamp_position;
-import package::multiscale::convolution::{source, direction};
-import package::multiscale::coefficients::{radius, weights};
+import super::super::imaging::indexing::linear_index;
+import super::boundary::clamp_position;
+import super::convolution::{source, direction};
+import super::coefficients::{radius, weights};
 
 var<workgroup> tile: array<f32, 64 + 2 * radius>;
 

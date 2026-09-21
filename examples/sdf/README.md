@@ -46,7 +46,7 @@ surface. Particles do not collide with each other.
 ## Verify
 
 ```bash
-pixi run -e examples python -m pytest tests/examples/test_sdf.py -q
+pixi run -e testing python -m pytest tests/examples/test_sdf.py -q
 ```
 
 The tests verify floor collisions and passage through the tunnel.

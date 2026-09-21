@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     path::PathBuf,
 };
 
@@ -11,14 +11,11 @@ use pyo3::{
     types::{PyMapping, PyTuple, PyType},
 };
 use wesl::{
-    error::ResolveError,
-    resolver::{FileResolver, Resolver, VirtualResolver},
-    sourcemap::SourceMap,
-    syntax::ModulePath,
+    FileResolver, ModulePath, ResolveError, Resolver, Router, SourceMap, VirtualResolver, Wesl,
 };
 use wgsl_parse::{
     error::ErrorKind,
-    syntax::{GlobalDeclaration, ImportStatement, TranslationUnit},
+    syntax::{GlobalDeclaration, ImportStatement, PathOrigin, TranslationUnit},
 };
 
 mod testing;
@@ -91,17 +88,9 @@ impl TryFrom<CompileOptions<'_>> for wesl::CompileOptions {
             strip: options.strip,
             lower: options.lower,
             validate: options.validate,
-            sourcemap: options.sourcemap,
-            mangler: match options.mangler.value.as_str() {
-                "Escape" => wesl::ManglerKind::Escape,
-                "Hash" => wesl::ManglerKind::Hash,
-                "Unicode" => wesl::ManglerKind::Unicode,
-                "None" => wesl::ManglerKind::None,
-                _ => return Err(PyValueError::new_err("invalid mangler")),
-            },
-            mangle_main: options.mangle_main,
+            mangle_root: options.mangle_main,
             keep: options.keep,
-            keep_main: options.keep_main,
+            keep_root: options.keep_main,
             features: wesl::Features {
                 default: options.features.default.try_into()?,
                 flags: options
@@ -309,12 +298,45 @@ struct ModuleResolver {
     modules: VirtualResolver<'static>,
     filenames: HashMap<ModulePath, String>,
     files: Option<FileResolver>,
+    dependencies: Router,
+    dependency_names: HashSet<String>,
 }
 
 impl Resolver for ModuleResolver {
+    fn canonical_path(&self, path: &ModulePath) -> ModulePath {
+        if let PathOrigin::Package(name) = &path.origin
+            && !self.dependency_names.contains(name)
+            && self.modules.get_module(path).is_err()
+            && let Some((parent, name)) = name.rsplit_once('/')
+            && let name = if parent.rsplit('/').next() == Some(name)
+                && self.dependency_names.contains(parent)
+            {
+                parent
+            } else {
+                name
+            }
+            && self.dependency_names.contains(name)
+        {
+            ModulePath {
+                origin: PathOrigin::Package(name.to_owned()),
+                components: path.components.clone(),
+            }
+        } else {
+            path.clone()
+        }
+    }
+
     fn resolve_source<'a>(&'a self, path: &ModulePath) -> Result<Cow<'a, str>, ResolveError> {
         match (self.modules.get_module(path), &self.files) {
             (Ok(source), _) => Ok(Cow::Borrowed(source)),
+            (Err(_), _) if matches!(&path.origin, PathOrigin::Package(name) if self.dependency_names.contains(name)) =>
+            {
+                let mut path = path.clone();
+                if path.components.is_empty() {
+                    path.components.push("package".to_owned());
+                }
+                self.dependencies.resolve_source(&path)
+            }
             (Err(_), Some(files)) if path.origin.is_absolute() => files.resolve_source(path),
             (Err(error), _) => Err(error),
         }
@@ -323,6 +345,13 @@ impl Resolver for ModuleResolver {
     fn display_name(&self, path: &ModulePath) -> Option<String> {
         if self.modules.get_module(path).is_ok() {
             self.filenames.get(path).cloned()
+        } else if matches!(&path.origin, PathOrigin::Package(name) if self.dependency_names.contains(name))
+        {
+            let mut path = path.clone();
+            if path.components.is_empty() {
+                path.components.push("package".to_owned());
+            }
+            self.dependencies.display_name(&path)
         } else {
             self.files.as_ref()?.display_name(path)
         }
@@ -360,7 +389,7 @@ enum Failure {
 }
 
 impl Failure {
-    fn from_diagnostic(mut diagnostic: wesl::error::Diagnostic<wesl::Error>) -> Self {
+    fn from_diagnostic(mut diagnostic: wesl::Diagnostic<wesl::Error>) -> Self {
         if let wesl::Error::ParseError(error) = &mut *diagnostic.error
             && matches!(error.error, ErrorKind::UnexpectedEof { .. })
             && let Some(source) = &diagnostic.detail.source
@@ -447,14 +476,34 @@ fn compile(
     options: Option<CompileOptions<'_>>,
     filenames: HashMap<String, String>,
     root_directory: Option<PathBuf>,
+    dependencies: HashMap<String, PathBuf>,
 ) -> PyResult<CompileResult> {
     let modules = modules.items()?.extract::<Vec<(String, String)>>()?;
+    let sourcemap = options.as_ref().is_none_or(|options| options.sourcemap);
+    let mangler = match options
+        .as_ref()
+        .map(|options| options.mangler.value.as_str())
+    {
+        Some("Escape") | None => wesl::ManglerKind::Escape,
+        Some("Hash") => wesl::ManglerKind::Hash,
+        Some("Unicode") => wesl::ManglerKind::Unicode,
+        Some("None") => wesl::ManglerKind::None,
+        _ => return Err(PyValueError::new_err("invalid mangler")),
+    };
     let options = options
         .map(wesl::CompileOptions::try_from)
         .transpose()?
         .unwrap_or_default();
     py.detach(move || {
         let root = module_path(&root)?;
+        let mut dependency_resolver = Router::new();
+        for (name, directory) in &dependencies {
+            let path = module_path(name)?;
+            if !path.origin.is_package() || !path.components.is_empty() {
+                return Err(Failure::Path(name.clone()));
+            }
+            dependency_resolver.mount_resolver(path, FileResolver::new(directory));
+        }
         let mut resolver = ModuleResolver {
             modules: VirtualResolver::new(),
             filenames: filenames
@@ -462,32 +511,35 @@ fn compile(
                 .map(|(path, filename)| Ok((module_path(&path)?, filename)))
                 .collect::<Result<_, Failure>>()?,
             files: root_directory.map(FileResolver::new),
+            dependencies: dependency_resolver,
+            dependency_names: dependencies.into_keys().collect(),
         };
         for (path, source) in modules {
             resolver
                 .modules
                 .add_module(module_path(&path)?, source.into());
         }
-        wesl::compile(&root, &options, &resolver)
+        let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
+        compiler.set_options(options);
+        compiler.set_mangler(mangler);
+        compiler.use_sourcemap(sourcemap);
+        compiler
+            .compile(&root)
             .map(|result| CompileResult {
                 wgsl: result.to_string(),
-                modules: result
-                    .modules
-                    .iter()
-                    .map(|module| module.path.to_string())
-                    .collect(),
+                modules: result.modules.iter().map(ToString::to_string).collect(),
                 sources: result
                     .modules
                     .iter()
                     .filter_map(|module| {
-                        let text = result.sourcemap.source(&module.path)?;
+                        let text = result.sourcemap.get_source(module)?;
                         Some((
-                            module.path.to_string(),
+                            module.to_string(),
                             Source {
                                 text: text.to_owned(),
                                 filename: result
                                     .sourcemap
-                                    .display_name(&module.path)
+                                    .get_display_name(module)
                                     .map(str::to_owned),
                             },
                         ))
@@ -522,7 +574,7 @@ fn check_syntax(py: Python<'_>, source: String, filename: String) -> PyResult<()
             .parse::<TranslationUnit>()
             .map(|_| ())
             .map_err(|error| {
-                let mut diagnostic = wesl::error::Diagnostic::from(error).with_source(source);
+                let mut diagnostic = wesl::Diagnostic::from(error).with_source(source);
                 diagnostic.detail.display_name = Some(filename);
                 Failure::from_diagnostic(diagnostic)
             })

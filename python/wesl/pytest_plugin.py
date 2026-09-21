@@ -111,6 +111,7 @@ class WeslModule(pytest.Module):
                         options=wesl_compiler.options,
                         filenames={**wesl_compiler.filenames, root: shader_path},
                         root_directory=root_directory,
+                        dependencies=wesl_compiler.dependencies,
                         resources=wesl_resources,
                         constants=wesl_constants,
                     )
@@ -205,13 +206,20 @@ def wesl_compiler(
     wesl_modules: Mapping[str, str],
     wesl_filenames: Mapping[str, str | Path],
     wesl_root_directory: Path,
+    wesl_dependencies: Mapping[str, str | Path],
 ) -> Compiler:
     return Compiler(
         options=wesl_options,
         modules=wesl_modules,
         filenames=wesl_filenames,
         root_directory=wesl_root_directory,
+        dependencies=wesl_dependencies,
     )
+
+
+@pytest.fixture
+def wesl_dependencies() -> Mapping[str, str | Path]:
+    return {}
 
 
 @pytest.fixture

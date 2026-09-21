@@ -13,8 +13,8 @@ pixi run -e testing python -m pytest tests/examples/testing -v
 Run the compilation tests and collect the native tests without GPU dependencies:
 
 ```bash
-pixi run python -m pytest tests/examples/testing/test_compilation.py -v
-pixi run python -m pytest tests/examples/testing/shaders --collect-only -q
+pixi run -e test python -m pytest tests/examples/testing/test_compilation.py -v
+pixi run -e test python -m pytest tests/examples/testing/shaders --collect-only -q
 ```
 
 The `wesl_compiler` fixture reads the shared compilation configuration.

@@ -1,6 +1,6 @@
-import package::imaging::indexing::linear_index;
-import package::multiscale::convolution::convolve;
-import package::multiscale::tiled::convolve_tiled;
+import super::super::imaging::indexing::linear_index;
+import super::convolution::convolve;
+import super::tiled::convolve_tiled;
 
 override width: u32;
 override height: u32;

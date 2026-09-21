@@ -76,11 +76,14 @@ def compile(
     options: CompileOptions | None = None,
     filenames: Mapping[str, str | os.PathLike[str]] | None = None,
     root_directory: str | os.PathLike[str] | None = None,
+    dependencies: Mapping[str, str | os.PathLike[str]] | None = None,
 ) -> CompileResult:
     if not isinstance(modules, Mapping):
         raise TypeError("modules must be a mapping")
     if filenames is not None and not isinstance(filenames, Mapping):
         raise TypeError("filenames must be a mapping or None")
+    if dependencies is not None and not isinstance(dependencies, Mapping):
+        raise TypeError("dependencies must be a mapping or None")
     if options is not None and not isinstance(options, CompileOptions):
         raise TypeError("options must be CompileOptions or None")
     if options is not None and not isinstance(options.mangler, ManglerKind):
@@ -93,6 +96,14 @@ def compile(
         if filenames is None
         else {name: os.fspath(path) for name, path in filenames.items()},
         None if root_directory is None else os.fspath(root_directory),
+        {
+            "wgsl_test": str(Path(__file__).parent / "shaders/wgsl_test"),
+            **(
+                {}
+                if dependencies is None
+                else {name: os.fspath(path) for name, path in dependencies.items()}
+            ),
+        },
     )
 
 
@@ -105,6 +116,7 @@ def compile_source(
     options: CompileOptions | None = None,
     filenames: Mapping[str, str | os.PathLike[str]] | None = None,
     root_directory: str | os.PathLike[str] | None = None,
+    dependencies: Mapping[str, str | os.PathLike[str]] | None = None,
 ) -> CompileResult:
     if modules is not None and not isinstance(modules, Mapping):
         raise TypeError("modules must be a mapping or None")
@@ -122,6 +134,7 @@ def compile_source(
         options=options,
         filenames=copied_filenames,
         root_directory=root_directory,
+        dependencies=dependencies,
     )
 
 
@@ -132,6 +145,7 @@ def compile_file(
     root_directory: str | os.PathLike[str] | None = None,
     options: CompileOptions | None = None,
     filenames: Mapping[str, str | os.PathLike[str]] | None = None,
+    dependencies: Mapping[str, str | os.PathLike[str]] | None = None,
 ) -> CompileResult:
     path = Path(filename).absolute()
     directory = (
@@ -149,6 +163,7 @@ def compile_file(
         options=options,
         filenames=filenames,
         root_directory=directory,
+        dependencies=dependencies,
     )
 
 
@@ -158,6 +173,7 @@ class Compiler:
     modules: Mapping[str, str] = field(default_factory=dict)
     filenames: Mapping[str, str | os.PathLike[str]] = field(default_factory=dict)
     root_directory: str | os.PathLike[str] | None = None
+    dependencies: Mapping[str, str | os.PathLike[str]] = field(default_factory=dict)
 
     def compile_source(  # noqa: D102
         self,
@@ -174,6 +190,7 @@ class Compiler:
             options=self.options,
             filenames=self.filenames,
             root_directory=self.root_directory,
+            dependencies=self.dependencies,
         )
 
     def compile_file(  # noqa: D102
@@ -191,6 +208,7 @@ class Compiler:
             root_directory=self.root_directory,
             options=self.options,
             filenames=self.filenames,
+            dependencies=self.dependencies,
         )
 
 

@@ -1,48 +1,44 @@
 # Shader tests
 
-The optional `testing` extra provides pytest integration and wgpu-py.
-The compiler works without these dependencies.
+`wesl-py` includes a pytest plugin and the `wgsl_test` assertion shaders.
+Pytest loads the plugin automatically and collects `*.test.wesl` files.
+The optional `testing` extra installs pytest and wgpu-py for execution.
+The base package can collect tests if your environment already provides pytest.
+Compilation and collection need no GPU.
+
 The executor does not import NumPy. The current PyPI dependency chain still
 installs NumPy through wgpu-py's dependency on rendercanvas.
 
-From this checkout:
-
-```bash
-pixi run -e testing python -m pytest tests/shaders -v
-pixi run -e testing python -m pytest tests/test_testing.py -q
-```
-
-The first command runs WESL tests against the SDF example's production functions.
-The second verifies the Python executor and its failure reports.
-Tests report results in the terminal. They do not write image files.
-
-For another Pixi project, add the checkout with its extra:
+For your Pixi project, add the checkout with its extra:
 
 ```toml
 [pypi-dependencies]
-wesl-py = { path = "/path/to/wesl-py", editable = true, extras = ["testing"] }
+wesl-py = { path = "/path/to/wesl-py", extras = ["testing"] }
 ```
+
+See [installation](README.md#installation) for requirements.
+The first test requires no `conftest.py` or manual plugin registration.
 
 ## WESL tests
 
 Put shader tests in `*.test.wesl` files.
 This matches [upstream CLI discovery](https://wesl-lang.dev/docs/wgsl-test#cli).
 Each `@test` function becomes a separate pytest item.
+Save this as `shaders/math.test.wesl`:
 
 ```wesl
-import package::interpolation::remap;
-import wgsl_test::expectNear;
+import wgsl_test::expectEq;
 
 @test
-fn midpoint() {
-    expectNear(remap(0.5, 0.0, 1.0, 10.0, 20.0), 15.0);
+fn addition() {
+    expectEq(3u + 4u, 7u);
 }
 ```
 
 ```bash
-pixi run python -m pytest shaders/interpolation.test.wesl::midpoint
+pixi run python -m pytest shaders/math.test.wesl::addition
 pixi run python -m pytest shaders --collect-only
-pixi run python -m pytest shaders -k midpoint --junitxml=results.xml
+pixi run python -m pytest shaders -k addition --junitxml=results.xml
 ```
 
 A test function has no parameters, return value, or shader stage attribute.
@@ -70,10 +66,46 @@ Multiple conditional definitions of one name produce one item.
 
 ### Assertions
 
-Import assertions from `wgsl_test`. The runner supplies this package,
-including when an external shader library imports it.
-The package includes pinned [upstream assertion shaders](https://github.com/webgpu-tools/wesl-js/tree/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test/shaders).
-The runner adds source locations, assertion counts, and completion tracking.
+Import assertions from `wgsl_test`. The installed package includes the two
+[upstream assertion shaders](https://github.com/webgpu-tools/wesl-js/tree/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test/shaders)
+and registers them automatically for compilation and testing.
+Their contents remain unchanged. The distribution names upstream `lib.wesl` as `package.wesl`
+to identify the package root for the resolver and wgsl-analyzer.
+The runner instruments them for source locations, assertion counts, and completion tracking.
+It does not modify the packaged files.
+
+Install the `testing` extra to obtain pytest and wgpu-py.
+Shader imports need no download, cache, or registration step.
+Editor configuration is optional for running tests.
+See [shader editing](CONTRIBUTING.md#shader-editing) for wgsl-analyzer setup.
+
+The test runner uses one shared `wgsl_test` package for assertion results.
+Shader tests reject scoped overrides such as `alpha/wgsl_test` in `dependencies`
+or `modules`. Normal compilation accepts these overrides.
+
+Other libraries use `dependencies` or the `wesl_dependencies` fixture:
+Put the fixture in `conftest.py` and replace the path with your library directory:
+
+```python
+from pathlib import Path
+
+import pytest
+
+
+@pytest.fixture
+def wesl_dependencies():
+    return {"lygia": Path("path/to/lygia")}
+```
+
+The Lygia example has a repository setup script that fetches its two required shaders.
+Run it from the wesl-py checkout:
+
+```bash
+pixi run python tools/fetch_test_shaders.py
+```
+
+This script is only for the example. Installed users manage their own library sources.
+See [library directories](API.md#compile-strings-and-files) for the registration API.
 
 | Function | Comparison |
 | --- | --- |
@@ -104,7 +136,7 @@ Failures in imported helpers point to the helper's source.
 
 ## Python tests
 
-The `wesl_compiler` fixture shares `wesl_options`, `wesl_modules`,
+The `wesl_compiler` fixture shares `wesl_options`, `wesl_modules`, `wesl_dependencies`,
 `wesl_filenames`, and `wesl_root_directory` with native WESL tests.
 It returns a `wesl.Compiler` and does not request a GPU.
 Parametrizing these fixtures also parametrizes Python tests that use the compiler.
@@ -115,11 +147,12 @@ Relative file paths start at `wesl_root_directory`.
 Absolute paths must stay inside that directory.
 
 Outside pytest, construct `wesl.Compiler` with `options`, `modules`, `filenames`,
-and `root_directory` to reuse the same configuration across compilations.
+`root_directory`, and `dependencies` to reuse the same configuration across compilations.
 
 Compile with `wesl.compile`, `compile_source`, or `compile_file` when a test
 needs separate configuration. Pass `CompileResult.wgsl` to wgpu-py.
 For buffer computations, wgpu-py provides `compute_with_buffers`:
+Save this as `test_compute.py`:
 
 ```python
 from array import array
@@ -158,6 +191,7 @@ These entries use wgpu-py's bind-group format.
 Each entry specifies a binding number and a resource.
 Use a buffer binding dictionary, a texture view, or a sampler as the resource.
 Buffer dictionaries support `offset` and `size`.
+Save this fixture as `shaders/buffers/conftest.py`:
 
 ```python
 from struct import pack
@@ -178,7 +212,7 @@ def wesl_resources(wesl_device):
         buffer.destroy()
 ```
 
-The test shader can read these values:
+Save the test shader as `shaders/buffers/values.test.wesl`:
 
 ```wesl
 @group(0) @binding(0) var<storage, read> values: array<f32>;
@@ -264,6 +298,7 @@ These fixtures work with Python tests and collected WESL tests:
 | `wesl_compiler` | A `Compiler` using the shared compilation fixtures |
 | `wesl_resources` | Empty mapping of groups to bind-group entries |
 | `wesl_modules` | Empty mapping of additional WESL modules |
+| `wesl_dependencies` | Empty mapping of package names to directories |
 | `wesl_filenames` | Empty mapping of module names to source filenames |
 | `wesl_options` | Default `CompileOptions` |
 | `wesl_constants` | Empty mapping of WGSL overrides |
@@ -288,7 +323,7 @@ Use `--tb=native` or `--full-trace` to inspect Python execution.
 `wesl_constants` uses override names from the test module. For declarations with
 `@id`, use the numeric ID as a string.
 
-For example, test two WESL feature configurations:
+For example, put this fixture in `conftest.py` to test two WESL feature configurations:
 
 ```python
 import pytest
@@ -323,6 +358,19 @@ creation, and execution errors still fail. A software adapter is valid.
 The plugin registers through the `pytest11` entry point. If you disable automatic
 plugin loading, load it with `-p wesl.pytest_plugin`.
 Use `-p no:wesl` to disable automatic registration.
+
+## Repository tests
+
+Run these commands from the wesl-py checkout:
+
+```bash
+pixi run -e testing python -m pytest tests/shaders -v
+pixi run -e testing python -m pytest tests/test_testing.py -q
+```
+
+The WESL tests exercise the SDF example's production functions.
+The Python tests verify the executor and its failure reports.
+Tests report results in the terminal. They do not write image files.
 
 The WESL assertion syntax follows the upstream
 [wgsl-test API](https://github.com/webgpu-tools/wesl-js/blob/main/packages/wgsl-test/API.md).

@@ -1,7 +1,8 @@
-import numpy as np
 import pytest
 import wesl
-from wgpu.utils.compute import compute_with_buffers
+
+np = pytest.importorskip("numpy")
+compute_with_buffers = pytest.importorskip("wgpu.utils.compute").compute_with_buffers
 
 
 @pytest.mark.gpu

@@ -22,7 +22,8 @@ jobs:
       - run: pixi run --locked lint
       - run: pixi run --locked format-check
       - run: pixi run --locked -e test cargo test --locked --test upstream
-      - run: pixi run --locked -e test python -m pytest tests/test_compile.py tests/test_check_syntax.py tests/test_threading.py tests/test_diagnostics.py tests/test_sources.py -q
+      - run: pixi run --locked python tools/fetch_test_shaders.py
+      - run: pixi run --locked -e test python -m pytest tests -q
       - run: pixi run --locked test-freethreading
       - run: pixi run --locked check-dependencies
 
@@ -65,6 +66,10 @@ jobs:
           assert Path(wesl.__file__).with_name("_native.pyi").is_file()
           assert "wgpu" not in sys.modules
           assert "fn main(" in wesl.compile_source("@compute @workgroup_size(1) fn main() {}").wgsl
+          shader = wesl.compile_source(
+              "import wgsl_test::expect; @compute @workgroup_size(1) fn main() { expect(true); }"
+          )
+          assert "wgsl_test" in shader.modules
           assert find_spec("maturin") is None
           PY
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -214,10 +219,15 @@ jobs:
           assert Path(wesl.__file__).with_name("_native.pyi").is_file()
           assert "wgpu" not in sys.modules
           assert "fn main(" in wesl.compile_source("@compute @workgroup_size(1) fn main() {}").wgsl
+          shader = wesl.compile_source(
+              "import wgsl_test::expect; @compute @workgroup_size(1) fn main() { expect(true); }"
+          )
+          assert "wgsl_test" in shader.modules
           assert find_spec("maturin") is None
           PY
+      - run: python tools/fetch_test_shaders.py
       - name: Test Python API
-        run: python -m pytest tests/test_compile.py tests/test_check_syntax.py tests/test_threading.py tests/test_diagnostics.py tests/test_sources.py -q
+        run: python -m pytest tests -q
 
   compute:
     needs: wheel
@@ -253,16 +263,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y mesa-vulkan-drivers libvulkan1
-      - name: Test examples and compute
-        if: matrix.extra == 'examples'
+      - run: python tools/fetch_test_shaders.py
+      - name: Test Python API and GPU integration
         env:
           XDG_RUNTIME_DIR: ${{ runner.temp }}
-        run: python -m pytest tests/examples/test_multiscale.py tests/examples/test_example_render.py tests/examples/test_sdf.py tests/test_compute.py -q
-      - name: Test pytest integration
-        if: matrix.extra == 'testing'
-        env:
-          XDG_RUNTIME_DIR: ${{ runner.temp }}
-        run: python -m pytest tests/test_testing.py tests/test_pytest_plugin.py tests/examples/test_rmsnorm.py tests/examples/test_compaction.py tests/shaders tests/examples/rmsnorm tests/examples/compaction tests/examples/testing -q
+        run: python -m pytest tests -q
       - name: Install minimum pytest version
         if: matrix.extra == 'testing'
         run: uv pip install pytest==8.2.0

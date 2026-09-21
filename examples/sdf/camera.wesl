@@ -1,4 +1,4 @@
-import package::sdf::parameters::parameters;
+import super::parameters::parameters;
 
 fn project(position: vec3<f32>) -> vec4<f32> {
     let relative = position - parameters.camera_position.xyz;

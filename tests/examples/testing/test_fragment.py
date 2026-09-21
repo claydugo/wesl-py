@@ -1,9 +1,10 @@
 from contextlib import ExitStack
 
-import numpy as np
 import pytest
 import wesl
-import wgpu
+
+np = pytest.importorskip("numpy")
+wgpu = pytest.importorskip("wgpu")
 
 
 @pytest.mark.gpu

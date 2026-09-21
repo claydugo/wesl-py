@@ -24,7 +24,7 @@ print(result.wgsl)
 ```
 
 `compile(modules, *, root="package::main", options=None, filenames=None,
-root_directory=None)` returns a `CompileResult`.
+root_directory=None, dependencies=None)` returns a `CompileResult`.
 
 Module keys and `root` use names such as `package::main` and
 `package::settings`. Imports resolve through `modules` by default.
@@ -44,7 +44,8 @@ Annotate a reusable flag dictionary as `dict[str, bool | wesl.Feature]`.
 
 `Feature.Keep` preserves unresolved conditions for a later compilation.
 `Feature.Error` rejects flags that the compiler evaluates with that policy.
-Unused supplied flags do not cause an error. For example:
+Unused supplied flags do not cause an error.
+Using `modules` from the first example:
 
 ```python
 features = wesl.Features(default=wesl.Feature.Error, flags={"enabled": True})
@@ -61,8 +62,9 @@ The compile boundary checks field types.
 `CompileOptions`, `Features`, `Feature`, and `ManglerKind` support pickle.
 Applications can pass these values to process workers.
 
-The retention options use the names, defaults, and behavior of
-[wesl-rs `CompileOptions`](https://github.com/webgpu-tools/wesl-rs/blob/63a3627ba31258565df177f3f553beed8ff45338/crates/wesl/src/frontend.rs#L27-L95).
+The retention options follow
+[wesl-rs `CompileOptions`](https://docs.rs/wesl/0.4.4/wesl/struct.CompileOptions.html).
+`keep_main` and `mangle_main` map to upstream's `keep_root` and `mangle_root`.
 
 | Option | Effect |
 | --- | --- |
@@ -75,21 +77,21 @@ The retention options use the names, defaults, and behavior of
 
 `strip=False` overrides `keep_main` and `keep`.
 `keep_main=True` overrides `keep`.
-Unknown names in `keep` raise `CompileError`. This includes declarations that conditional
+The compiler ignores unknown names in `keep`. This includes declarations that conditional
 translation removes.
+
 A root with only unused helpers produces empty WGSL under the default options.
 The compiler loads modules when declarations depend on them. It does not scan every file in a package.
-WESL 0.5 removes the `lazy` option.
+The binding enables upstream's lazy import resolution.
 
 Set `mangle_main=True` to rename root declarations as well as imported declarations.
-This name and its default also come from wesl-rs.
 Selections always use original names, independent of mangling.
 
 The remaining `CompileOptions` fields also use upstream names and defaults:
 
 | Option | Effect |
 | --- | --- |
-| `imports=True` | Request import resolution. WESL 0.5.0 ignores this setting. |
+| `imports=True` | Resolve imports. |
 | `condcomp=True` | Evaluate conditional translation attributes. |
 | `lower=False` | Enable upstream lowering when set to `True`. This build inlines aliases and constants. |
 | `validate=True` | Run upstream compiler checks. |
@@ -99,13 +101,15 @@ The remaining `CompileOptions` fields also use upstream names and defaults:
 The build does not enable upstream generics or evaluation.
 `CompileOptions` does not expose the inactive generics option.
 
-The pinned wesl-rs 0.5.0 release has two known compiler limitations:
+The pinned wesl-rs 0.4.4 release has two known compiler limitations:
 
-- `imports=False` still resolves imports.
+- `imports=False` can strip root entry points. Use `strip=False` with this option.
 - `lower=True` can lose explicit constant types or leave unresolved constant references.
   Keep `lower=False` for runtime shaders until upstream fixes these cases.
 
 The binding uses the published crates without local compiler patches.
+It stays on 0.4.4 so existing shader libraries remain usable without visibility modifiers.
+See the [upstream recommendation](https://github.com/webgpu-tools/wesl-rs/issues/300#issuecomment-5757180358).
 
 `mangler` accepts `ManglerKind.Escape`, `ManglerKind.Hash`,
 `ManglerKind.Unicode`, or `ManglerKind.None_`.
@@ -120,7 +124,17 @@ Successful compilation still requires validation by the GPU device.
 
 ## Compile strings and files
 
+Save this as `shaders/main.wesl`:
+
+```wesl
+@compute @workgroup_size(1) fn main() {}
+```
+
+Compile an inline source or that file:
+
 ```python
+import wesl
+
 result = wesl.compile_source(
     "@compute @workgroup_size(1) fn main() {}",
     filename="generated.wesl",
@@ -152,40 +166,73 @@ The resolver first checks the supplied `modules` mapping.
 It then looks for a `.wesl` file, with `.wgsl` as a fallback.
 Missing imported files raise `CompileError`.
 
-Named libraries also use `modules`:
+The installed package includes `wgsl_test`, which needs no registration.
+It provides the upstream assertion shaders for compilation and testing.
+
+Register other library directories with `dependencies`.
+Replace `path/to/lygia` with your Lygia checkout:
 
 ```python
+import wesl
+
+compiler = wesl.Compiler(dependencies={"lygia": "path/to/lygia"})
+result = compiler.compile_source(
+    "import lygia::color::palette::heatmap::heatmap; "
+    "@fragment fn main() -> @location(0) vec4f { return vec4f(heatmap(0.5), 1.0); }"
+)
+```
+
+`compile`, `compile_source`, and `compile_file` also accept `dependencies`.
+Values are directory paths. Relative paths use the working directory.
+The binding routes imports through upstream `Router` and `FileResolver`.
+It reads files on demand, with `.wesl` preferred over `.wgsl`.
+
+The package root is `package.wesl`. For example, `library::value` refers to
+`value` in that file, and `library::math::value` refers to `value` in `math.wesl`.
+Imports share registered directories by package name, including self-qualified imports.
+An explicit dependency such as `alpha/common` takes precedence over `common`
+when `alpha` imports it. Entries in `modules` override files.
+
+Each compilation reads the current sources. The binding does not download libraries
+or read `wesl.toml`.
+
+Named libraries can also use `modules`:
+
+```python
+import wesl
+
 result = wesl.compile_source(
     "import noise::lib::value; fn main() -> u32 { return value(); }",
-    modules={"noise::lib": "public fn value() -> u32 { return 7u; }"},
+    modules={"noise::lib": "fn value() -> u32 { return 7u; }"},
     options=wesl.CompileOptions(keep=["main"]),
 )
 ```
 
-Imports across package boundaries require `public` declarations.
-Declarations without a visibility modifier remain accessible within their package.
-`private` declarations remain accessible only within their module.
-WESL 0.5.0 also requires `public` for imports between modules in a named library.
-This upstream limitation affects `package::` and relative imports within that library.
+Imports across package boundaries work without visibility modifiers in WESL 0.4.4.
+
 Within a library, `package::` and relative imports refer to that library.
-Dependencies use the exact package paths that upstream's virtual resolver receives.
+Virtual modules use the exact package paths that upstream's resolver receives.
 If `noise::lib` imports `arithmetic::one`, supply that dependency under
 `noise/arithmetic`. A module within that dependency uses a key such as
 `noise/arithmetic::helpers`. The slash separates package dependencies.
 WESL source still uses normal import syntax.
 For example, `alpha/common` and `beta/common` identify separate dependencies.
-Neither falls back to a module named `common`.
+Neither falls back to a virtual module named `common`.
 These keys identify virtual modules. The binding does not construct an upstream
 package dependency graph or deduplicate package instances.
-The resolver does not search the filesystem for named libraries.
+Use `dependencies` to register directories for named libraries.
 
 ## Reuse compilation settings
 
-`Compiler` stores `options`, `modules`, `filenames`, and `root_directory`.
-All four are optional keyword arguments. Each instance owns its default settings.
+`Compiler` stores `options`, `modules`, `filenames`, `root_directory`, and
+`dependencies`.
+These are optional keyword arguments. Each instance owns its default settings.
 Supplied settings and mappings remain shared with the caller.
+This example uses `shaders/main.wesl` from [above](#compile-strings-and-files):
 
 ```python
+import wesl
+
 compiler = wesl.Compiler(root_directory="shaders")
 result = compiler.compile_file("main.wesl")
 result = compiler.compile_source("@compute @workgroup_size(1) fn main() {}")
@@ -222,13 +269,19 @@ Source records support equality, hashing, and pickle.
 
 ## Package resources
 
+Use `load_modules()` for local files and installed Python resources.
+This example assumes your installed `shader_library.shaders` package contains
+`blur.wesl` with a function named `apply` that takes no arguments:
+
 ```python
 from importlib.resources import files
+
+import wesl
 
 loaded = wesl.load_modules(files("shader_library.shaders"), namespace="filters")
 result = wesl.compile_source(
     "import filters::blur::apply; fn main() { apply(); }",
-    modules={**loaded.modules, "package::config": "const radius: u32 = 3u;"},
+    modules=loaded.modules,
     filenames=loaded.filenames,
     options=wesl.CompileOptions(keep=["main"]),
 )
@@ -252,7 +305,9 @@ a `.wgsl` fallback.
 ## Syntax checks
 
 ```python
-wesl.check_syntax(result.wgsl, filename="generated shader.wgsl")
+import wesl
+
+wesl.check_syntax("@compute @workgroup_size(1) fn main() {}", filename="main.wgsl")
 ```
 
 `check_syntax(source, *, filename="<string>")` returns `None` on success.
@@ -273,6 +328,8 @@ The package does not expose a standalone semantic validator.
 ## Diagnostics
 
 ```python
+import wesl
+
 try:
     wesl.check_syntax("fn main(", filename="shaders/broken.wesl")
 except wesl.CompileError as error:
@@ -284,8 +341,7 @@ except wesl.CompileError as error:
 `CompileError.diagnostics` is a tuple. A manually constructed exception
 starts with an empty tuple.
 Error text contains no terminal color codes.
-WESL 0.5.0 can omit module context from validation errors.
-An error in an imported module can show the root source with a span from the imported source.
+With `sourcemap=False`, validation errors can omit source text.
 Syntax errors retain their module context.
 
 `Diagnostic(message, module=None, filename=None, source=None, span=None)`
@@ -317,7 +373,7 @@ File imports use their filesystem paths when reporting errors.
 
 `wesl.__version__` identifies the binding.
 `wesl.__version__` matches Python distribution metadata. This package uses the published WESL and
-`wgsl-parse` 0.5.0 crates without local patches.
+`wgsl-parse` 0.4.4 crates without local patches.
 Report parser defects to the [upstream issue tracker](https://github.com/webgpu-tools/wesl-rs/issues).
 See [NOTICE](licenses/NOTICE) for source provenance.
 

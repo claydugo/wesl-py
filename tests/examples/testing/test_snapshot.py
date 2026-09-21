@@ -1,15 +1,21 @@
-import numpy
+from typing import TYPE_CHECKING
+
 import pytest
 import wesl
-import wgpu
-from pytest_regressions.ndarrays_regression import NDArraysRegressionFixture
+
+if TYPE_CHECKING:
+    from pytest_regressions.ndarrays_regression import NDArraysRegressionFixture
+
+numpy = pytest.importorskip("numpy")
+wgpu = pytest.importorskip("wgpu")
+pytest.importorskip("pytest_regressions")
 
 
 @pytest.mark.gpu
 def test_gradient(
     wesl_compiler: wesl.Compiler,
     wesl_device: wgpu.GPUDevice,
-    ndarrays_regression: NDArraysRegressionFixture,
+    ndarrays_regression: "NDArraysRegressionFixture",
 ) -> None:
     shader = wesl_compiler.compile_file("gradient.wesl")
     pipeline = wesl_device.create_render_pipeline(

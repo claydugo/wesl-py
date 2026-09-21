@@ -31,21 +31,22 @@ with tempfile.TemporaryDirectory(prefix="wesl-sdist-") as temporary_directory:
         "Cargo.lock",
         "pyproject.toml",
         "wesl.toml",
+        "tools/fetch_test_shaders.py",
         *(
             path.relative_to(project_directory)
             for path in project_directory.glob("python/wesl/*.py")
         ),
         "python/wesl/_native.pyi",
         "python/wesl/py.typed",
-        *(
-            path.relative_to(project_directory)
-            for path in project_directory.glob("third_party/wgsl-test/*.wesl")
-        ),
+        "python/wesl/shaders/wgsl_test/package.wesl",
+        "python/wesl/shaders/wgsl_test/TestResult.wesl",
+        "python/wesl/shaders/wgsl_test/wesl.toml",
         *project["license-files"],
         *(
             path.relative_to(project_directory)
-            for pattern in ("**/*.py", "**/*.wesl", "**/*.npz", "**/*.md")
-            for path in (project_directory / "tests").glob(pattern)
+            for directory in ("tests", "examples")
+            for pattern in ("**/*.py", "**/*.wesl", "**/*.npz", "**/*.md", "**/*.toml")
+            for path in (project_directory / directory).glob(pattern)
         ),
     ):
         assert (source / filename).read_bytes() == (
@@ -55,8 +56,10 @@ with tempfile.TemporaryDirectory(prefix="wesl-sdist-") as temporary_directory:
         assert path.name not in {
             ".git",
             ".pixi",
+            ".wesl",
             "target",
             "vendor",
+            "third_party",
             "patches",
             "__pycache__",
         }

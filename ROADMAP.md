@@ -8,10 +8,10 @@ This file tracks unresolved defects, design decisions, and deferred features.
 Local fixes for these upstream issues are outside the current release work:
 
 - WESL expression traversal can exhaust a small caller stack. The [Windows regression](https://github.com/claydugo/wesl-py/actions/runs/35526430139/job/106119676932) compiles a 10,000-term expression. Keep the test as an upstream regression probe.
-- The bundled [upstream assertions](https://github.com/webgpu-tools/wesl-js/blob/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test/shaders/lib.wesl) can accept NaN, infinity, and infinite tolerances. Keep the finite-input contract in [TESTING.md](TESTING.md#assertions).
-- WESL 0.5.0 has known diagnostic, lowering, and import-option defects. Keep their existing regression tests and [API documentation](API.md#diagnostics).
+- The downloaded [upstream assertions](https://github.com/webgpu-tools/wesl-js/blob/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test/shaders/lib.wesl) can accept NaN, infinity, and infinite tolerances. Keep the finite-input contract in [TESTING.md](TESTING.md#assertions).
+- Stay on WESL 0.4.4 until upstream supports existing shader libraries without visibility modifiers. Keep the regression tests for the compiler and [API documentation](API.md#diagnostics).
 
-The compiler upgrade and shader runner reduction are complete.
+The compiler pin and shader runner reduction are complete.
 The runner uses upstream `wgsl-test` assertions and accepts a caller's device.
 Python examples use wgpu-py for general compute and fragment execution.
 

@@ -37,16 +37,24 @@ Their READMEs describe targeted Python and native WESL tests.
 
 ## Verify
 
+The [Lygia example](lygia/README.md) maps a grayscale image to RGBA with upstream shader imports.
+Fetch the shader files, then write a PNG without opening a window:
+
+```bash
+pixi run python tools/fetch_test_shaders.py
+pixi run -e examples python -m examples.lygia --library .wesl/lygia --output /tmp/lygia.png
+```
+
 Run the SDF checks without opening a window:
 
 ```bash
-pixi run -e examples python -m pytest tests/examples/test_sdf.py -q
+pixi run -e testing python -m pytest tests/examples/test_sdf.py -q
 ```
 
 Compare the multiscale GPU results with NumPy:
 
 ```bash
-pixi run test tests/examples/test_multiscale.py
+pixi run -e testing python -m pytest tests/examples/test_multiscale.py
 ```
 
 Add `--image` to verify the full TIFF as well as synthetic inputs.

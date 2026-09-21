@@ -1,5 +1,5 @@
-import package::imaging::indexing::linear_index;
-import package::imaging::color::channel_color;
+import super::indexing::linear_index;
+import super::color::channel_color;
 
 @group(0) @binding(0) var<storage, read> channels: array<f32>;
 @group(0) @binding(2) var output: texture_storage_2d<rgba8unorm, write>;

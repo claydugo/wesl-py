@@ -1,5 +1,6 @@
 from collections.abc import Mapping, Sequence
 from os import PathLike, fspath
+from pathlib import Path
 from struct import unpack_from
 from typing import Any, cast
 
@@ -57,6 +58,7 @@ def run_test(
     options: CompileOptions | None = None,
     filenames: Mapping[str, str | PathLike[str]] | None = None,
     root_directory: str | PathLike[str] | None = None,
+    dependencies: Mapping[str, str | PathLike[str]] | None = None,
     resources: Mapping[int, Sequence[dict[str, Any]]] | None = None,
     constants: Mapping[str, float] | None = None,
 ) -> None:
@@ -81,6 +83,14 @@ def run_test(
         else {name: fspath(path) for name, path in filenames.items()},
         None if root_directory is None else fspath(root_directory),
         result_binding,
+        {
+            "wgsl_test": str(Path(__file__).parent / "shaders/wgsl_test"),
+            **(
+                {}
+                if dependencies is None
+                else {name: fspath(path) for name, path in dependencies.items()}
+            ),
+        },
     )
     if compiled is None:
         raise ShaderTestDisabledError("WESL conditions disable this test")

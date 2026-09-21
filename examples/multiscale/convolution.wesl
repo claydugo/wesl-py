@@ -1,6 +1,6 @@
-import package::imaging::indexing::linear_index;
-import package::multiscale::boundary::clamp_position;
-import package::multiscale::coefficients::{radius, weights};
+import super::super::imaging::indexing::linear_index;
+import super::boundary::clamp_position;
+import super::coefficients::{radius, weights};
 
 @group(0) @binding(0) var<storage, read> source: array<f32>;
 

@@ -57,7 +57,7 @@ It is not a kernel benchmark.
 ## Tests
 
 ```bash
-pixi run test tests/examples/test_rmsnorm.py tests/examples/rmsnorm -q
+pixi run -e testing python -m pytest tests/examples/test_rmsnorm.py tests/examples/rmsnorm -q
 ```
 
 `wgpu.utils.compute.compute_with_buffers()` compares the shader with a float64 NumPy reference.
@@ -77,5 +77,5 @@ The tests import the same input and scale functions as the compute kernel.
 Collect the native tests without GPU dependencies:
 
 ```bash
-pixi run python -m pytest tests/examples/rmsnorm --collect-only -q
+pixi run -e test python -m pytest tests/examples/rmsnorm --collect-only -q
 ```

@@ -1,9 +1,9 @@
-import package::examples::sdf::primitives::{sphere, smooth_union};
+import examples::sdf::primitives::{sphere, smooth_union};
 import wgsl_test::expectNear;
 
 @test
 fn sphere_center() {
-    expectNear(sphere(vec3f(0.0), 2.0), -2.0);
+   expectNear(sphere(vec3f(0.0), 2.0), -2.0);
 }
 
 @test

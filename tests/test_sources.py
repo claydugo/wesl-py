@@ -105,10 +105,10 @@ def test_named_packages_resolve_local_and_external_dependencies() -> None:
             "noise::lib": """
                 import package::settings::enabled;
                 import arithmetic::one;
-                public fn value() -> u32 { return enabled + one; }
+                fn value() -> u32 { return enabled + one; }
             """,
-            "noise::settings": "public const enabled = 2u;",
-            "noise/arithmetic": "public const one = 1u;",
+            "noise::settings": "const enabled = 2u;",
+            "noise/arithmetic": "const one = 1u;",
         },
         options=wesl.CompileOptions(keep=["main"]),
     )
@@ -121,32 +121,12 @@ def test_named_packages_resolve_local_and_external_dependencies() -> None:
     }
 
 
-@pytest.mark.parametrize("visibility", ["", "private ", "public "])
-def test_package_imports_require_public_declarations(visibility: str) -> None:
-    modules = {
-        "package::main": "@compute @workgroup_size(1) fn main() { library::value(); }",
-        "library": f"{visibility}fn value() {{}}",
-    }
-    if visibility == "public ":
-        result = wesl.compile(modules)
-        assert "fn library_value(" in result.wgsl
-        assert "public " not in result.wgsl
-    else:
-        with pytest.raises(wesl.CompileError, match="visibility"):
-            wesl.compile(modules)
-
-
-@pytest.mark.xfail(
-    strict=True,
-    raises=wesl.CompileError,
-    reason="WESL 0.5.0 requires public visibility for local imports in named packages",
-)
 def test_named_package_local_imports_allow_package_visibility() -> None:
     result = wesl.compile_source(
         "@compute @workgroup_size(1) fn main() { library::value(); }",
         modules={
             "library": "import package::helper::value as helper; "
-            "public fn value() { helper(); }",
+            "fn value() { helper(); }",
             "library::helper": "fn value() {}",
         },
     )
@@ -310,11 +290,114 @@ def test_result_metadata_follows_selected_features_and_declarations() -> None:
     assert result.modules == ("package::main",)
 
 
+def test_bundled_assertions_need_no_registration() -> None:
+    result = wesl.compile_source(
+        "import wgsl_test::expectEq; "
+        "@compute @workgroup_size(1) fn main() { expectEq(7u, 7u); }"
+    )
+    assert {"wgsl_test", "wgsl_test::TestResult"} <= set(result.modules)
+    assert "fn expectEq(" in result.sources["wgsl_test"].text
+
+
+def test_directory_dependencies_follow_imports_and_reload(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    (library / "nested").mkdir(parents=True)
+    (library / "package.wesl").write_text(
+        "import library::nested::operations::value; "
+        "fn compute() -> u32 { return value(); }"
+    )
+    (library / "nested/operations.wesl").write_text(
+        "import super::settings::offset; import shared::factor; "
+        "fn value() -> u32 { return offset + factor; }"
+    )
+    (library / "nested/settings.wgsl").write_text("const offset = 7u;")
+    (library / "2D.wesl").write_text("invalid unused shader")
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    (shared / "package.wesl").write_text("const factor = 3u;")
+    source = (
+        "import library::compute; "
+        "@compute @workgroup_size(1) fn main() { let value = compute(); }"
+    )
+    (tmp_path / "main.wesl").write_text(source)
+    compiler = wesl.Compiler(
+        root_directory=tmp_path,
+        dependencies={"library": library, "shared": str(shared)},
+    )
+    result = compiler.compile_file("main.wesl")
+    assert set(result.modules) == {
+        "package::main",
+        "library",
+        "library::nested::operations",
+        "library::nested::settings",
+        "shared",
+    }
+    assert result.sources["library"].filename == str(library / "package.wesl")
+    assert result.sources["library::nested::settings"].filename == str(
+        library / "nested/settings.wgsl"
+    )
+    (shared / "package.wesl").write_text("const factor = 11u;")
+    result = compiler.compile_source(source)
+    assert result.sources["shared"].text == "const factor = 11u;"
+
+
+def test_directory_dependencies_preserve_scoped_overrides(tmp_path: Path) -> None:
+    left = tmp_path / "left"
+    right = tmp_path / "right"
+    shared = tmp_path / "shared"
+    replacement = tmp_path / "replacement"
+    for directory in (left, right, shared, replacement):
+        directory.mkdir()
+    source = "import shared::value; fn compute() -> u32 { return value(); }"
+    (left / "package.wesl").write_text(source)
+    (right / "package.wesl").write_text(source)
+    (shared / "package.wesl").write_text("fn value() -> u32 { return 3u; }")
+    (replacement / "package.wesl").write_text(
+        "import shared::helpers::number; fn value() -> u32 { return number; }"
+    )
+    (replacement / "helpers.wesl").write_text("const number = 7u;")
+    result = wesl.compile_source(
+        "@compute @workgroup_size(1) fn main() { "
+        "let first = left::compute(); let second = right::compute(); "
+        "let third = shared::value(); }",
+        dependencies={
+            "left": left,
+            "right": right,
+            "shared": shared,
+            "left/shared": replacement,
+        },
+        modules={"right/shared": "fn value() -> u32 { return 11u; }"},
+    )
+    assert result.sources["left/shared"].filename == str(replacement / "package.wesl")
+    assert result.sources["left/shared::helpers"].filename == str(
+        replacement / "helpers.wesl"
+    )
+    assert result.sources["shared"].filename == str(shared / "package.wesl")
+    assert result.sources["right/shared"].text == "fn value() -> u32 { return 11u; }"
+
+
+def test_directory_dependency_diagnostics(tmp_path: Path) -> None:
+    source = "fn value() -> u32 {\n    return absent;\n}"
+    filename = tmp_path / "value.wesl"
+    filename.write_text(source)
+    with pytest.raises(wesl.CompileError) as caught:
+        wesl.compile_source(
+            "@compute @workgroup_size(1) fn main() { "
+            "let value = library::value::value(); }",
+            dependencies={"library": tmp_path},
+        )
+    (diagnostic,) = caught.value.diagnostics
+    assert diagnostic.module == "library::value"
+    assert diagnostic.filename == str(filename)
+    assert diagnostic.source == source
+    assert diagnostic.span == (source.index("absent"), source.index("absent") + 6)
+
+
 def test_resource_loader_preserves_bytes_and_module_names(tmp_path: Path) -> None:
     directory = tmp_path / "shaders"
     (directory / "nested").mkdir(parents=True)
     (directory / "nested" / "helper.wesl").write_bytes(
-        "public fn café() -> u32 {\r\n    return 2u;\r\n}".encode(),
+        "fn café() -> u32 {\r\n    return 2u;\r\n}".encode(),
     )
     (directory / "nested" / "helper.wgsl").write_text("fn ignored() {}")
     (directory / "notes.txt").write_text("not a shader")
@@ -338,7 +421,7 @@ def test_resource_loader_preserves_bytes_and_module_names(tmp_path: Path) -> Non
         "import imaging::nested::helper::café; fn main() -> u32 { return café(); }",
         modules={
             **packaged.modules,
-            "imaging::nested::helper": "public fn café() -> u32 { return 7u; }",
+            "imaging::nested::helper": "fn café() -> u32 { return 7u; }",
         },
         options=wesl.CompileOptions(keep=["main"]),
     )
@@ -392,12 +475,12 @@ def test_package_dependencies_do_not_share_a_flat_namespace() -> None:
             @compute @workgroup_size(1) fn main() { let sum = first() + second(); }
         """,
         "alpha": "import common::value as common_value; "
-        "public fn value() -> u32 { return common_value(); }",
+        "fn value() -> u32 { return common_value(); }",
         "beta": "import common::value as common_value; "
-        "public fn value() -> u32 { return common_value(); }",
-        "alpha/common": "public fn value() -> u32 { return 3u; }",
-        "beta/common": "public fn value() -> u32 { return 7u; }",
-        "common": "public fn value() -> u32 { return 99u; }",
+        "fn value() -> u32 { return common_value(); }",
+        "alpha/common": "fn value() -> u32 { return 3u; }",
+        "beta/common": "fn value() -> u32 { return 7u; }",
+        "common": "fn value() -> u32 { return 99u; }",
     }
     result = wesl.compile(modules)
     assert result.modules[0] == "package::main"

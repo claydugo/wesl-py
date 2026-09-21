@@ -45,11 +45,13 @@ The workflow runs the Rust checks, Ruff, formatting, and all three type checkers
 The workflow runs stubtest against the development installation on Linux.
 
 The project declares MIT in `LICENSE`, `Cargo.toml`, and `pyproject.toml`.
-The copied wgsl-test shaders retain their MIT license and provenance in `licenses/`.
+The packaged wgsl-test shaders have their MIT license and provenance in `licenses/`.
 Binary releases also need notices for the Rust code they incorporate.
 Maturin includes a CycloneDX SBOM in each wheel's `.dist-info/sboms/` directory.
 The SBOM records Cargo dependencies and their declared licenses.
 It does not replace the license files that accompany each artifact.
+
+For the Lygia example, first run `pixi run python tools/fetch_test_shaders.py`.
 
 Run the test files that cover the change:
 
@@ -100,6 +102,41 @@ The plugin tests cover the minimum and current pytest versions.
 The `pytest_generate_tests` hook exposes each shader callable during collection.
 The collector then removes it from the synthetic module.
 This prevents shader names from becoming Python hooks during subsequent collection.
+
+## Shader editing
+
+The checked-in `wesl.toml` files configure wgsl-analyzer for this repository.
+Their relative dependency paths point to the shader sources in the checkout.
+The `wgsl_test` imports need no editor setup beyond loading the correct manifest.
+The Lygia imports require the example setup command above.
+Configure your editor to use the nearest `wesl.toml` as the project root.
+
+For another development project with a sibling wesl-py checkout, use:
+
+```toml
+edition = "2026_pre"
+root = "shaders"
+
+[dependencies]
+wgsl_test = { path = "../wesl-py/python/wesl/shaders/wgsl_test" }
+```
+
+Save this as your project's `wesl.toml` and set `root` to your shader directory.
+The dependency points to source files and does not depend on a Python environment.
+The [upstream manifest format](https://wesl-lang.dev/spec/WeslToml#dependencies-entry)
+supports relative paths to directories that contain `wesl.toml`.
+Its package discovery supports npm and Cargo.
+
+To use the shaders from a Python installation instead, run this from the directory
+that contains your project's `wesl.toml`:
+
+```bash
+pixi run python -c "import os; from importlib.resources import files; print(os.path.relpath(files('wesl') / 'shaders/wgsl_test'))"
+```
+
+Copy the returned path into the dependency entry.
+Update it if you move or replace the environment.
+This manifest configures the editor. Python compilation registers `wgsl_test` automatically.
 
 ## Support
 

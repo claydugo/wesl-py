@@ -2,9 +2,14 @@ Copyright (c) 2026 wesl-py contributors.
 
 This project's code uses the MIT license in LICENSE.
 
-This package includes the wgsl-test assertion shaders under the MIT license.
+The package includes wgsl-test assertion shaders under the MIT license.
 licenses/WGSL-TEST-MIT contains the upstream license.
 The shader files come from wesl-js revision 37db2325b40cdb8aa504582cbc01cb4d41109a36.
 https://github.com/webgpu-tools/wesl-js/tree/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test/shaders
-The files are in third_party/wgsl-test/.
-Local changes add public visibility for WESL 0.5.
+The shader contents remain unchanged. Upstream lib.wesl is named package.wesl
+to identify the package root for the resolver and wgsl-analyzer.
+
+The Lygia example uses revision ce08fe351478b6c14297d103a8ce98d8e787d4d2.
+https://github.com/patriciogonzalezvivo/lygia/tree/ce08fe351478b6c14297d103a8ce98d8e787d4d2
+The downloaded files retain their upstream license notices.
+https://lygia.xyz/license

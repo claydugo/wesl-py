@@ -1,5 +1,5 @@
-import package::sdf::parameters::parameters;
-import package::sdf::primitives::{sphere, smooth_union};
+import super::parameters::parameters;
+import super::primitives::{sphere, smooth_union};
 
 fn distance_to_scene(position: vec3<f32>) -> f32 {
     let separation = parameters.shape.z;

@@ -48,6 +48,7 @@ def test_collection_errors(pytester: pytest.Pytester) -> None:
 @pytest.mark.skipif(
     sys.platform == "win32", reason="Symlinks require Windows privileges."
 )
+@pytest.mark.gpu
 def test_symlink_root_preserves_relative_imports(pytester: pytest.Pytester) -> None:
     pytester.makeini("""
         [pytest]
@@ -353,7 +354,7 @@ def test_fixtures_parametrization_and_selection(pytester: pytest.Pytester) -> No
         @pytest.fixture
         def wesl_modules():
             return {
-                "library": "public fn double(value: u32) -> u32 { return value * 2u; }"
+                "library": "fn double(value: u32) -> u32 { return value * 2u; }"
             }
     """)
     pytester.makefile(

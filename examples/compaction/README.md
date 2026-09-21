@@ -50,7 +50,7 @@ It is not a kernel benchmark or a speed comparison with Python.
 ## Tests
 
 ```bash
-pixi run test tests/examples/test_compaction.py tests/examples/compaction -q
+pixi run -e testing python -m pytest tests/examples/test_compaction.py tests/examples/compaction -q
 ```
 
 `wgpu.utils.compute.compute_with_buffers()` checks local prefixes and block totals against NumPy.
@@ -67,5 +67,5 @@ The tests import the predicate used by both production passes.
 Collect the native tests without GPU dependencies:
 
 ```bash
-pixi run python -m pytest tests/examples/compaction --collect-only -q
+pixi run -e test python -m pytest tests/examples/compaction --collect-only -q
 ```

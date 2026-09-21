@@ -32,7 +32,7 @@ def test_assertions_and_imports(wesl_device: wgpu.GPUDevice) -> None:
             """,
             "library": """
                 import wgsl_test::{expectWithinVec2, expectNearVec3, expectUlpVec4};
-                public fn verify() {
+                fn verify() {
                     expectWithinVec2(vec2f(1.0, 2.0), vec2f(1.01, 2.0), 0.02, 0.0);
                     expectNearVec3(vec3f(0.0), vec3f(0.0000001));
                     expectUlpVec4(
@@ -48,7 +48,7 @@ def test_assertions_and_imports(wesl_device: wgpu.GPUDevice) -> None:
 
 def test_failure_in_imported_helper(wesl_device: wgpu.GPUDevice) -> None:
     source = (
-        "import wgsl_test::expectEq;\npublic fn verify() {\n"
+        "import wgsl_test::expectEq;\nfn verify() {\n"
         "    expectEq(4294967295u, 4294967294u);\n"
         "    expectEq(1u, 2u);\n}"
     )
@@ -197,7 +197,7 @@ def test_named_and_numeric_overrides(wesl_device: wgpu.GPUDevice) -> None:
             """,
             "library": """
                 override offset: u32 = 19u;
-                public fn read() -> u32 { return offset; }
+                fn read() -> u32 { return offset; }
             """,
         },
         "overrides",
@@ -272,10 +272,10 @@ def test_entry_name_avoids_imports(
                     f"@test fn selected() {{ {call}; }}"
                 ),
                 "library": (
-                    "public fn wesl_test_entry() { wgsl_test::expect(false); }\n"
-                    "public fn verify() { wgsl_test::expect(false); }"
+                    "fn wesl_test_entry() { wgsl_test::expect(false); }\n"
+                    "fn verify() { wgsl_test::expect(false); }"
                 ),
-                "library::helpers": "public fn verify() { wgsl_test::expect(false); }",
+                "library::helpers": "fn verify() { wgsl_test::expect(false); }",
             },
             "selected",
         )

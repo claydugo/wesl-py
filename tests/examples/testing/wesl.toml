@@ -1,0 +1,5 @@
+edition = "2026_pre"
+root = "shaders"
+
+[dependencies]
+wgsl_test = { path = "../../../python/wesl/shaders/wgsl_test" }

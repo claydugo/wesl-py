@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import wesl
 from wesl import _native
@@ -25,7 +26,7 @@ def test_import_preserves_gil_state() -> None:
     )
 
 
-def test_concurrent_shader_instrumentation() -> None:
+def test_concurrent_shader_instrumentation(wgsl_test: Path) -> None:
     def compile_test(index: int) -> tuple[str, wesl.Diagnostic]:
         source = (
             "import wgsl_test::expectEq; "
@@ -42,6 +43,7 @@ def test_concurrent_shader_instrumentation() -> None:
             {"package::main": filename},
             None,
             0,
+            {"wgsl_test": str(wgsl_test)},
         )
         assert compiled is not None
         shader, entry_point, diagnostics, overrides = compiled

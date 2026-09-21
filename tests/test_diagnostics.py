@@ -5,6 +5,7 @@ import sys
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from importlib.metadata import version
 from multiprocessing import get_context
+from pathlib import Path
 
 import pytest
 import wesl
@@ -42,11 +43,6 @@ def test_imported_syntax_error_has_owned_diagnostics(modules: dict[str, str]) ->
 
 
 @pytest.mark.parametrize("sourcemap", [False, True])
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="WESL 0.5.0 omits module context from validation errors",
-)
 def test_imported_undefined_symbol_has_byte_span(
     modules: dict[str, str], *, sourcemap: bool
 ) -> None:
@@ -57,18 +53,15 @@ def test_imported_undefined_symbol_has_byte_span(
     diagnostic = caught.value.diagnostics[0]
     assert diagnostic.module == "package::settings"
     assert diagnostic.filename is None
-    assert diagnostic.source == source
+    assert diagnostic.source == (source if sourcemap else None)
     start = source.encode().index(b"absent")
     assert diagnostic.span == (start, start + len(b"absent"))
 
 
 @pytest.mark.parametrize("module", ["package::main", "package::helper"])
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="WESL 0.5.0 omits module context from validation errors",
-)
-def test_shader_test_error_preserves_source_context(module: str) -> None:
+def test_shader_test_error_preserves_source_context(
+    module: str, wgsl_test: Path
+) -> None:
     source = "fn fail() {\n    let café = 1u;\n    let item = missing;\n}\n"
     modules = {
         "package::main": "@test fn selected() { package::helper::fail(); }",
@@ -85,6 +78,7 @@ def test_shader_test_error_preserves_source_context(module: str) -> None:
             {module: "shader.wesl"},
             None,
             0,
+            {"wgsl_test": str(wgsl_test)},
         )
     (diagnostic,) = caught.value.diagnostics
     assert diagnostic.module == module
@@ -95,6 +89,65 @@ def test_shader_test_error_preserves_source_context(module: str) -> None:
     assert (diagnostic.line, diagnostic.column) == (3, 16)
     assert "shader.wesl:3:16" in str(caught.value)
     assert "let item = missing;" in str(caught.value)
+
+
+@pytest.mark.parametrize("strip", [False, True])
+def test_disabled_shader_skips_missing_imports(*, strip: bool) -> None:
+    result = _native.compile_test(
+        {
+            "package::main": (
+                "import package::missing::value; "
+                "@if(enabled) @test fn selected() {} "
+                "fn unrelated() { value(); }"
+            ),
+        },
+        "package::main",
+        "selected",
+        wesl.CompileOptions(
+            strip=strip, features=wesl.Features(flags={"enabled": False})
+        ),
+        {},
+        None,
+        0,
+        {},
+    )
+    assert result is None
+
+
+@pytest.mark.parametrize("registration", ["directory", "modules"])
+def test_shader_tests_reject_scoped_assertion_overrides(
+    tmp_path: Path, wgsl_test: Path, registration: str
+) -> None:
+    modules = {
+        "package::main": "@test fn selected() { library::verify(); }",
+        "library": "import wgsl_test::customCheck; fn verify() { customCheck(); }",
+    }
+    dependencies = {"wgsl_test": str(wgsl_test)}
+    if registration == "directory":
+        (tmp_path / "package.wesl").write_text("fn customCheck() {}")
+        dependencies["library/wgsl_test"] = str(tmp_path)
+    else:
+        modules["library/wgsl_test"] = "fn customCheck() {}"
+    result = wesl.compile(
+        modules,
+        options=wesl.CompileOptions(keep=["selected"]),
+        dependencies=dependencies,
+    )
+    assert "library/wgsl_test" in result.modules
+    with pytest.raises(
+        wesl.CompileError,
+        match="shader tests do not support scoped wgsl_test overrides",
+    ):
+        _native.compile_test(
+            modules,
+            "package::main",
+            "selected",
+            wesl.CompileOptions(),
+            {},
+            None,
+            0,
+            dependencies,
+        )
 
 
 def test_linked_argument_error_preserves_missing_metadata() -> None:

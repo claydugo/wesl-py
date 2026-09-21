@@ -161,11 +161,11 @@ def test_keep_selects_declarations_and_their_dependencies() -> None:
         ("@if(enabled) @compute @workgroup_size(1) fn main() {}", ["main"]),
     ],
 )
-def test_keep_rejects_unknown_and_disabled_declarations(
+def test_keep_ignores_unknown_and_disabled_declarations(
     source: str, keep: list[str]
 ) -> None:
-    with pytest.raises(wesl.CompileError, match=keep[0]):
-        wesl.compile_source(source, options=wesl.CompileOptions(keep=keep))
+    result = wesl.compile_source(source, options=wesl.CompileOptions(keep=keep))
+    assert not result.wgsl.strip()
 
 
 def test_feature_error_policy() -> None:
@@ -463,11 +463,6 @@ def test_incremental_conditional_translation() -> None:
     assert disabled.wgsl == preserved.wgsl
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=wesl.CompileError,
-    reason="WESL 0.5.0 resolves imports when imports=False",
-)
 def test_import_resolution_can_be_disabled() -> None:
     source = "import package::missing::value; fn main() { value(); }"
     with pytest.raises(wesl.CompileError, match="module not found"):
@@ -606,6 +601,11 @@ def test_compile_options_apply_mutations_without_sharing_defaults() -> None:
     assert independent_options.features.flags == {}
 
 
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason="WESL 0.4.4 strips the root entry point when imports are disabled",
+)
 def test_disabled_imports_preserve_the_root_entry_point() -> None:
     result = wesl.compile_source(
         "@compute @workgroup_size(1) fn main() {}",

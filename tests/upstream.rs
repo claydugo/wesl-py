@@ -1,5 +1,5 @@
 use pyo3::{prelude::*, types::PyDict};
-use wesl::{CompileOptions, Feature, Features, resolver::VirtualResolver};
+use wesl::{CompileOptions, EscapeMangler, Feature, Features, VirtualResolver};
 use wgsl_parse::syntax::ModulePath;
 
 #[test]
@@ -35,7 +35,12 @@ fn compilation_matches_upstream() -> Result<(), Box<dyn std::error::Error>> {
             },
             ..CompileOptions::default()
         };
-        let expected = wesl::compile(&"package::main".parse()?, &options, &resolver)?;
+        let expected = wesl::compile(
+            &"package::main".parse()?,
+            &resolver,
+            &EscapeMangler,
+            &options,
+        )?;
         let context = PyDict::new(py);
         context.set_item("wesl", py.import("wesl")?)?;
         context.set_item("modules", modules)?;

@@ -1,4 +1,4 @@
-import package::sdf::scene::distance_to_scene;
+import super::scene::distance_to_scene;
 
 fn normal(position: vec3<f32>) -> vec3<f32> {
     return normalize(vec3<f32>(
