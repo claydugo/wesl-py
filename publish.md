@@ -9,8 +9,8 @@ See [ROADMAP.md](ROADMAP.md) for unresolved defects and deferred features.
 
 - [ ] Update the Cargo version and [release notes](CHANGELOG.md). Record WESL upgrades, WGSL output changes, and diagnostic changes. Refresh dependency notices when needed.
 - [ ] Run the artifact workflow on the release revision. Require all build jobs, wheel installation jobs, and compute jobs to pass. The Python regression tests cover the documented upstream compiler defects.
+- [ ] Resolve the [Windows expression regression](ROADMAP.md#before-release). Its test must pass in every required wheel-test job.
 - [ ] Review one sdist and six wheels. Verify both ABI families for each platform in the [support table](CONTRIBUTING.md#support).
-- [ ] Resolve the Windows Python 3.15 `abi3t` import failure. Conda-forge's regular 3.15.0rc2 build omits `python3t.dll`. Verify wheel imports before publication. [PyO3 DLL requirements](https://pyo3.rs/v0.29.2/faq#im-trying-to-call-python-from-rust-but-i-get-status_dll_not_found-or-status_entrypoint_not_found)
 - [ ] Run smoke tests on the minimum supported OS runtimes without relying on conda's shared libraries.
 - [ ] Review the README on TestPyPI. `twine check` verifies distribution metadata but does not check Markdown link targets.
 

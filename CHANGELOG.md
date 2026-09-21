@@ -10,7 +10,7 @@
 - Resolve library directories with `dependencies` and upstream resolvers. Use `wesl_dependencies` to register directories for pytest.
 - Include unchanged upstream wgsl-test assertions in installed packages and register them automatically. Add a Lygia image example and GPU tests.
 - Preserve dependency-qualified package names, the upstream order of modules, symlinks, and parent components in file paths.
-- Expose the binding version, upstream compiler version, and optional build revision.
+- Expose the binding version as `wesl.__version__`.
 - Pin published WESL and wgsl-parse 0.4.4 crates to support existing shader libraries without visibility modifiers. See [API.md](API.md) for known limitations of `imports=False` and `lower=True`.
 - Ignore unknown or disabled names in `keep`, as upstream does.
 - Preserve module context and assertion locations in shader tests.

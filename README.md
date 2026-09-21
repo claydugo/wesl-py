@@ -2,8 +2,9 @@
 
 Python bindings for the [Rust WESL compiler](https://github.com/webgpu-tools/wesl-rs).
 
-WESL extends WGSL with imports and conditional compilation. Compile modular
-shaders from Python and pass the generated WGSL to wgpu-py. Compilation runs without a GPU.
+WESL extends WGSL with imports and conditional compilation. Organize reusable
+shader code into modules and compile it to ordinary WGSL from Python.
+Compilation runs without a GPU.
 
 ## Installation
 
@@ -28,37 +29,48 @@ See [CONTRIBUTING.md](https://github.com/claydugo/wesl-py/blob/main/CONTRIBUTING
 
 ## Usage
 
+Put a reusable exposure function in `shaders/exposure.wesl`:
+
+```wesl
+fn apply_exposure(color: vec3f, stops: f32) -> vec3f {
+    let adjusted = color * exp2(stops);
+    @if(clamp_output) return clamp(adjusted, vec3f(0.0), vec3f(1.0));
+    @if(!clamp_output) return adjusted;
+}
+```
+
+Import it from `shaders/main.wesl`:
+
+```wesl
+import package::exposure::apply_exposure;
+
+@fragment
+fn main(@location(0) color: vec4f) -> @location(0) vec4f {
+    return vec4f(apply_exposure(color.rgb, 1.0), color.a);
+}
+```
+
+Compile the shader with output clamping enabled:
+
 ```python
 import wesl
 
-modules = {
-    "package::main": """
-        import package::settings::value;
-        fn answer() -> u32 { return value(); }
-    """,
-    "package::settings": """
-        @if(enabled) fn value() -> u32 { return 7u; }
-        @if(!enabled) fn value() -> u32 { return 3u; }
-    """,
-}
-result = wesl.compile(
-    modules,
+result = wesl.compile_file(
+    "shaders/main.wesl",
     options=wesl.CompileOptions(
-        features=wesl.Features(flags={"enabled": True}),
-        keep=["answer"],
+        features=wesl.Features(flags={"clamp_output": True}),
     ),
 )
 print(result.wgsl)
 ```
 
-The feature flag selects the implementation of `value()`.
-The compiler strips unused declarations by default. `CompileOptions(keep=["answer"])`
-retains `answer` even though it is not a shader entry point.
-Use `device.create_shader_module(code=result.wgsl)` to load it in wgpu-py.
+`compile_file()` resolves imports from the root file's directory.
+The compiler includes the imported function and removes inactive code.
+Set `clamp_output` to `False` to preserve values outside `[0, 1]`.
+The result contains ordinary WGSL in `result.wgsl`.
 
-Use `compile_source()` for a string or `compile_file()` for a file.
-`check_syntax()` checks WESL syntax. Compilation runs upstream WESL checks.
-The target GPU runtime validates the generated shader and pipeline.
+Use `compile_source()` for a string or `compile()` for a mapping of module names to sources.
+`check_syntax()` checks WESL syntax.
 
 See the [API reference](https://github.com/claydugo/wesl-py/blob/main/API.md) for compilation options and diagnostics.
 
@@ -82,6 +94,18 @@ result = compiler.compile_source("""
 The compiler reads imported files from that directory.
 You manage the library sources. See the [Lygia example](https://github.com/claydugo/wesl-py/blob/main/examples/lygia/README.md)
 for image processing and tests.
+
+## Use the generated WGSL
+
+Pass `result.wgsl` to your renderer or compute framework.
+For example, with an existing wgpu-py device:
+
+```python
+shader_module = device.create_shader_module(code=result.wgsl)
+```
+
+Compilation runs upstream WESL checks.
+The target GPU runtime validates the generated shader and pipeline.
 
 ## Shader tests
 

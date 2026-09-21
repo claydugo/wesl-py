@@ -79,7 +79,8 @@ The root configuration uses importlib mode so test filenames can repeat.
 examples. `tools/check_sdist.py` checks a source archive supplied as an argument.
 CI runs installation smoke checks directly in the workflow.
 
-GPU tests require a Vulkan adapter. On Linux, Mesa's software adapter also works.
+GPU tests require a WebGPU adapter. Hardware and software adapters both work.
+Linux CI selects Vulkan and uses Mesa's software adapter.
 Window tests require a display. To include them on a machine without a display,
 install Xvfb and xauth, then run `xvfb-run -a pixi run test`.
 Without a display, pytest skips the two window tests.
@@ -235,7 +236,8 @@ The runners use Ubuntu 24.04, macOS 26, and Windows Server 2025.
 The manylinux container and macOS deployment target set wheel compatibility
 independently of the runner version.
 
-Artifact builds audit the Python ABI with `abi3audit`.
+Artifact builds run `abi3audit` on the `cp312-abi3` wheels.
+The workflow verifies both ABI families through installation and API tests.
 Local verification currently covers Linux.
 
 Maturin builds each ABI family with a separate invocation.
