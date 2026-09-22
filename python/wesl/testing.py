@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import wgpu
 
-from . import CompileOptions, Diagnostic, _native
+from . import Diagnostic, TestOptions, _native
 
 __all__ = [
     "ShaderAssertionError",
@@ -55,7 +55,7 @@ def run_test(
     test_name: str,
     *,
     root: str = "package::main",
-    options: CompileOptions | None = None,
+    options: TestOptions | None = None,
     filenames: Mapping[str, str | PathLike[str]] | None = None,
     root_directory: str | PathLike[str] | None = None,
     dependencies: Mapping[str, str | PathLike[str]] | None = None,
@@ -63,6 +63,8 @@ def run_test(
     constants: Mapping[str, float] | None = None,
 ) -> None:
     __tracebackhide__ = True
+    if options is not None and not isinstance(options, TestOptions):
+        raise TypeError("options must be TestOptions or None")
     groups = (
         {}
         if resources is None
@@ -77,7 +79,7 @@ def run_test(
         modules,
         root,
         test_name,
-        CompileOptions() if options is None else options,
+        TestOptions() if options is None else options,
         {}
         if filenames is None
         else {name: fspath(path) for name, path in filenames.items()},

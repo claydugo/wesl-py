@@ -25,6 +25,7 @@ __all__ = [
     "LoadedModules",
     "ManglerKind",
     "Source",
+    "TestOptions",
     "__version__",
     "check_syntax",
     "compile",
@@ -66,6 +67,16 @@ class CompileOptions:
     mangle_main: bool = False
     keep: Sequence[str] | None = None
     keep_main: bool = False
+    features: Features = field(default_factory=Features)
+
+
+@dataclass(kw_only=True)
+class TestOptions:
+    __test__ = False
+
+    strip: bool = True
+    lower: bool = False
+    validate: bool = True
     features: Features = field(default_factory=Features)
 
 

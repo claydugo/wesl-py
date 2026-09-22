@@ -58,6 +58,65 @@ def test_imported_undefined_symbol_has_byte_span(
     assert diagnostic.span == (start, start + len(b"absent"))
 
 
+@pytest.mark.parametrize("strip", [False, True])
+@pytest.mark.parametrize("lower", [False, True])
+def test_shader_test_options_control_translation(
+    wgsl_test: Path, *, strip: bool, lower: bool
+) -> None:
+    compiled = _native.compile_test(
+        {
+            "package::main": (
+                "alias Number = u32; const amount = 3u; "
+                "fn unused() {} "
+                "@test fn selected() { "
+                "let value: Number = amount; wgsl_test::expectEq(value, 3u); }"
+            ),
+        },
+        "package::main",
+        "selected",
+        wesl.TestOptions(strip=strip, lower=lower),
+        {},
+        None,
+        0,
+        {"wgsl_test": str(wgsl_test)},
+    )
+    assert compiled is not None
+    shader, entry_point, diagnostics, _ = compiled
+    assert ("unused" in shader) is not strip
+    assert ("alias " in shader) is not lower
+    assert entry_point in shader
+    assert len(diagnostics) == 1
+
+
+def test_shader_test_options_control_validation(wgsl_test: Path) -> None:
+    modules = {
+        "package::main": "fn same() {} fn same() {} @test fn selected() {}",
+    }
+    with pytest.raises(wesl.CompileError, match="duplicate declaration"):
+        _native.compile_test(
+            modules,
+            "package::main",
+            "selected",
+            wesl.TestOptions(strip=False),
+            {},
+            None,
+            0,
+            {"wgsl_test": str(wgsl_test)},
+        )
+    compiled = _native.compile_test(
+        modules,
+        "package::main",
+        "selected",
+        wesl.TestOptions(strip=False, validate=False),
+        {},
+        None,
+        0,
+        {"wgsl_test": str(wgsl_test)},
+    )
+    assert compiled is not None
+    assert compiled[0].count("same(") == 2  # noqa: PLR2004
+
+
 @pytest.mark.parametrize("module", ["package::main", "package::helper"])
 def test_shader_test_error_preserves_source_context(
     module: str, wgsl_test: Path
@@ -74,7 +133,7 @@ def test_shader_test_error_preserves_source_context(
             modules,
             "package::main",
             "selected",
-            wesl.CompileOptions(),
+            wesl.TestOptions(),
             {module: "shader.wesl"},
             None,
             0,
@@ -103,9 +162,7 @@ def test_disabled_shader_skips_missing_imports(*, strip: bool) -> None:
         },
         "package::main",
         "selected",
-        wesl.CompileOptions(
-            strip=strip, features=wesl.Features(flags={"enabled": False})
-        ),
+        wesl.TestOptions(strip=strip, features=wesl.Features(flags={"enabled": False})),
         {},
         None,
         0,
@@ -142,7 +199,7 @@ def test_shader_tests_reject_scoped_assertion_overrides(
             modules,
             "package::main",
             "selected",
-            wesl.CompileOptions(),
+            wesl.TestOptions(),
             {},
             None,
             0,

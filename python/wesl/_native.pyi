@@ -2,6 +2,7 @@ from collections.abc import Mapping
 from typing import Self, final
 
 from . import CompileOptions as _CompileOptions
+from . import TestOptions as _TestOptions
 
 __all__ = [
     "CompileError",
@@ -89,7 +90,7 @@ def compile_test(
     modules: Mapping[str, str],
     root: str,
     test_name: str,
-    options: _CompileOptions,
+    options: _TestOptions,
     filenames: dict[str, str],
     root_directory: str | None,
     result_binding: int,

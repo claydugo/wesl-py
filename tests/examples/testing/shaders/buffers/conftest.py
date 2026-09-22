@@ -19,7 +19,7 @@ def wesl_constants(request: pytest.FixtureRequest) -> dict[str, float]:
 
 @pytest.fixture
 def wesl_resources(
-    wesl_options: wesl.CompileOptions,
+    wesl_features: wesl.Features,
     wesl_constants: dict[str, float],
     wesl_device: wgpu.GPUDevice,
 ) -> Iterator[dict[int, list[dict[str, Any]]]]:
@@ -28,7 +28,7 @@ def wesl_resources(
 
     values = np.array([-0.25, 0.0, 0.25, 0.75, 1.0], dtype=np.float32)
     expected = values * 2
-    if wesl_options.features.flags["clamped"]:
+    if wesl_features.flags["clamped"]:
         expected = np.clip(expected, 0, 1)
     expected *= wesl_constants["gain"]
     with ExitStack() as stack:

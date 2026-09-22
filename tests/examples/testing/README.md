@@ -22,9 +22,10 @@ The `wesl_device` fixture supplies a WebGPU device.
 The `wesl_root_directory` fixture sets `shaders/` as the package root.
 Calls to `wesl_compiler.compile_file()` resolve relative paths from that root.
 
-The `wesl_options` fixture selects clamped and unclamped implementations.
+The `wesl_features` fixture selects clamped and unclamped implementations.
 Pytest applies both parameter values to Python compilation tests, compute tests,
 fragment tests, and native WESL tests.
+The default `wesl_options` and `wesl_test_options` fixtures use these features.
 
 | Test | Behavior |
 | --- | --- |
@@ -66,7 +67,7 @@ The fragment test computes its expected image from the input pixels.
 It does not maintain snapshot files.
 Each fixture or Python test creates and releases its resources.
 
-The compute cases contain 1, 4, 6, and 9 elements with four invocations per
+The compute cases contain 1, 4, and 9 elements with four invocations per
 workgroup. Output buffers start with NaNs so an unwritten element fails the test.
 The fragment cases use images of size 2 by 2, 4 by 2, and 2 by 4.
 Run only these numerical checks with:

@@ -12,10 +12,8 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture(params=[False, True], ids=["plain", "residual"])
-def wesl_options(request: pytest.FixtureRequest) -> wesl.CompileOptions:
-    return wesl.CompileOptions(
-        features=wesl.Features(flags={"residual": request.param})
-    )
+def wesl_features(request: pytest.FixtureRequest) -> wesl.Features:
+    return wesl.Features(flags={"residual": request.param})
 
 
 @pytest.fixture
@@ -25,7 +23,7 @@ def wesl_root_directory() -> Path:
 
 @pytest.fixture
 def wesl_resources(
-    wesl_options: wesl.CompileOptions,
+    wesl_features: wesl.Features,
     wesl_device: "wgpu.GPUDevice",
 ) -> Iterator[dict[int, list[dict[str, Any]]]]:
     wgpu = pytest.importorskip("wgpu")
@@ -36,7 +34,7 @@ def wesl_resources(
         )
         stack.callback(buffer.destroy)
         entries = [{"binding": 0, "resource": {"buffer": buffer}}]
-        if wesl_options.features.flags["residual"]:
+        if wesl_features.flags["residual"]:
             buffer = wesl_device.create_buffer_with_data(
                 data=pack("<2f", 1, -1),
                 usage=wgpu.BufferUsage.STORAGE,

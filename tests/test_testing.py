@@ -15,6 +15,18 @@ from wesl.testing import (
 pytestmark = pytest.mark.gpu
 
 
+def test_run_test_rejects_compile_options() -> None:
+    device = Mock()
+    with pytest.raises(TypeError, match="options must be TestOptions or None"):
+        run_test(
+            device,
+            {"package::main": "@test fn selected() {}"},
+            "selected",
+            options=wesl.CompileOptions(),
+        )
+    assert device.mock_calls == []
+
+
 def test_assertions_and_imports(wesl_device: wgpu.GPUDevice) -> None:
     run_test(
         wesl_device,
@@ -96,7 +108,7 @@ def test_conditional_test(
     modules = {
         "package::main": f"import wgsl_test::expect; {source}",
     }
-    options = wesl.CompileOptions(features=wesl.Features(flags={"enabled": enabled}))
+    options = wesl.TestOptions(features=wesl.Features(flags={"enabled": enabled}))
     run_test(
         wesl_device, modules, "selected" if enabled else "fallback", options=options
     )
@@ -106,33 +118,83 @@ def test_conditional_test(
         )
 
 
-def test_assertions_in_control_flow(wesl_device: wgpu.GPUDevice) -> None:
-    run_test(
-        wesl_device,
-        {
-            "package::main": """
-            import wgsl_test::expectEq;
-            @test fn loops() {
-                for (var index = 0u; index < 3u; index++) {
-                    if index == 0u { expectEq(index, 0u); }
-                    else if index == 1u { expectEq(index, 1u); }
-                    else { expectEq(index, 2u); }
-                }
-                var count = 0u;
-                loop {
-                    expectEq(count, 0u);
-                    continuing { expectEq(count, 0u); break if true; }
-                }
-                while count < 1u { expectEq(count, 0u); count++; }
-                switch count { case 1u: { expectEq(count, 1u); } default: {} }
-                for (expectEq(count, 1u); count < 2u; expectEq(count, 2u)) {
-                    count++;
-                }
-            }
-        """
-        },
-        "loops",
+@pytest.mark.parametrize(
+    ("statement", "checks", "failures"),
+    [
+        pytest.param("{ expectEq(1u, 2u); }", 3, 2, id="block"),
+        pytest.param("if true { expectEq(1u, 2u); }", 3, 2, id="if"),
+        pytest.param(
+            "if false {} else if true { expectEq(1u, 2u); }", 3, 2, id="else-if"
+        ),
+        pytest.param("if false {} else { expectEq(1u, 2u); }", 3, 2, id="else"),
+        pytest.param(
+            "for (var index = 0u; index < 3u; index++) { "
+            "if index < 2u { expectEq(1u, 2u); } }",
+            4,
+            3,
+            id="for",
+        ),
+        pytest.param(
+            "var index = 0u; while index < 2u { expectEq(1u, 2u); index++; }",
+            4,
+            3,
+            id="while",
+        ),
+        pytest.param("loop { expectEq(1u, 2u); break; }", 3, 2, id="loop"),
+        pytest.param(
+            "loop { continuing { expectEq(1u, 2u); break if true; } }",
+            3,
+            2,
+            id="continuing",
+        ),
+        pytest.param(
+            "switch 1u { case 1u: { expectEq(1u, 2u); } default: {} }",
+            3,
+            2,
+            id="switch-case",
+        ),
+        pytest.param(
+            "switch 1u { case 0u: {} default: { expectEq(1u, 2u); } }",
+            3,
+            2,
+            id="switch-default",
+        ),
+        pytest.param("for (expectEq(1u, 2u); false;) {}", 3, 2, id="for-initializer"),
+        pytest.param(
+            "var index = 0u; for (; index < 1u; expectEq(1u, 2u)) { index++; }",
+            3,
+            2,
+            id="for-update",
+        ),
+    ],
+)
+def test_assertions_in_control_flow(
+    wesl_device: wgpu.GPUDevice, statement: str, checks: int, failures: int
+) -> None:
+    source = (
+        "import wgsl_test::expectEq;\n"
+        "@test fn loops() {\n"
+        "expectEq(0u, 0u);\n"
+        f"{statement}\n"
+        "expectEq(3u, 4u);\n"
+        "}"
     )
+    with pytest.raises(ShaderAssertionError) as captured:
+        run_test(
+            wesl_device,
+            {"package::main": source},
+            "loops",
+            filenames={"package::main": "control_flow.wesl"},
+        )
+    error = captured.value
+    assert error.checks == checks
+    assert error.failures == failures
+    assert error.actual == (1.0, 0.0, 0.0, 0.0)
+    assert error.expected == (2.0, 0.0, 0.0, 0.0)
+    assert error.diagnostic.filename == "control_flow.wesl"
+    assert error.diagnostic.source == source
+    assert error.diagnostic.line == 4
+    assert error.diagnostic.column == statement.index("expectEq(1u, 2u)") + 1
 
 
 @pytest.mark.parametrize(
@@ -216,7 +278,7 @@ def test_conditional_non_test_definition(
             @else fn selected(value: u32) -> u32 { return value; }
         """,
     }
-    options = wesl.CompileOptions(
+    options = wesl.TestOptions(
         strip=strip, features=wesl.Features(flags={"enabled": enabled})
     )
     if enabled:

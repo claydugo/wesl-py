@@ -32,6 +32,8 @@ An explicit `root_directory` also enables file imports.
 The function accepts mappings and preserves their contents.
 
 `CompileOptions` holds the upstream compiler options.
+The shader runner accepts `TestOptions` instead.
+See [shader test options](TESTING.md#fixtures-and-pytest-behavior).
 It is a mutable dataclass with keyword arguments.
 Omit `options` to use upstream defaults.
 

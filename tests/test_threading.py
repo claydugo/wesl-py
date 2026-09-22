@@ -39,7 +39,7 @@ def test_concurrent_shader_instrumentation(wgsl_test: Path) -> None:
             {"package::main": source},
             "package::main",
             name,
-            wesl.CompileOptions(),
+            wesl.TestOptions(),
             {"package::main": filename},
             None,
             0,

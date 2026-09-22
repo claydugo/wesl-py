@@ -10,7 +10,5 @@ def wesl_root_directory() -> Path:
 
 
 @pytest.fixture(params=[False, True], ids=["linear", "clamped"])
-def wesl_options(request: pytest.FixtureRequest) -> wesl.CompileOptions:
-    return wesl.CompileOptions(
-        features=wesl.Features(flags={"clamped": request.param}),
-    )
+def wesl_features(request: pytest.FixtureRequest) -> wesl.Features:
+    return wesl.Features(flags={"clamped": request.param})

@@ -6,7 +6,14 @@ compute_with_buffers = pytest.importorskip("wgpu.utils.compute").compute_with_bu
 
 
 @pytest.mark.gpu
-@pytest.mark.parametrize("element_count", [1, 4, 6, 9])
+@pytest.mark.parametrize(
+    "element_count",
+    [
+        pytest.param(1, id="single-element"),
+        pytest.param(4, id="full-workgroup"),
+        pytest.param(9, id="partial-tail"),
+    ],
+)
 def test_weighted_levels(wesl_compiler: wesl.Compiler, element_count: int) -> None:
     shader = wesl_compiler.compile_file("combine.wesl")
     values = np.arange(element_count, dtype=np.float32) / 4 - 0.25

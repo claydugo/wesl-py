@@ -58,7 +58,7 @@ Keep collected files inside this directory. Their paths determine their
 `package::` module names. Dots in a test filename's stem become `_` characters.
 Pytest also collects any `.wesl` file that you select explicitly.
 
-`@if`, `@elif`, and `@else` select implementations with `wesl_options`.
+`@if`, `@elif`, and `@else` select implementations with `wesl_features`.
 Collection includes conditional tests. A disabled test reports a skip at execution.
 Pytest sets up fixtures before the runner checks conditions.
 Session GPU fixtures can initialize for disabled tests.
@@ -136,10 +136,11 @@ Failures in imported helpers point to the helper's source.
 
 ## Python tests
 
-The `wesl_compiler` fixture shares `wesl_options`, `wesl_modules`, `wesl_dependencies`,
+The `wesl_compiler` fixture shares `wesl_features`, `wesl_modules`, `wesl_dependencies`,
 `wesl_filenames`, and `wesl_root_directory` with native WESL tests.
 It returns a `wesl.Compiler` and does not request a GPU.
 Parametrizing these fixtures also parametrizes Python tests that use the compiler.
+`wesl_options` configures this compiler. `wesl_test_options` configures native tests.
 
 Call `wesl_compiler.compile_source(source)` for an inline shader.
 Call `wesl_compiler.compile_file("blur.wesl")` for a shader file.
@@ -283,14 +284,11 @@ See the [snapshot example](tests/examples/testing/test_snapshot.py) and its
 [update commands](tests/examples/testing/README.md).
 
 This comparison reports numerical differences by array index.
-For PNG baselines and visual differences, use the plugin's
-[`image_regression` fixture](https://pytest-regressions.readthedocs.io/en/latest/api.html#image-regression)
-with Pillow. Convert the output to the intended image format explicitly.
 The plugin does not support native WESL `@snapshot` annotations.
 
 ## Fixtures and pytest behavior
 
-These fixtures work with Python tests and collected WESL tests:
+The plugin provides these fixtures:
 
 | Fixture | Default |
 | --- | --- |
@@ -300,7 +298,9 @@ These fixtures work with Python tests and collected WESL tests:
 | `wesl_modules` | Empty mapping of additional WESL modules |
 | `wesl_dependencies` | Empty mapping of package names to directories |
 | `wesl_filenames` | Empty mapping of module names to source filenames |
-| `wesl_options` | Default `CompileOptions` |
+| `wesl_features` | Default `Features`, shared by both options fixtures |
+| `wesl_options` | `CompileOptions` for `wesl_compiler`, using `wesl_features` |
+| `wesl_test_options` | `TestOptions` for native WESL tests, using `wesl_features` |
 | `wesl_constants` | Empty mapping of WGSL overrides |
 | `wesl_root_directory` | Resolved `wesl_root` directory |
 
@@ -331,20 +331,87 @@ import wesl
 
 
 @pytest.fixture(params=[False, True], ids=["scalar", "vector"])
-def wesl_options(request):
-    return wesl.CompileOptions(
-        features=wesl.Features(flags={"vector": request.param}),
-    )
+def wesl_features(request):
+    return wesl.Features(flags={"vector": request.param})
 ```
 
 Override `wesl_device` to select an adapter, request features or limits, or use an
 application's device. The fixture that creates a device owns its teardown.
-`wesl.testing.run_test(device, modules, test_name, ...)` works outside pytest.
+`wesl.testing.run_test()` works outside pytest. Its signature is:
+
+```python
+def run_test(
+    device: wgpu.GPUDevice,
+    modules: Mapping[str, str],
+    test_name: str,
+    *,
+    root: str = "package::main",
+    options: wesl.TestOptions | None = None,
+    filenames: Mapping[str, str | PathLike[str]] | None = None,
+    root_directory: str | PathLike[str] | None = None,
+    dependencies: Mapping[str, str | PathLike[str]] | None = None,
+    resources: Mapping[int, Sequence[dict[str, Any]]] | None = None,
+    constants: Mapping[str, float] | None = None,
+) -> None: ...
+```
+
+`device` is an existing `wgpu.GPUDevice`. The caller owns its teardown.
+
+`modules` maps module names to WESL source strings.
+`test_name` names a test function in the `root` module.
+`root`, `filenames`, `root_directory`, and `dependencies` use the
+[compilation conventions](API.md#compile-strings-and-files).
+
+`resources` maps bind-group numbers to entry lists, as described
+in [Resources for WESL tests](#resources-for-wesl-tests).
+`constants` maps override names or numeric ID strings to pipeline values.
+
+The function does not read pytest fixtures.
 It runs one named `@test` function and returns `None` on success.
 
 The function raises `ShaderAssertionError` on assertion failure and
 `ShaderTestDisabledError` when conditions disable the test.
-Shader tests require imports and conditional translation.
+
+`ShaderAssertionError` inherits from `AssertionError` and exposes these attributes:
+
+| Attribute | Value |
+| --- | --- |
+| `diagnostic` | A [`wesl.Diagnostic`](API.md#diagnostics) for the first failing assertion. |
+| `actual` | A tuple of four `f32` components, exposed as Python floats, for the first failure. |
+| `expected` | A tuple of four `f32` components, exposed as Python floats, for the first failure. |
+| `checks` | The total number of assertions executed, including passing assertions. |
+| `failures` | The total number of failed assertions. |
+
+Scalar values occupy the first component. Large integers can round.
+Boolean assertions use the `-999` sentinel in all four components.
+Assertions continue after failure, so counts include later assertions and loop iterations.
+
+`run_test()` accepts `wesl.TestOptions` through its `options` argument.
+Passing `CompileOptions` raises `TypeError`.
+
+| Test option | Behavior |
+| --- | --- |
+| `features=Features()` | Select conditional declarations and statements. |
+| `strip=True` | Remove the declarations unused by the selected test. |
+| `lower=False` | Keep aliases and constants. Set `True` to lower them. |
+| `validate=True` | Run WESL validation before GPU validation. |
+
+The runner owns import resolution, conditional translation, wrapper retention,
+declaration naming, and source maps for assertion locations.
+These settings are not fields of `TestOptions`.
+Python compilation uses `CompileOptions` and honors its output settings.
+
+When overriding either options fixture, pass `wesl_features` to keep the shared
+feature configuration. For example:
+
+```python
+@pytest.fixture
+def wesl_test_options(wesl_features):
+    return wesl.TestOptions(lower=True, features=wesl_features)
+```
+
+Native tests use the shared source fixtures directly.
+Overriding `wesl_compiler` or `wesl_options` affects only Python compilation.
 
 Importing the plugin, collecting tests, and compiling shaders need no WebGPU adapter.
 Importing the plugin and collecting tests do not import NumPy or wgpu-py.

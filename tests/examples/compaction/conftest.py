@@ -5,10 +5,8 @@ import wesl
 
 
 @pytest.fixture(params=[False, True], ids=["at_least", "below"])
-def wesl_options(request: pytest.FixtureRequest) -> wesl.CompileOptions:
-    return wesl.CompileOptions(
-        features=wesl.Features(flags={"keep_below": request.param})
-    )
+def wesl_features(request: pytest.FixtureRequest) -> wesl.Features:
+    return wesl.Features(flags={"keep_below": request.param})
 
 
 @pytest.fixture

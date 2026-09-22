@@ -13,7 +13,15 @@ use wgsl_parse::{
     },
 };
 
-use crate::{CompileOptions, Diagnostic, Failure, ModuleResolver, module_path};
+use crate::{Diagnostic, Failure, FeatureValue, Features, ModuleResolver, module_path};
+
+#[derive(FromPyObject)]
+pub(super) struct TestOptions<'py> {
+    strip: bool,
+    lower: bool,
+    validate: bool,
+    features: Features<'py>,
+}
 
 struct TestResolver {
     inner: ModuleResolver,
@@ -110,20 +118,38 @@ pub(super) fn compile_test(
     modules: &Bound<'_, PyMapping>,
     root: String,
     test_name: String,
-    options: CompileOptions<'_>,
+    options: TestOptions<'_>,
     filenames: HashMap<String, String>,
     root_directory: Option<PathBuf>,
     result_binding: u32,
     dependencies: HashMap<String, PathBuf>,
 ) -> PyResult<CompiledTest> {
     let modules = modules.items()?.extract::<Vec<(String, String)>>()?;
-    let mut options = wesl::CompileOptions::try_from(options)?;
+    let TestOptions {
+        strip,
+        lower,
+        validate,
+        features,
+    } = options;
+    let features = wesl::Features {
+        default: features.default.try_into()?,
+        flags: features
+            .flags
+            .items()?
+            .extract::<Vec<(String, FeatureValue)>>()?
+            .into_iter()
+            .map(|(name, feature)| {
+                Ok((
+                    name,
+                    match feature {
+                        FeatureValue::Flag(enabled) => enabled.into(),
+                        FeatureValue::Policy(feature) => feature.try_into()?,
+                    },
+                ))
+            })
+            .collect::<PyResult<_>>()?,
+    };
     py.detach(move || {
-        if !options.imports || !options.condcomp {
-            return Err(Failure::Message(
-                "shader tests require imports and conditional translation".to_owned(),
-            ));
-        }
         let root = module_path(&root)?;
         let mut dependency_resolver = Router::new();
         for (name, directory) in &dependencies {
@@ -198,7 +224,7 @@ pub(super) fn compile_test(
                 strip: false,
                 lower: false,
                 validate: false,
-                features: options.features.clone(),
+                features: features.clone(),
                 ..Default::default()
             },
         ).map_err(|error| Failure::from_diagnostic(error.diagnostic()))?;
@@ -232,9 +258,6 @@ pub(super) fn compile_test(
             .replace("@binding(0)", &format!("@binding({result_binding})"))
             .replace("expected: vec4f,", "expected: vec4f, site: u32, completed: u32, checks: u32,");
         resolver.modules.add_module(result_module.clone(), result_source.into());
-        options.keep = Some(vec![entry_point.clone()]);
-        options.keep_root = false;
-        options.mangle_root = true;
         let resolver = TestResolver {
             inner: resolver,
             root: root.clone(),
@@ -242,7 +265,18 @@ pub(super) fn compile_test(
             entry_point: entry_point.clone(),
         };
         let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
-        compiler.set_options(options);
+        compiler.set_options(wesl::CompileOptions {
+            imports: true,
+            condcomp: true,
+            strip,
+            lower,
+            validate,
+            keep: Some(vec![entry_point.clone()]),
+            keep_root: false,
+            mangle_root: true,
+            features,
+            ..Default::default()
+        });
         compiler.set_mangler(wesl::ManglerKind::Escape);
         compiler.use_sourcemap(false);
         let mut result = compiler.compile(&root).map_err(|error| {

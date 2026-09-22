@@ -12,6 +12,8 @@ from . import (
     CompileOptions,
     Compiler,
     Diagnostic,
+    Features,
+    TestOptions,
     _native,
 )
 
@@ -80,7 +82,11 @@ class WeslModule(pytest.Module):
             def run_shader(
                 *,
                 wesl_device: wgpu.GPUDevice,
-                wesl_compiler: Compiler,
+                wesl_test_options: TestOptions,
+                wesl_modules: Mapping[str, str],
+                wesl_filenames: Mapping[str, str | Path],
+                wesl_root_directory: Path,
+                wesl_dependencies: Mapping[str, str | Path],
                 wesl_resources: Mapping[int, Sequence[dict[str, Any]]],
                 wesl_constants: Mapping[str, float],
                 shader_path: Path = self.path,
@@ -90,28 +96,24 @@ class WeslModule(pytest.Module):
                 __tracebackhide__ = True
                 from .testing import ShaderTestDisabledError, run_test
 
-                root_directory = (
-                    shader_path.parent
-                    if wesl_compiler.root_directory is None
-                    else Path(wesl_compiler.root_directory).absolute()
-                )
+                root_directory = Path(wesl_root_directory).absolute()
                 relative = shader_path.relative_to(root_directory)
                 parts = (*relative.parts[:-1], relative.stem.replace(".", "_"))
                 root = "package::" + "::".join(parts)
-                if root in wesl_compiler.modules:
+                if root in wesl_modules:
                     raise ValueError(
                         "the test module is already present in wesl_modules"
                     )
                 try:
                     run_test(
                         wesl_device,
-                        {**wesl_compiler.modules, root: shader_source},
+                        {**wesl_modules, root: shader_source},
                         shader_name,
                         root=root,
-                        options=wesl_compiler.options,
-                        filenames={**wesl_compiler.filenames, root: shader_path},
+                        options=wesl_test_options,
+                        filenames={**wesl_filenames, root: shader_path},
                         root_directory=root_directory,
-                        dependencies=wesl_compiler.dependencies,
+                        dependencies=wesl_dependencies,
                         resources=wesl_resources,
                         constants=wesl_constants,
                     )
@@ -238,8 +240,18 @@ def wesl_filenames() -> Mapping[str, str | Path]:
 
 
 @pytest.fixture
-def wesl_options() -> CompileOptions:
-    return CompileOptions()
+def wesl_features() -> Features:
+    return Features()
+
+
+@pytest.fixture
+def wesl_options(wesl_features: Features) -> CompileOptions:
+    return CompileOptions(features=wesl_features)
+
+
+@pytest.fixture
+def wesl_test_options(wesl_features: Features) -> TestOptions:
+    return TestOptions(features=wesl_features)
 
 
 @pytest.fixture

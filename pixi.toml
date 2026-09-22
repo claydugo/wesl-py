@@ -34,7 +34,7 @@ pytest = ">=8.2"
 
 [feature.gpu.dependencies]
 numpy = ">=1.26"
-wgpu-py = ">=0.31.1"
+wgpu-py = "==0.32.0"
 
 [feature.examples.pypi-dependencies]
 wesl-py = { path = ".", editable = true, extras = ["examples"] }
