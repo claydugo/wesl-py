@@ -1,6 +1,7 @@
 # Shader tests
 
-`wesl-py` includes a pytest plugin and the `wgsl_test` assertion shaders.
+`wesl-py` provides a pytest plugin and bundles assertion shaders from the WESL project's
+[wgsl-test](https://github.com/webgpu-tools/wesl-js/tree/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test).
 Pytest loads the plugin automatically and collects `*.test.wesl` files.
 The optional `testing` extra installs pytest and wgpu-py for execution.
 The base package can collect tests if your environment already provides pytest.
@@ -69,9 +70,10 @@ Multiple conditional definitions of one name produce one item.
 Import assertions from `wgsl_test`. The installed package includes the two
 [upstream assertion shaders](https://github.com/webgpu-tools/wesl-js/tree/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test/shaders)
 and registers them automatically for compilation and testing.
-Their contents remain unchanged. The distribution names upstream `lib.wesl` as `package.wesl`
+Only attribution comments differ from upstream. The distribution names upstream `lib.wesl` as `package.wesl`
 to identify the package root for the resolver and wgsl-analyzer.
-The runner instruments them for source locations, assertion counts, and completion tracking.
+The runner instruments them to capture typed values, source locations, assertion counts,
+and completion status.
 It does not modify the packaged files.
 
 Install the `testing` extra to obtain pytest and wgpu-py.
@@ -122,14 +124,18 @@ Each component must pass. Near comparisons use
 Use finite operands and tolerances. The upstream assertions can accept NaN and
 infinity. GPU floating-point behavior still applies.
 
-A failure reports the first failing assertion, its original file and source line,
-actual and expected values, and the total failure count.
+A failure reports the first failing assertion and underlines its source span.
+Paths are relative to the project root.
+The report shows actual and expected values, followed by the failure and assertion counts.
+If several assertions fail, the report labels the first failure.
 
-Upstream reports values as four `f32` components.
-The Python exception exposes them as tuples.
-Scalar values occupy the first component. Large integers can round in reports.
-Boolean assertions report upstream's `-999` sentinel values.
+Scalar values retain their types. Unsigned integers retain all 32 bits.
+Vectors retain their dimensions, including zero components.
+Boolean assertions report `false` and `true`.
 Use `expect(actual == expected)` to compare signed integers.
+
+Pytest colors failures and differing values when you enable terminal color.
+Exception text and JUnit output contain no color codes.
 
 Assertions continue after a failure.
 Failures in imported helpers point to the helper's source.
@@ -377,13 +383,14 @@ The function raises `ShaderAssertionError` on assertion failure and
 | Attribute | Value |
 | --- | --- |
 | `diagnostic` | A [`wesl.Diagnostic`](API.md#diagnostics) for the first failing assertion. |
-| `actual` | A tuple of four `f32` components, exposed as Python floats, for the first failure. |
-| `expected` | A tuple of four `f32` components, exposed as Python floats, for the first failure. |
+| `filename` | The display path relative to the root directory, or the module name if no filename exists. |
+| `actual` | The actual value from the first failure: a Python `bool`, `int`, `float`, or tuple of floats. |
+| `expected` | The expected value from the first failure, with the same type as `actual`. |
 | `checks` | The total number of assertions executed, including passing assertions. |
 | `failures` | The total number of failed assertions. |
 
-Scalar values occupy the first component. Large integers can round.
-Boolean assertions use the `-999` sentinel in all four components.
+Vectors contain two, three, or four components.
+Integer reports preserve exact values. Boolean failures expose `False` and `True`.
 Assertions continue after failure, so counts include later assertions and loop iterations.
 
 `run_test()` accepts `wesl.TestOptions` through its `options` argument.

@@ -126,7 +126,8 @@ The target GPU runtime validates the generated shader and pipeline.
 
 ## Shader tests
 
-`wesl-py` includes the pytest plugin and `wgsl_test` assertion shaders.
+`wesl-py` provides a pytest plugin and bundles assertion shaders from the WESL project's
+[wgsl-test](https://github.com/webgpu-tools/wesl-js/tree/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test).
 With pytest in the environment, it automatically collects `@test` functions from
 `*.test.wesl` files. Pytest requires no `conftest.py` or manual plugin registration.
 
@@ -159,12 +160,15 @@ pixi run python -m pytest shaders -q
 Change `7u` to `8u` to see a failure at the assertion:
 
 ```text
-/path/to/project/shaders/math.test.wesl:5:5: expectEq failed
-        expectEq(3u + 4u, 8u);
-        ^
-actual:   (7.0, 0.0, 0.0, 0.0)
-expected: (8.0, 0.0, 0.0, 0.0)
-assertions: 1, failures: 1
+shaders/math.test.wesl:5:5: expectEq failed
+  |
+5 |     expectEq(3u + 4u, 8u);
+  |     ^^^^^^^^^^^^^^^^^^^^
+
+  actual:   7u
+  expected: 8u
+
+1 of 1 assertions failed
 ```
 
 Collection needs no GPU. Execution requires a hardware or software WebGPU adapter.

@@ -36,6 +36,7 @@ jobs:
           pixi-version: v0.80.0
           environments: artifacts
           locked: true
+      - run: pixi run --locked -e artifacts python tools/update_licenses.py --check
       - run: pixi run --locked -e artifacts maturin sdist --out dist
       - run: pixi run --locked -e artifacts twine check --strict dist/*.tar.gz
       - run: pixi run --locked -e artifacts python tools/check_sdist.py dist/*.tar.gz

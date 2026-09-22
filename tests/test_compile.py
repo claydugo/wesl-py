@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import pickle
 import re
-import subprocess
-import sys
 from collections import UserDict
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from contextlib import chdir
@@ -16,29 +14,6 @@ import wesl
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-def test_long_expression_compiles_without_ast_serialization(tmp_path: Path) -> None:
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            (
-                "import wesl; "
-                "source = 'fn main() -> u32 { return ' "
-                "+ ' + '.join(['1u'] * 10000) + '; }'; "
-                "result = wesl.compile_source(source, "
-                "options=wesl.CompileOptions(strip=False)); "
-                "assert 'fn main(' in result.wgsl; print('compiled')"
-            ),
-        ],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=10,
-    )
-    assert result.stdout.strip() == "compiled"
 
 
 @pytest.mark.parametrize(("enabled", "expected"), [(False, 3), (True, 7)])

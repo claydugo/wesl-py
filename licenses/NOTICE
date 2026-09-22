@@ -6,7 +6,7 @@ The package includes wgsl-test assertion shaders under the MIT license.
 licenses/WGSL-TEST-MIT contains the upstream license.
 The shader files come from wesl-js revision 37db2325b40cdb8aa504582cbc01cb4d41109a36.
 https://github.com/webgpu-tools/wesl-js/tree/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test/shaders
-The shader contents remain unchanged. Upstream lib.wesl is named package.wesl
+Only attribution comments differ from upstream. Upstream lib.wesl is named package.wesl
 to identify the package root for the resolver and wgsl-analyzer.
 
 The Lygia example uses revision ce08fe351478b6c14297d103a8ce98d8e787d4d2.

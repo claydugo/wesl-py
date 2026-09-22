@@ -379,7 +379,7 @@ def test_directory_dependencies_preserve_scoped_overrides(tmp_path: Path) -> Non
 def test_directory_dependency_diagnostics(tmp_path: Path) -> None:
     source = "fn value() -> u32 {\n    return absent;\n}"
     filename = tmp_path / "value.wesl"
-    filename.write_text(source)
+    filename.write_text(source, newline="\n")
     with pytest.raises(wesl.CompileError) as caught:
         wesl.compile_source(
             "@compute @workgroup_size(1) fn main() { "

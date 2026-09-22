@@ -55,6 +55,34 @@ def test_collection_errors(pytester: pytest.Pytester) -> None:
     result.stdout.fnmatch_lines(["*invalid.test.wesl*"])
 
 
+@pytest.mark.gpu
+def test_root_with_parent_components(pytester: pytest.Pytester) -> None:
+    pytester.makeini("""
+        [pytest]
+        wesl_root = shaders/..
+    """)
+    pytester.makeconftest("""
+        import pytest
+
+        @pytest.fixture
+        def wesl_root_directory(wesl_root_directory, pytestconfig):
+            assert wesl_root_directory == pytestconfig.rootpath
+            return wesl_root_directory / "shaders/.."
+    """)
+    pytester.makefile(".wesl", helper="fn value() -> u32 { return 7u; }")
+    pytester.makefile(
+        ".test.wesl",
+        **{
+            "shaders/math": """
+                import package::helper::value;
+                @test fn selected() { wgsl_test::expectEq(value(), 7u); }
+            """,
+        },
+    )
+    result = pytester.runpytest_subprocess("shaders", "-q")
+    result.assert_outcomes(passed=1)
+
+
 @pytest.mark.skipif(
     sys.platform == "win32", reason="Symlinks require Windows privileges."
 )
@@ -129,6 +157,7 @@ def test_compiler_without_gpu_dependencies(pytester: pytest.Pytester) -> None:
     """)
     pytester.makepyfile("""
         from contextlib import chdir
+        from pathlib import Path
         import pytest
         import wesl
 
@@ -160,7 +189,7 @@ def test_compiler_without_gpu_dependencies(pytester: pytest.Pytester) -> None:
                     "fn main() -> u32 { return value(); }",
                 )
             diagnostic = caught.value.diagnostics[0]
-            assert diagnostic.filename == "generated/broken.wesl"
+            assert diagnostic.filename == str(Path("generated/broken.wesl"))
             assert diagnostic.source == "fn value() -> u32 { return ; ) }"
     """)
     result = pytester.runpytest_subprocess("-v")
@@ -329,6 +358,7 @@ def test_collection_hook_state(pytester: pytest.Pytester) -> None:
             if collector.path.suffix == ".wesl":
                 for item in items:
                     collected.append(item)
+                    assert item.location[2] == item.name
                     item.stash[key] = "configured"
                     item.user_properties.append(("shader", "configured"))
                     item.extra_keyword_matches.add("configured_shader")
@@ -337,6 +367,7 @@ def test_collection_hook_state(pytester: pytest.Pytester) -> None:
         def pytest_collection_modifyitems(items):
             assert len(items) == 1
             assert items[0] is collected[0]
+            assert items[0].location == ("state.test.wesl", 0, "disabled")
 
         @pytest.fixture
         def wesl_test_options(request):
@@ -345,10 +376,19 @@ def test_collection_hook_state(pytester: pytest.Pytester) -> None:
     """)
     pytester.makefile(".test.wesl", state="@if(false) @test fn disabled() {}")
     result = pytester.runpytest_subprocess(
-        "-q", "-k", "configured_shader", "--junitxml=results.xml"
+        "-q",
+        "-k",
+        "configured_shader",
+        "--junitxml=results.xml",
+        "-o",
+        "junit_family=xunit1",
     )
     result.assert_outcomes(skipped=1)
     report = ET.parse(pytester.path / "results.xml")  # noqa: S314
+    case = report.find(".//testcase")
+    assert case is not None
+    assert case.attrib["file"] == "state.test.wesl"
+    assert case.attrib["line"] == "0"
     property_element = report.find(".//property[@name='shader']")
     assert property_element is not None
     assert property_element.attrib["value"] == "configured"
@@ -442,7 +482,10 @@ def test_fixtures_parametrization_and_selection(pytester: pytest.Pytester) -> No
 
 @pytest.mark.gpu
 @pytest.mark.parametrize("style", ["auto", "line"])
-def test_failure_reports_and_junit(pytester: pytest.Pytester, style: str) -> None:
+@pytest.mark.parametrize("color", ["yes", "no"])
+def test_failure_reports_and_junit(
+    pytester: pytest.Pytester, style: str, color: str
+) -> None:
     pytester.makefile(
         ".test.wesl",
         math="""
@@ -453,15 +496,15 @@ def test_failure_reports_and_junit(pytester: pytest.Pytester, style: str) -> Non
     """,
     )
     result = pytester.runpytest_subprocess(
-        "-q", f"--tb={style}", "--junitxml=results.xml"
+        "-q", f"--tb={style}", f"--color={color}", "--junitxml=results.xml"
     )
     result.assert_outcomes(failed=1)
     if style == "auto":
         result.stdout.fnmatch_lines(
             [
                 "*math.test.wesl:3:5: expectEq failed*",
-                "*actual:   *4294967296.0*",
-                "*expected: *4294967296.0*",
+                "*actual:   *4294967295u*",
+                "*expected: *4294967294u*",
             ]
         )
     else:
@@ -483,9 +526,83 @@ def test_failure_reports_and_junit(pytester: pytest.Pytester, style: str) -> Non
     assert failure is not None
     assert "expectEq failed" in failure.attrib["message"]
     assert failure.text is not None
+    assert "\x1b" not in failure.text
+    assert str(pytester.path) not in failure.text
     assert "math.test.wesl:3:5: expectEq failed" in failure.text
     if style == "auto":
         assert "4294967295" in failure.text
+        assert "3 |     expectEq(4294967295u, 4294967294u);" in failure.text
+        assert "1 of 1 assertions failed" in failure.text
+        if color == "yes":
+            assert "\x1b[31m4294967295u\x1b[0m" in result.stdout.str()
+            assert "\x1b[32m4294967294u\x1b[0m" in result.stdout.str()
+    if color == "no":
+        assert "\x1b" not in result.stdout.str()
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("workers", [0, 2])
+def test_failure_notes(pytester: pytest.Pytester, workers: int) -> None:
+    pytester.makeconftest("""
+        import pytest
+
+        @pytest.hookimpl(wrapper=True)
+        def pytest_runtest_call(item):
+            try:
+                return (yield)
+            except AssertionError as error:
+                error.add_note("  expected: extra diagnostic")
+                error.add_note("  actual: vec2f(1.0, 2.0)")
+                error.add_note("  expected: false")
+                error.add_note("  actual: extra diagnostic")
+                raise
+    """)
+    pytester.makefile(
+        ".test.wesl",
+        failure="@test fn failing() { wgsl_test::expect(false); }",
+    )
+    result = pytester.runpytest_subprocess(
+        "-q", "-n", str(workers), "--color=yes", "--junitxml=results.xml"
+    )
+    result.assert_outcomes(failed=1)
+    assert "\x1b[31mfalse\x1b[0m" in result.stdout.str()
+    assert "\x1b[32mtrue\x1b[0m" in result.stdout.str()
+    assert (
+        "  expected: extra diagnostic\n"
+        "  actual: vec2f(1.0, 2.0)\n"
+        "  expected: false\n"
+        "  actual: extra diagnostic\n"
+    ) in result.stdout.str()
+    report = ET.parse(pytester.path / "results.xml")  # noqa: S314
+    failure = report.find(".//failure")
+    assert failure is not None
+    assert failure.text is not None
+    assert "  actual: extra diagnostic" in failure.text
+    assert "\x1b" not in failure.text
+
+
+@pytest.mark.gpu
+def test_vector_failure_color_and_project_root(pytester: pytest.Pytester) -> None:
+    pytester.makeini("[pytest]\nwesl_root = shaders")
+    directory = pytester.path / "shaders"
+    directory.mkdir()
+    filename = directory / "vector.test.wesl"
+    filename.write_text(
+        "@test fn failing() { "
+        "wgsl_test::expectNearVec3(vec3f(1.0, 0.0, 0.0), vec3f(2.0, 0.0, 0.0)); }"
+    )
+    result = pytester.runpytest_subprocess(
+        "-q", "--color=yes", "--junitxml=results.xml"
+    )
+    result.assert_outcomes(failed=1)
+    assert "vec3f(\x1b[31m1.0\x1b[0m, 0.0, 0.0)" in result.stdout.str()
+    assert "vec3f(\x1b[32m2.0\x1b[0m, 0.0, 0.0)" in result.stdout.str()
+    report = ET.parse(pytester.path / "results.xml")  # noqa: S314
+    failure = report.find(".//failure")
+    assert failure is not None
+    assert failure.text is not None
+    assert f"{filename.relative_to(pytester.path)}:1:22:" in failure.text
+    assert "\x1b" not in failure.text
 
 
 @pytest.mark.gpu
@@ -524,7 +641,7 @@ def test_python_failure_uses_pytest_reporting(pytester: pytest.Pytester) -> None
         def test_failure():
             raise ShaderAssertionError(
                 wesl.Diagnostic("expect", filename="shader.wesl"),
-                actual=(0.0,), expected=(1.0,),
+                actual=False, expected=True,
                 failures=1, checks=1,
             )
     """)
@@ -643,7 +760,7 @@ def test_xdist(pytester: pytest.Pytester, style: str) -> None:
     """,
     )
     result = pytester.runpytest_subprocess(
-        "-q", "-n", "2", f"--tb={style}", "--junitxml=results.xml"
+        "-q", "-n", "2", f"--tb={style}", "--color=yes", "--junitxml=results.xml"
     )
     result.assert_outcomes(passed=3, failed=1)
     result.stdout.fnmatch_lines(["*parallel.test.wesl*expectEq failed*"])
@@ -652,9 +769,12 @@ def test_xdist(pytester: pytest.Pytester, style: str) -> None:
     assert failure is not None
     assert failure.attrib["message"] == "expectEq failed"
     assert failure.text is not None
+    assert "\x1b" not in failure.text
     assert "parallel.test.wesl:5:22: expectEq failed" in failure.text
     if style == "auto":
         assert "actual:" in failure.text
+        assert "\x1b[31m1u\x1b[0m" in result.stdout.str()
+        assert "\x1b[32m2u\x1b[0m" in result.stdout.str()
 
 
 @pytest.mark.gpu

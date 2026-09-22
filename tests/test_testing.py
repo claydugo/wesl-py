@@ -1,4 +1,5 @@
 import tracemalloc
+from pathlib import Path
 from struct import pack, unpack
 
 import pytest
@@ -74,8 +75,8 @@ def test_failure_in_imported_helper(wesl_device: wgpu.GPUDevice) -> None:
             filenames={"library": "library.wesl"},
         )
     error = captured.value
-    assert error.actual == (4294967296.0, 0.0, 0.0, 0.0)
-    assert error.expected == (4294967296.0, 0.0, 0.0, 0.0)
+    assert error.actual == 4294967295
+    assert error.expected == 4294967294
     assert error.failures == 2
     assert error.checks == 2
     assert error.diagnostic.filename == "library.wesl"
@@ -83,6 +84,8 @@ def test_failure_in_imported_helper(wesl_device: wgpu.GPUDevice) -> None:
     assert error.diagnostic.column == 5
     assert "4294967295" in str(error)
     assert "expectEq(4294967295u, 4294967294u);" in str(error)
+    assert "expectEq failed (first failure)" in str(error)
+    assert "2 of 2 assertions failed" in str(error)
 
 
 @pytest.mark.parametrize("enabled", [False, True])
@@ -186,8 +189,8 @@ def test_assertions_in_control_flow(
     error = captured.value
     assert error.checks == checks
     assert error.failures == failures
-    assert error.actual == (1.0, 0.0, 0.0, 0.0)
-    assert error.expected == (2.0, 0.0, 0.0, 0.0)
+    assert error.actual == 1
+    assert error.expected == 2
     assert error.diagnostic.filename == "control_flow.wesl"
     assert error.diagnostic.source == source
     assert error.diagnostic.line == 4
@@ -197,35 +200,156 @@ def test_assertions_in_control_flow(
 @pytest.mark.parametrize(
     ("assertion", "actual", "expected"),
     [
-        ("expect(false)", [-999.0] * 4, [-999.0] * 4),
-        ("expectNear(1.0, 2.0)", [1.0, 0.0, 0.0, 0.0], [2.0, 0.0, 0.0, 0.0]),
+        ("expect(false)", False, True),
+        ("expectEq(4294967295u, 4294967294u)", 4294967295, 4294967294),
+        ("expectNear(1.0, 2.0)", 1.0, 2.0),
+        (
+            "expectNearVec2(vec2f(1.0, 0.0), vec2f(2.0, 0.0))",
+            (1.0, 0.0),
+            (2.0, 0.0),
+        ),
+        (
+            "expectNearVec3(vec3f(1.0, 0.0, 0.0), vec3f(2.0, 0.0, 0.0))",
+            (1.0, 0.0, 0.0),
+            (2.0, 0.0, 0.0),
+        ),
         (
             "expectNearVec4(vec4f(1.0), vec4f(2.0))",
-            [1.0] * 4,
-            [2.0] * 4,
+            (1.0, 1.0, 1.0, 1.0),
+            (2.0, 2.0, 2.0, 2.0),
+        ),
+        ("expectWithin(1.0, 1.25, 0.0, 0.125)", 1.0, 1.25),
+        ("expectUlp(1.0, 2.0, 2u)", 1.0, 2.0),
+        (
+            "expectUlpVec2(vec2f(1.0, 0.0), vec2f(2.0, 0.0), 2u)",
+            (1.0, 0.0),
+            (2.0, 0.0),
         ),
         (
-            "expectWithin(1.0, 1.25, 0.0, 0.125)",
-            [1.0, 0.0, 0.0, 0.0],
-            [1.25, 0.0, 0.0, 0.0],
+            "expectUlpVec3(vec3f(1.0, 0.0, 0.0), vec3f(2.0, 0.0, 0.0), 2u)",
+            (1.0, 0.0, 0.0),
+            (2.0, 0.0, 0.0),
         ),
-        ("expectUlp(1.0, 2.0, 2u)", [1.0, 0.0, 0.0, 0.0], [2.0, 0.0, 0.0, 0.0]),
+        (
+            "expectUlpVec4(vec4f(1.0, 0.0, 0.0, 0.0), vec4f(2.0, 0.0, 0.0, 0.0), 2u)",
+            (1.0, 0.0, 0.0, 0.0),
+            (2.0, 0.0, 0.0, 0.0),
+        ),
     ],
 )
+@pytest.mark.parametrize("lower", [False, True])
 def test_failure_values(
     wesl_device: wgpu.GPUDevice,
     assertion: str,
-    actual: list[float],
-    expected: list[float],
+    actual: float | tuple[float, ...],
+    expected: float | tuple[float, ...],
+    *,
+    lower: bool,
 ) -> None:
     with pytest.raises(ShaderAssertionError) as captured:
         run_test(
             wesl_device,
             {"package::main": f"@test fn failure() {{ wgsl_test::{assertion}; }}"},
             "failure",
+            options=wesl.TestOptions(lower=lower),
         )
-    assert captured.value.actual == tuple(actual)
-    assert captured.value.expected == tuple(expected)
+    assert captured.value.actual == actual
+    assert captured.value.expected == expected
+    assert type(captured.value.actual) is type(actual)
+    assert type(captured.value.expected) is type(expected)
+
+
+@pytest.mark.parametrize(
+    ("parameter_type", "assertion", "values"),
+    [
+        ("bool", "expect(false)", (False, True)),
+        ("u32", "expectEq(4294967295u, 4294967294u)", (4294967295, 4294967294)),
+        (
+            "vec3f",
+            "expectNearVec3(vec3f(1.0, 0.0, 0.0), vec3f(2.0, 0.0, 0.0))",
+            ((1.0, 0.0, 0.0), (2.0, 0.0, 0.0)),
+        ),
+    ],
+)
+def test_failure_values_with_type_aliases(
+    wesl_device: wgpu.GPUDevice,
+    wgsl_test: Path,
+    parameter_type: str,
+    assertion: str,
+    values: tuple[bool | int | tuple[float, ...], bool | int | tuple[float, ...]],
+) -> None:
+    source = (wgsl_test / "package.wesl").read_text(encoding="utf-8")
+    with pytest.raises(ShaderAssertionError) as captured:
+        run_test(
+            wesl_device,
+            {
+                "package::main": f"@test fn failure() {{ wgsl_test::{assertion}; }}",
+                "wgsl_test": "import package::types::Value;\n"
+                + source.replace(f": {parameter_type}", ": Value"),
+                "wgsl_test::types": (
+                    f"alias Value = Base; alias Base = {parameter_type};"
+                ),
+            },
+            "failure",
+        )
+    actual, expected = values
+    assert captured.value.actual == actual
+    assert captured.value.expected == expected
+    assert type(captured.value.actual) is type(actual)
+    assert type(captured.value.expected) is type(expected)
+
+
+@pytest.mark.parametrize("include_newline", [False, True])
+def test_failure_source_span(tmp_path: Path, *, include_newline: bool) -> None:
+    source = (
+        "fn vérify() {\r\n\twgsl_test::expectEq(\r\n"
+        "\t\t3u + 4u,\r\n\t\t8u,\r\n\t);\r\n}"
+    )
+    start = source.encode().index(b"wgsl_test")
+    end = source.encode().index(b");") + (4 if include_newline else 2)
+    filename = tmp_path / "shaders" / "math.test.wesl"
+    error = ShaderAssertionError(
+        wesl.Diagnostic(
+            "expectEq", filename=str(filename), source=source, span=(start, end)
+        ),
+        actual=7,
+        expected=8,
+        failures=1,
+        checks=1,
+        root_directory=tmp_path,
+    )
+    assert str(error) == (
+        f"{filename.relative_to(tmp_path)}:2:2: expectEq failed\n"
+        "  |\n"
+        "2 |     wgsl_test::expectEq(\n"
+        "  |     ^^^^^^^^^^^^^^^^^^^^\n"
+        "3 |         3u + 4u,\n"
+        "  |         ^^^^^^^^\n"
+        "4 |         8u,\n"
+        "  |         ^^^\n"
+        "5 |     );\n"
+        "  |     ^^\n\n"
+        "  actual:   7u\n"
+        "  expected: 8u\n\n"
+        "1 of 1 assertions failed"
+    )
+    assert error.diagnostic.filename == str(filename)
+
+
+def test_failure_without_source() -> None:
+    error = ShaderAssertionError(
+        wesl.Diagnostic("expect", module="package::main"),
+        actual=False,
+        expected=True,
+        failures=2,
+        checks=3,
+    )
+    assert str(error) == (
+        "package::main: expect failed (first failure)\n\n"
+        "  actual:   false\n"
+        "  expected: true\n\n"
+        "2 of 3 assertions failed"
+    )
 
 
 @pytest.mark.parametrize(

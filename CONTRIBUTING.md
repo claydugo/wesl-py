@@ -47,6 +47,12 @@ The workflow runs stubtest against the development installation on Linux.
 The project declares MIT in `LICENSE`, `Cargo.toml`, and `pyproject.toml`.
 The packaged wgsl-test shaders have their MIT license and provenance in `licenses/`.
 Binary releases also need notices for the Rust code they incorporate.
+`licenses/RUST-DEPENDENCIES` contains the upstream license texts and notices.
+Maturin includes this file in wheels and source distributions.
+Run `pixi run python tools/update_licenses.py` after changing Cargo dependencies.
+The script collects notices for all platforms, including build dependencies.
+It retrieves missing WESL licenses from the revision recorded in each crate.
+CI verifies the generated file before it builds the source distribution.
 Maturin includes a CycloneDX SBOM in each wheel's `.dist-info/sboms/` directory.
 The SBOM records Cargo dependencies and their declared licenses.
 It does not replace the license files that accompany each artifact.

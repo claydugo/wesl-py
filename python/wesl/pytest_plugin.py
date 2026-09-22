@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import re
 import sys
+from os.path import abspath
 from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING
 
 import pytest
+from _pytest._code.code import ExceptionChainRepr, ExceptionRepr, ReprEntryNative
 
 from . import (
     CompileError,
@@ -22,6 +25,7 @@ if TYPE_CHECKING:
     from typing import Any
 
     import wgpu
+    from _pytest._io import TerminalWriter
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -44,6 +48,62 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers", "gpu: requires a WebGPU adapter (hardware or software)"
     )
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    if (
+        "wesl" in report.keywords
+        and isinstance(report.longrepr, ExceptionChainRepr)
+        and report.longrepr.reprtraceback.style == "value"
+    ):
+        representation = WeslFailureRepr(report.longrepr.chain)
+        representation.sections = report.longrepr.sections
+        report.longrepr = representation
+
+
+class WeslFailureRepr(ExceptionChainRepr):
+    def toterminal(self, tw: TerminalWriter) -> None:
+        writer = tw
+        for traceback, _, description in self.chain:
+            if traceback.style != "value":
+                traceback.toterminal(writer)
+            else:
+                for entry in traceback.reprentries:
+                    if entry.style != "value":
+                        entry.toterminal(writer)
+                        continue
+                    for index, line in enumerate(entry.lines):
+                        if line.startswith(("  actual:", "  expected:")):
+                            label, value = line.split(":", 1)
+                            other = entry.lines[
+                                index + 1 if label == "  actual" else index - 1
+                            ].split(":", 1)[1]
+                            components = re.split(r"([(),]\s*)", value.lstrip())
+                            other_components = re.split(r"([(),]\s*)", other.lstrip())
+                            writer.write(
+                                label + ":" + value[: len(value) - len(value.lstrip())]
+                            )
+                            for component, other_component in zip(
+                                components, other_components, strict=True
+                            ):
+                                writer.write(
+                                    component,
+                                    red=label == "  actual"
+                                    and component != other_component,
+                                    green=label == "  expected"
+                                    and component != other_component,
+                                )
+                            writer.line()
+                        else:
+                            writer.line(
+                                line,
+                                red=index == 0
+                                or (line.lstrip().startswith("| ") and "^" in line),
+                            )
+            if description is not None:
+                writer.line()
+                writer.line(description, yellow=True)
+        ExceptionRepr.toterminal(self, writer)
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -96,7 +156,7 @@ class WeslModule(pytest.Module):
                 __tracebackhide__ = True
                 from .testing import ShaderTestDisabledError, run_test
 
-                root_directory = Path(wesl_root_directory).absolute()
+                root_directory = Path(abspath(wesl_root_directory))  # noqa: PTH100
                 relative = shader_path.relative_to(root_directory)
                 parts = (*relative.parts[:-1], relative.stem.replace(".", "_"))
                 root = "package::" + "::".join(parts)
@@ -139,6 +199,7 @@ class WeslModule(pytest.Module):
                 if isinstance(item, pytest.Function):
                     shader = WeslTest(item, self, name)
                     item.reportinfo = shader.reportinfo
+                    vars(item).pop("location", None)
                     item.repr_failure = shader.repr_failure
                 yield item
 
@@ -165,19 +226,31 @@ class WeslTest:
 
         if not isinstance(excinfo.value, ShaderAssertionError):
             return self.repr_item_failure(excinfo)
+        error = ShaderAssertionError(
+            excinfo.value.diagnostic,
+            actual=excinfo.value.actual,
+            expected=excinfo.value.expected,
+            failures=excinfo.value.failures,
+            checks=excinfo.value.checks,
+            root_directory=self.item.config.rootpath,
+        )
         representation = excinfo.getrepr(
             style="line" if style == "line" else "value",
             tbfilter=False,
             chain=style != "line",
         )
+        entry = representation.reprtraceback.reprentries[-1]
+        entry.lines = str(error).splitlines()
         if style == "line":
-            entry = representation.reprtraceback.reprentries[-1]
             entry.lines = entry.lines[:1]
+        elif notes := getattr(excinfo.value, "__notes__", ()):
+            representation.reprtraceback.reprentries = [
+                *representation.reprtraceback.reprentries,
+                ReprEntryNative([f"{note}\n" for note in notes]),
+            ]
         if representation.reprcrash is not None:
             diagnostic = excinfo.value.diagnostic
-            representation.reprcrash.path = (
-                diagnostic.filename or diagnostic.module or str(self.item.path)
-            )
+            representation.reprcrash.path = error.filename
             representation.reprcrash.lineno = diagnostic.line or 1
             representation.reprcrash.message = f"{diagnostic.message} failed"
         return representation
@@ -261,4 +334,4 @@ def wesl_constants() -> Mapping[str, float]:
 
 @pytest.fixture
 def wesl_root_directory(pytestconfig: pytest.Config) -> Path:
-    return (pytestconfig.rootpath / pytestconfig.getini("wesl_root")).absolute()
+    return Path(abspath(pytestconfig.rootpath / pytestconfig.getini("wesl_root")))  # noqa: PTH100

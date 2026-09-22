@@ -256,6 +256,7 @@ pub(super) fn compile_test(
         let result_source = resolver.resolve_source(&result_module)
             .map_err(|error| Failure::from_diagnostic(wesl::Diagnostic::from(error)))?
             .replace("@binding(0)", &format!("@binding({result_binding})"))
+            .replace("failCount: u32,", "failCount: u32, value_kind: u32, components: u32,")
             .replace("expected: vec4f,", "expected: vec4f, site: u32, completed: u32, checks: u32,");
         resolver.modules.add_module(result_module.clone(), result_source.into());
         let resolver = TestResolver {
@@ -313,7 +314,11 @@ pub(super) fn compile_test(
         let mut result_name = None;
         let mut compiled_entry = None;
         let mut overrides = HashMap::new();
+        let mut aliases = HashMap::new();
         for declaration in &result.syntax.global_declarations {
+            if let GlobalDeclaration::TypeAlias(alias) = &**declaration {
+                aliases.insert(alias.ident.name().to_string(), alias.ty.ident.name().to_string());
+            }
             if let Some(ident) = declaration.ident()
                 && let Some((module, name)) = result.sourcemap.get_decl(&ident.name())
             {
@@ -344,6 +349,17 @@ pub(super) fn compile_test(
         let mut sites = Vec::new();
         let mut wrappers = Vec::new();
         for declaration in &mut result.syntax.global_declarations {
+            if let GlobalDeclaration::Struct(structure) = &mut **declaration
+                && result.sourcemap.get_decl(&structure.ident.name())
+                    .is_some_and(|(module, name)| module == &result_module && name == "TestResult")
+            {
+                for member in &mut structure.members {
+                    if matches!(member.ident.name().as_str(), "actual" | "expected") {
+                        member.ty.ident = Ident::new("vec4u".to_owned());
+                        member.ty.template_args = None;
+                    }
+                }
+            }
             let GlobalDeclaration::Function(function) = &mut **declaration else {
                 continue;
             };
@@ -358,13 +374,68 @@ pub(super) fn compile_test(
                 continue;
             };
             if module == assertion_module || module == result_module {
+                if result.sourcemap.get_decl(&function.ident.name())
+                    .is_some_and(|(_, name)| name == "recordFailure")
+                {
+                    function.body.statements.retain(|statement| {
+                        !matches!(&**statement, Statement::If(_))
+                    });
+                }
                 if assertions.contains_key(&*function.ident.name()) {
+                    let Some((parameter, parameter_type)) = function.parameters.first().map(|parameter| {
+                        let mut parameter_type = parameter.ty.ident.name().to_string();
+                        for _ in 0..aliases.len() {
+                            let Some(alias) = aliases.get(&parameter_type) else {
+                                break;
+                            };
+                            parameter_type = alias.clone();
+                        }
+                        (parameter, parameter_type)
+                    }).filter(|(_, parameter_type)| {
+                        parameter_type == "bool"
+                            || function.parameters.len() >= 2
+                    }) else {
+                        let mut diagnostic = wesl::Error::Custom(
+                            "shader assertions require a bool first parameter or at least two parameters".to_owned(),
+                        ).diagnostic().with_module_path(
+                            module.clone(),
+                            result.sourcemap.get_display_name(&module).map(str::to_owned),
+                        ).with_span(declaration.span());
+                        diagnostic.detail.source = result.sourcemap.get_source(&module).map(str::to_owned);
+                        return Err(Failure::from_diagnostic(diagnostic));
+                    };
                     let name = function.ident.name();
                     let arguments = function.parameters.iter()
                         .map(|parameter| parameter.ident.name().to_string())
                         .collect::<Vec<_>>().join(", ");
+                    let components = parameter_type.strip_prefix("vec")
+                        .and_then(|suffix| suffix.chars().next())
+                        .and_then(|component| component.to_digit(10))
+                        .unwrap_or(1);
+                    let value_kind = match parameter_type.as_str() {
+                        "bool" => 0,
+                        "u32" => 1,
+                        _ => 2,
+                    };
+                    let (actual, expected) = if value_kind == 0 {
+                        (
+                            format!("vec4u(select(0u, 1u, {}), 0u, 0u, 0u)", parameter.ident),
+                            "vec4u(1u, 0u, 0u, 0u)".to_owned(),
+                        )
+                    } else {
+                        let value_type = if components == 1 {
+                            "u32".to_owned()
+                        } else {
+                            format!("vec{components}u")
+                        };
+                        let padding = ", 0u".repeat((4 - components) as usize);
+                        (
+                            format!("vec4u(bitcast<{value_type}>({}){padding})", parameter.ident),
+                            format!("vec4u(bitcast<{value_type}>({}){padding})", function.parameters[1].ident),
+                        )
+                    };
                     let mut wrapper: TranslationUnit = format!(
-                        "fn {name}_wesl_test(wesl_test_location: u32) {{ {name}({arguments}); {result_name}.checks += 1u; if {result_name}.failCount > 0u && {result_name}.site == 0u {{ {result_name}.site = wesl_test_location; }} }}"
+                        "fn {name}_wesl_test(wesl_test_location: u32) {{ {name}({arguments}); {result_name}.checks += 1u; if {result_name}.failCount > 0u && {result_name}.site == 0u {{ {result_name}.site = wesl_test_location; {result_name}.value_kind = {value_kind}u; {result_name}.components = {components}u; {result_name}.actual = {actual}; {result_name}.expected = {expected}; }} }}"
                     ).parse().map_err(|error| Failure::from_diagnostic(wesl::Diagnostic::from(error)))?;
                     if let GlobalDeclaration::Function(wrapper_function) =
                         &mut *wrapper.global_declarations[0]

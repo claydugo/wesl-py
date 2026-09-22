@@ -207,6 +207,34 @@ def test_shader_tests_reject_scoped_assertion_overrides(
         )
 
 
+@pytest.mark.parametrize(("parameters", "arguments"), [("", ""), ("value: u32", "1u")])
+def test_shader_tests_reject_assertions_with_missing_parameters(
+    wgsl_test: Path, parameters: str, arguments: str
+) -> None:
+    source = f"fn expectCustom({parameters}) {{}}"
+    with pytest.raises(wesl.CompileError, match="shader assertions require") as caught:
+        _native.compile_test(
+            {
+                "package::main": (
+                    f"@test fn selected() {{ wgsl_test::expectCustom({arguments}); }}"
+                ),
+                "wgsl_test": source,
+            },
+            "package::main",
+            "selected",
+            wesl.TestOptions(),
+            {"wgsl_test": "assertions.wesl"},
+            None,
+            0,
+            {"wgsl_test": str(wgsl_test)},
+        )
+    [diagnostic] = caught.value.diagnostics
+    assert diagnostic.module == "wgsl_test"
+    assert diagnostic.filename == "assertions.wesl"
+    assert diagnostic.source == source
+    assert diagnostic.span == (0, len(source.encode()))
+
+
 def test_linked_argument_error_preserves_missing_metadata() -> None:
     source = "import package::helper::consume; fn main() -> u32 { return consume(); }"
     with pytest.raises(wesl.CompileError, match="number of arguments") as caught:
