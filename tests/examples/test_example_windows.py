@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import runpy
 import sys
 from importlib import import_module
 from typing import TYPE_CHECKING
@@ -14,16 +13,37 @@ numpy = pytest.importorskip("numpy")
 glfw = pytest.importorskip("glfw")
 pytest.importorskip("pygfx")
 imgui = pytest.importorskip("imgui_bundle.imgui")
-common = import_module("examples.common")
 loop = import_module("rendercanvas.glfw").loop
+
+pytestmark = [
+    pytest.mark.gpu,
+    pytest.mark.skipif(
+        sys.platform == "linux"
+        and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")),
+        reason="requires a window server",
+    ),
+]
 
 
 if TYPE_CHECKING:
-    from rendercanvas import BaseRenderCanvas
+    from collections.abc import Iterator
+
+    from rendercanvas.glfw import GlfwRenderCanvas
+
+
+@pytest.fixture
+def canvas() -> Iterator[GlfwRenderCanvas]:
+    canvas = import_module("rendercanvas.glfw").RenderCanvas()
+    try:
+        if sys.platform == "linux" and glfw.get_platform() == glfw.PLATFORM_WAYLAND:
+            pytest.skip("requires X11 for native cursor positioning")
+        yield canvas
+    finally:
+        canvas.close()
 
 
 def draw(
-    canvas: BaseRenderCanvas, render_loop: asyncio.Runner, event: dict | None = None
+    canvas: GlfwRenderCanvas, render_loop: asyncio.Runner, event: dict | None = None
 ) -> None:
     rendered = render_loop.get_loop().create_future()
     delivered = event is None
@@ -41,6 +61,7 @@ def draw(
 
     canvas.add_event_handler(observe, "before_draw", order=-100)
     if event is not None:
+        glfw.set_cursor_pos(canvas._window, event["x"], event["y"])  # noqa: SLF001
         canvas.add_event_handler(observe, event["event_type"], order=-100)
     try:
         if event is not None:
@@ -53,64 +74,36 @@ def draw(
             canvas.remove_event_handler(observe, event["event_type"])
 
 
-@pytest.mark.gpu
-@pytest.mark.skipif(
-    sys.platform == "linux"
-    and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")),
-    reason="requires a window server",
-)
 def test_native_pointer_coordinates(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    canvas: GlfwRenderCanvas, caplog: pytest.LogCaptureFixture
 ) -> None:
     channels = numpy.full((3, 19, 37), 0.25, dtype=numpy.float32)
     colors = numpy.ones((3, 256, 4), dtype=numpy.float32)
-    labels = ["Brightfield", "GFP", "RFP"]
-    monkeypatch.setattr(common, "load_colony", lambda: (channels, colors, labels))
-    monkeypatch.setattr(loop, "run", lambda: None)
-    monkeypatch.setattr(sys, "argv", ["examples.multiscale"])
-    rectangles = {}
-    checkbox = imgui.checkbox
-
-    def record_checkbox(label: str, value: bool) -> tuple[bool, bool]:  # noqa: FBT001
-        result = checkbox(label, value)
-        rectangles[label] = (
-            tuple(imgui.get_item_rect_min()),
-            tuple(imgui.get_item_rect_max()),
-        )
-        return result
-
-    monkeypatch.setattr(imgui, "checkbox", record_checkbox)
-    viewer = runpy.run_module("examples.multiscale", run_name="__main__")
-    canvas = viewer["canvas"]
-    glfw.poll_events()
-    monkeypatch.setattr(glfw, "poll_events", lambda: None)
-    imgui.get_io().config_input_trickle_event_queue = False
+    viewer = import_module("examples.multiscale.viewer").Viewer(
+        canvas, channels, colors, ["Brightfield", "GFP", "RFP"]
+    )
     with asyncio.Runner() as render_loop:
         render_loop.get_loop().create_task(loop.run_async())
         try:
-            for dimensions in (None, (1024, 768)):
-                if dimensions is not None:
-                    canvas.set_logical_size(*dimensions)
+            for dimensions in ((1600, 960), (1024, 768)):
+                canvas.set_logical_size(*dimensions)
                 for _ in range(3):
                     draw(canvas, render_loop)
-                for channel, label in enumerate(labels):
-                    lower, upper = rectangles[label]
-                    x = lower[0] + 8
-                    y = (lower[1] + upper[1]) / 2
-                    previous = viewer["visible"][channel]
+                for channel, y in ((0, 253), (1, 317), (2, 381)):
+                    previous = viewer.visible[channel]
                     draw(
                         canvas,
                         render_loop,
                         {
                             "event_type": "pointer_move",
-                            "x": x,
+                            "x": 36,
                             "y": y,
                             "buttons": (),
                             "modifiers": (),
                         },
                     )
                     numpy.testing.assert_allclose(
-                        tuple(imgui.get_io().mouse_pos), (x, y)
+                        tuple(imgui.get_io().mouse_pos), (36, y)
                     )
                     for event_type in ("pointer_down", "pointer_up"):
                         draw(
@@ -118,14 +111,14 @@ def test_native_pointer_coordinates(
                             render_loop,
                             {
                                 "event_type": event_type,
-                                "x": x,
+                                "x": 36,
                                 "y": y,
                                 "button": 1,
                                 "buttons": (1,) if event_type == "pointer_down" else (),
                                 "modifiers": (),
                             },
                         )
-                    assert viewer["visible"][channel] is not previous
+                    assert viewer.visible[channel] is not previous
         finally:
             canvas.close()
             loop.stop(force=True)
@@ -133,54 +126,26 @@ def test_native_pointer_coordinates(
     assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
 
 
-@pytest.mark.gpu
-@pytest.mark.skipif(
-    sys.platform == "linux"
-    and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")),
-    reason="requires a window server",
-)
 def test_sdf_pointer_controls(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    canvas: GlfwRenderCanvas, caplog: pytest.LogCaptureFixture
 ) -> None:
-    rendercanvas = import_module("rendercanvas.glfw")
-    viewer_module = import_module("examples.sdf.viewer")
-    rectangles = {}
-    checkbox = imgui.checkbox
-
-    def record_checkbox(label: str, value: bool) -> tuple[bool, bool]:  # noqa: FBT001
-        result = checkbox(label, value)
-        rectangles[label] = (
-            tuple(imgui.get_item_rect_min()),
-            tuple(imgui.get_item_rect_max()),
-        )
-        return result
-
-    monkeypatch.setattr(imgui, "checkbox", record_checkbox)
-    canvas = rendercanvas.RenderCanvas()
-    canvas.set_logical_size(1440, 900)
-    viewer = viewer_module.Viewer(canvas)
-    glfw.poll_events()
-    monkeypatch.setattr(glfw, "poll_events", lambda: None)
-    imgui.get_io().config_input_trickle_event_queue = False
+    viewer = import_module("examples.sdf.viewer").Viewer(canvas)
     with asyncio.Runner() as render_loop:
         render_loop.get_loop().create_task(loop.run_async())
         try:
-            for dimensions in (None, (1024, 768)):
-                if dimensions is not None:
-                    canvas.set_logical_size(*dimensions)
+            for dimensions in ((1440, 900), (1024, 768)):
+                canvas.set_logical_size(*dimensions)
                 for _ in range(3):
                     draw(canvas, render_loop)
-                for label in ("Cut a tunnel", "Pause"):
-                    lower, upper = rectangles[label]
-                    previous = (viewer.cutout, viewer.paused)
-                    x = lower[0] + 8
-                    y = (lower[1] + upper[1]) / 2
+                for attribute in ("cutout", "paused"):
+                    previous = getattr(viewer, attribute)
+                    y = 172 if attribute == "cutout" else 310 if viewer.cutout else 278
                     draw(
                         canvas,
                         render_loop,
                         {
                             "event_type": "pointer_move",
-                            "x": x,
+                            "x": 36,
                             "y": y,
                             "buttons": (),
                             "modifiers": (),
@@ -192,23 +157,66 @@ def test_sdf_pointer_controls(
                             render_loop,
                             {
                                 "event_type": event_type,
-                                "x": x,
+                                "x": 36,
                                 "y": y,
                                 "button": 1,
                                 "buttons": (1,) if event_type == "pointer_down" else (),
                                 "modifiers": (),
                             },
                         )
-                    if label == "Cut a tunnel":
-                        assert (viewer.cutout, viewer.paused) == (
-                            not previous[0],
-                            previous[1],
-                        )
-                    else:
-                        assert (viewer.cutout, viewer.paused) == (
-                            previous[0],
-                            not previous[1],
-                        )
+                    assert getattr(viewer, attribute) is not previous
+        finally:
+            canvas.close()
+            loop.stop(force=True)
+            render_loop.run(asyncio.sleep(0))
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+
+
+def test_lygia_pan_and_zoom(
+    canvas: GlfwRenderCanvas, caplog: pytest.LogCaptureFixture
+) -> None:
+    colors = numpy.ones((2, 3, 4), dtype=numpy.float32)
+    colors[0, :, :3] = [1, 0, 0]
+    viewer = import_module("examples.lygia.viewer").Viewer(canvas, colors)
+    with asyncio.Runner() as render_loop:
+        render_loop.get_loop().create_task(loop.run_async())
+        try:
+            for dimensions in ((960, 640), (640, 480)):
+                canvas.set_logical_size(*dimensions)
+                draw(canvas, render_loop)
+                previous_width = viewer.camera.width
+                draw(
+                    canvas,
+                    render_loop,
+                    {
+                        "event_type": "wheel",
+                        "x": 320,
+                        "y": 240,
+                        "dx": 0,
+                        "dy": -120,
+                        "modifiers": (),
+                    },
+                )
+                assert viewer.camera.width < previous_width
+                previous_position = viewer.camera.local.position.copy()
+                for event_type, x in (
+                    ("pointer_down", 320),
+                    ("pointer_move", 360),
+                    ("pointer_up", 360),
+                ):
+                    draw(
+                        canvas,
+                        render_loop,
+                        {
+                            "event_type": event_type,
+                            "x": x,
+                            "y": 240,
+                            "button": 1,
+                            "buttons": () if event_type == "pointer_up" else (1,),
+                            "modifiers": (),
+                        },
+                    )
+                assert numpy.any(viewer.camera.local.position != previous_position)
         finally:
             canvas.close()
             loop.stop(force=True)

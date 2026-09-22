@@ -1,5 +1,7 @@
 # SDF playground
 
+Run from the repository root on Linux x86-64:
+
 ```bash
 pixi run -e examples python -m examples.sdf
 ```

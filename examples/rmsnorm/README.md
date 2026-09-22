@@ -1,12 +1,13 @@
 # Fused residual RMSNorm
 
+Run from the repository root on Linux x86-64:
+
 ```bash
 pixi run -e gpu python -m examples.rmsnorm
 ```
 
 Normalize 32 token rows with 1025 channels per row.
 The example generates inputs and verifies every output with a NumPy reference.
-It requires `wesl`, `wgpu`, and NumPy.
 It does not open a window or download weights.
 
 For each row, the shader computes:
@@ -36,6 +37,27 @@ Those IDs let Python specialize imported declarations after WESL renames them.
 [compute.py](compute.py) passes the feature and constants to the compiler and pipeline.
 It uses the same `examples/` package root as the other examples.
 
+The example uses core f32 operations without optional GPU features.
+
+## Tests
+
+```bash
+pixi run -e testing python -m pytest tests/examples/test_rmsnorm.py tests/examples/rmsnorm -q
+```
+
+The tests compare both shader variants with NumPy and verify input limits.
+
+Pytest discovers [row.test.wesl](../../tests/examples/rmsnorm/row.test.wesl) as native shader tests.
+[conftest.py](../../tests/examples/rmsnorm/conftest.py) supplies their buffers, feature flags, and pipeline constants.
+
+Collect the native tests without GPU dependencies:
+
+```bash
+pixi run -e test python -m pytest tests/examples/rmsnorm --collect-only -q
+```
+
+## Input limits
+
 Inputs use a nonempty array with shape `(rows, channels)`.
 Weights use a one-dimensional array with one value per channel.
 Residuals have the same shape as the input.
@@ -45,37 +67,5 @@ The result is a float32 array with the same shape as the input.
 Use finite f32 inputs and keep intermediate arithmetic within the f32 range.
 Epsilon must fit f32 and be at least `2**-126`, the smallest normal f32.
 This prevents devices from flushing epsilon to zero for an all-zero row.
-
 Subnormal inputs or intermediate results can flush to zero.
-Results in that range depend on the backend.
 Each row requires one workgroup and remains subject to device dispatch limits.
-
-The example uses core f32 operations without optional GPU features.
-The printed time includes compilation, upload, execution, and readback.
-It is not a kernel benchmark.
-
-## Tests
-
-```bash
-pixi run -e testing python -m pytest tests/examples/test_rmsnorm.py tests/examples/rmsnorm -q
-```
-
-`wgpu.utils.compute.compute_with_buffers()` compares the shader with a float64 NumPy reference.
-Widths 1, 63, 64, 65, and 1025 cover idle invocations and strided tails.
-The kernel cases include all-zero rows, signed weights, and both feature variants.
-They exercise epsilon values of `1e-6` and `0.25`.
-Output buffers start with NaNs to detect missed writes.
-
-Separate tests exercise the Python driver and invalid dimensions.
-They also verify transposed inputs and sliced weights.
-Boundary tests reject a subnormal epsilon and accept the smallest normal f32 epsilon.
-
-Pytest discovers [row.test.wesl](../../tests/examples/rmsnorm/row.test.wesl) as native shader tests.
-[conftest.py](../../tests/examples/rmsnorm/conftest.py) supplies feature variants, buffers, and pipeline constants.
-The tests import the same input and scale functions as the compute kernel.
-
-Collect the native tests without GPU dependencies:
-
-```bash
-pixi run -e test python -m pytest tests/examples/rmsnorm --collect-only -q
-```

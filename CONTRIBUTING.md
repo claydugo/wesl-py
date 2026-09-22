@@ -81,9 +81,14 @@ CI runs installation smoke checks directly in the workflow.
 
 GPU tests require a WebGPU adapter. Hardware and software adapters both work.
 Linux CI selects Vulkan and uses Mesa's software adapter.
-Window tests require a display. To include them on a machine without a display,
-install Xvfb and xauth, then run `xvfb-run -a pixi run test`.
-Without a display, pytest skips the two window tests.
+Window tests require a display and native cursor positioning.
+On Linux, they require X11. Install Xvfb and xauth to run them in an isolated display:
+
+```bash
+env -u WAYLAND_DISPLAY XDG_SESSION_TYPE=x11 PYGLFW_LIBRARY_VARIANT=x11 xvfb-run -a pixi run -e testing python -m pytest tests/examples/test_example_windows.py -q
+```
+
+Pytest skips these tests without a display or when GLFW uses Wayland.
 
 The `freethreading` environment installs a separate copy of the extension on
 Python 3.15t. `pixi run test-freethreading` verifies import

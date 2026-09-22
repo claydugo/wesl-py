@@ -6,6 +6,7 @@ import subprocess
 import sys
 from collections import UserDict
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from contextlib import chdir
 from multiprocessing import get_context
 from types import MappingProxyType
 from typing import TYPE_CHECKING
@@ -371,15 +372,12 @@ def test_general_mappings_remain_unchanged(modules: dict[str, str]) -> None:
     assert features == {"enabled": True}
 
 
-def test_missing_modules_never_use_the_filesystem(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.chdir(tmp_path)
+def test_missing_modules_never_use_the_filesystem(tmp_path: Path) -> None:
     (tmp_path / "main.wesl").write_text("fn main() {}")
     (tmp_path / "helper.wesl").write_text("fn value() -> u32 { return 1u; }")
-    with pytest.raises(wesl.CompileError):
+    with chdir(tmp_path), pytest.raises(wesl.CompileError):
         wesl.compile({})
-    with pytest.raises(wesl.CompileError):
+    with chdir(tmp_path), pytest.raises(wesl.CompileError):
         wesl.compile(
             {
                 "package::main": """

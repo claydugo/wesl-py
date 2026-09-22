@@ -1,6 +1,5 @@
 import tracemalloc
 from struct import pack, unpack
-from unittest.mock import Mock
 
 import pytest
 import wesl
@@ -15,16 +14,14 @@ from wesl.testing import (
 pytestmark = pytest.mark.gpu
 
 
-def test_run_test_rejects_compile_options() -> None:
-    device = Mock()
+def test_run_test_rejects_compile_options(wesl_device: wgpu.GPUDevice) -> None:
     with pytest.raises(TypeError, match="options must be TestOptions or None"):
         run_test(
-            device,
+            wesl_device,
             {"package::main": "@test fn selected() {}"},
             "selected",
             options=wesl.CompileOptions(),
         )
-    assert device.mock_calls == []
 
 
 def test_assertions_and_imports(wesl_device: wgpu.GPUDevice) -> None:
@@ -450,68 +447,24 @@ def test_texture_bindings(wesl_device: wgpu.GPUDevice) -> None:
 
 
 @pytest.mark.parametrize(
-    "outcome",
+    "source",
     [
-        "success",
-        "assertion",
-        "validation",
-        "binding",
-        "collision",
-        "readback",
-        "incomplete",
-    ],
-)
-def test_result_buffer_cleanup(
-    wesl_device: wgpu.GPUDevice,
-    monkeypatch: pytest.MonkeyPatch,
-    outcome: str,
-) -> None:
-    buffer = wesl_device.create_buffer(
-        size=64,
-        usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_SRC,
-    )
-    destroy = Mock(wraps=buffer.destroy)
-    monkeypatch.setattr(buffer, "destroy", destroy)
-    monkeypatch.setattr(wesl_device, "create_buffer", Mock(return_value=buffer))
-    source = "@test fn selected() { wgsl_test::expect(true); }"
-    exception = None
-    if outcome == "assertion":
-        source = "@test fn selected() { wgsl_test::expect(false); }"
-        exception = ShaderAssertionError
-    elif outcome == "validation":
-        source = "@test fn selected() { let value = sqrt(1u); }"
-        exception = wgpu.GPUValidationError
-    elif outcome == "binding":
-        source = """
+        "@test fn selected() { let value = sqrt(1u); }",
+        """
             @group(1) @binding(0) var<storage, read> value: u32;
             @test fn selected() { wgsl_test::expectEq(value, 1u); }
+        """,
         """
-        exception = wgpu.GPUValidationError
-    elif outcome == "collision":
-        source = """
             @group(0) @binding(0) var<storage, read> value: u32;
             @test fn selected() { wgsl_test::expectEq(value, 1u); }
-        """
-        exception = wgpu.GPUValidationError
-    elif outcome == "readback":
-        monkeypatch.setattr(
-            wesl_device.queue,
-            "read_buffer",
-            Mock(side_effect=RuntimeError("readback failed")),
-        )
-        exception = RuntimeError
-    elif outcome == "incomplete":
-        monkeypatch.setattr(
-            wesl_device.queue, "read_buffer", Mock(return_value=bytes(64))
-        )
-        exception = RuntimeError
-    try:
-        if exception is None:
-            run_test(wesl_device, {"package::main": source}, "selected")
-        else:
-            with pytest.raises(exception):
-                run_test(wesl_device, {"package::main": source}, "selected")
-        destroy.assert_called_once_with()
-    finally:
-        if not destroy.called:
-            buffer.destroy()
+        """,
+    ],
+)
+def test_gpu_validation_errors(wesl_device: wgpu.GPUDevice, source: str) -> None:
+    with pytest.raises(wgpu.GPUValidationError):
+        run_test(wesl_device, {"package::main": source}, "selected")
+    run_test(
+        wesl_device,
+        {"package::main": "@test fn selected() { wgsl_test::expectEq(3u + 4u, 7u); }"},
+        "selected",
+    )

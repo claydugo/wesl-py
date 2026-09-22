@@ -175,20 +175,24 @@ and assertions. See [TESTING.md](https://github.com/claydugo/wesl-py/blob/main/T
 
 ## Examples
 
-Run these examples from the wesl-py checkout.
+Run these examples from the wesl-py checkout on Linux x86-64.
 
 - [SDF playground](https://github.com/claydugo/wesl-py/blob/main/examples/sdf/README.md) shares geometry between rendering and particle collisions.
 - [Multiscale fluorescence](https://github.com/claydugo/wesl-py/blob/main/examples/multiscale/README.md) shares convolution across image axes, scales, and implementations.
+- [Lygia color mapping](https://github.com/claydugo/wesl-py/blob/main/examples/lygia/README.md) imports an external shader library to display a heatmap.
 
-Both examples open interactive windows:
+These examples open interactive windows:
 
 ```bash
 pixi run -e examples python -m examples.sdf
 pixi run -e examples python -m examples.multiscale
+pixi run python tools/fetch_test_shaders.py
+pixi run -e examples python -m examples.lygia --library .wesl/lygia
 ```
 
-The [RMSNorm and compaction examples](https://github.com/claydugo/wesl-py/blob/main/examples/README.md#headless-compute)
-run without a window or downloaded data.
+The [examples index](https://github.com/claydugo/wesl-py/blob/main/examples/README.md)
+also includes RMSNorm and an advanced compaction example.
+Both verify compute results without a window or downloaded data.
 
 ## Contributing
 

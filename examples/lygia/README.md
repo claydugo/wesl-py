@@ -6,18 +6,19 @@ Display limits normalize the intensity. Values outside the limits use the endpoi
 The limits must have a finite positive range in `f32` arithmetic.
 The output clips RGB channels to `[0, 1]` and sets alpha to one.
 
-Run from the repository root:
+Run from the repository root on Linux x86-64:
 
 ```bash
 pixi run python tools/fetch_test_shaders.py
-pixi run -e examples python -m examples.lygia --library .wesl/lygia --output /tmp/lygia.png
+pixi run -e examples python -m examples.lygia --library .wesl/lygia
 ```
 
-This generates two Gaussian spots and writes the color image as a PNG.
+The window displays a heatmap of two generated Gaussian spots.
+Drag to pan. Scroll to zoom.
 To use a grayscale TIFF instead:
 
 ```bash
-pixi run -e examples python -m examples.lygia --library .wesl/lygia --input image.tif --minimum 100 --maximum 2000 --output /tmp/lygia.png
+pixi run -e examples python -m examples.lygia --library .wesl/lygia --input image.tif --minimum 100 --maximum 2000
 ```
 
 The setup script fetches the two required Lygia shaders at a pinned revision.
@@ -46,11 +47,10 @@ finally:
     device.destroy()
 ```
 
-Run the targeted checks:
+## Verify
 
 ```bash
 pixi run -e testing python -m pytest tests/examples/lygia -q
 ```
 
-The Python tests compare GPU output with NumPy for strided images, partial workgroups, and a 2048×2048 image.
-The native WESL test imports `wgsl_test` and verifies display limits and clipping.
+The tests compare GPU output with NumPy and verify display limits and clipping.

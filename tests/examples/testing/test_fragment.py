@@ -57,7 +57,7 @@ def test_tinted_image(
             layout="auto",
             vertex={
                 "module": wesl_device.create_shader_module(
-                    code=wesl_compiler.compile_file("fullscreen.wgsl").wgsl,
+                    code=wesl_compiler.compile_file("fullscreen.wesl").wgsl,
                 ),
                 "entry_point": "main",
             },

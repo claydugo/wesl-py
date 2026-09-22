@@ -1,12 +1,16 @@
 # Stable stream compaction
 
+This advanced example schedules a hierarchy of GPU passes.
+Start with [RMSNorm](../rmsnorm/README.md) for a single compute kernel.
+
+Run from the repository root on Linux x86-64:
+
 ```bash
 pixi run -e gpu python -m examples.compaction
 ```
 
 Filter 1,000,003 generated u32 values and preserve their input order.
 The example checks the entire result against NumPy boolean indexing.
-It requires `wesl`, `wgpu`, and NumPy.
 It does not need a window or an external dataset.
 
 Compaction turns a sparse selection into a dense buffer.
@@ -44,25 +48,16 @@ An output buffer has capacity for every input element.
 Input size remains subject to the device buffer limits and dispatch limits.
 The first level needs `ceil(element_count / 128)` workgroups on the x axis.
 
-The printed time includes compilation, upload, all passes, and readback.
-It is not a kernel benchmark or a speed comparison with Python.
-
 ## Tests
 
 ```bash
 pixi run -e testing python -m pytest tests/examples/test_compaction.py tests/examples/compaction -q
 ```
 
-`wgpu.utils.compute.compute_with_buffers()` checks local prefixes and block totals against NumPy.
-The Python driver tests verify exact values and stable order.
-They also verify reversed views and reject incorrect input shapes and dtypes.
-Cases cross the 128-element and 16,384-element hierarchy boundaries.
-They include empty input, full selection, empty selection, and both predicates.
-Thresholds cover zero, the equality boundary, and the largest u32.
+The tests compare prefixes and selected values with NumPy across hierarchy boundaries.
 
 Pytest discovers [predicate.test.wesl](../../tests/examples/compaction/predicate.test.wesl) as native shader tests.
 [conftest.py](../../tests/examples/compaction/conftest.py) supplies both predicate variants and the threshold override.
-The tests import the predicate used by both production passes.
 
 Collect the native tests without GPU dependencies:
 

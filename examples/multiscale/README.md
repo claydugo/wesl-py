@@ -1,5 +1,7 @@
 # Multiscale fluorescence
 
+Run from the repository root on Linux x86-64:
+
 ```bash
 pixi run -e examples python -m examples.multiscale
 ```
@@ -8,6 +10,9 @@ The viewer enhances GFP and RFP structures at an adjustable spatial scale.
 Brightfield stays unchanged.
 The [sample image](../imaging/README.md#sample-image) shows a bacterial colony
 in brightfield and two fluorescence channels.
+
+![Original composite and enhanced fluorescence](preview.png)
+
 For each fluorescence channel, it computes
 
 ```text
@@ -20,7 +25,7 @@ Start with [convolution.wesl](convolution.wesl) to read the filter.
 Its loop uses imported coefficients, indexing, and boundary handling.
 Then read [compute.py](compute.py) to see how Python generates coefficients
 and compiles the same filter for two directions and two scales.
-The viewer in `__main__.py` connects that computation to the controls and display.
+The viewer in [viewer.py](viewer.py) connects that computation to the controls and display.
 `enhance()` and `composite()` use pygfx's shared GPU device for their resources.
 
 The scale slider sets `sigma` in source pixels.
@@ -52,17 +57,24 @@ All invocations reach the workgroup barrier, including those beyond an image edg
 It produces the same result as the direct variant.
 Its performance depends on the adapter and filter radius.
 
-wgsl-analyzer currently reports the array length in `tiled.wesl` as an error.
-Its [array-size inference test](https://github.com/wgsl-analyzer/wgsl-analyzer/blob/main/crates/hir_ty/src/tests/simple.rs)
-also rejects a named constant as an array length.
-WESL compilation, GPU validation, and the numerical reference accept this shader.
-
 Disable brightfield and one fluorescence channel to inspect the remaining signal.
 Set its gain to one, zoom into the branches, and change the scale.
 The strength controls how much of that spatial detail returns to the original.
 Toggle the tiled implementation to compare the same calculation with shared samples.
 
+## Verify
+
+```bash
+pixi run -e testing python -m pytest tests/examples/test_multiscale.py -q
+```
+
 [test_multiscale.py](../../tests/examples/test_multiscale.py) compares both variants with separable NumPy convolution.
-It checks each Gaussian result and the final enhancement.
-Inputs include single pixels, edge impulses, separate channel signals,
-and random arrays with dimensions that do not divide the workgroup size.
+Add `--image` to verify the full TIFF as well as synthetic inputs.
+Synthetic checks do not download the TIFF.
+
+## Troubleshooting
+
+wgsl-analyzer currently reports the array length in `tiled.wesl` as an error.
+Its [array-size inference test](https://github.com/wgsl-analyzer/wgsl-analyzer/blob/main/crates/hir_ty/src/tests/simple.rs)
+also rejects a named constant as an array length.
+WESL compilation, GPU validation, and the numerical reference accept this shader.

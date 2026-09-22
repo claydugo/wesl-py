@@ -1,3 +1,4 @@
+import logging
 from importlib import import_module
 from typing import TYPE_CHECKING
 
@@ -85,3 +86,31 @@ def test_microscope_image(
         atol=5e-7,
         rtol=2e-6,
     )
+
+
+@pytest.mark.gpu
+def test_viewer(
+    wesl_device: "wgpu.GPUDevice",
+    library_directory: "Path",
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    numpy = pytest.importorskip("numpy")
+    pytest.importorskip("pygfx")
+    colorize = import_module("examples.lygia.compute").colorize
+    viewer_module = import_module("examples.lygia.viewer")
+    canvas = import_module("rendercanvas.offscreen").RenderCanvas(size=(120, 80))
+    values = numpy.array([[0, 0.2, 1], [0.8, 0.4, 0.6]], dtype=numpy.float32)
+    colors = colorize(wesl_device, values, library_directory=library_directory)
+    try:
+        viewer_module.Viewer(canvas, colors)
+        rendered = numpy.asarray(canvas.draw())
+        numpy.testing.assert_allclose(
+            rendered[20::40, 20::40],
+            numpy.rint(colors * 255),
+            atol=1,
+        )
+        assert not [
+            record for record in caplog.records if record.levelno >= logging.ERROR
+        ]
+    finally:
+        canvas.close()

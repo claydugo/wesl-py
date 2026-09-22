@@ -1,12 +1,16 @@
 # Examples
 
 Run these commands from the repository root.
-Both examples open interactive windows and require a WebGPU adapter.
+The Pixi environments below support Linux x86-64.
+All examples require a WebGPU adapter.
 
-| Example | Run | WESL demonstrates |
-| --- | --- | --- |
-| [SDF playground](sdf/README.md) | `pixi run -e examples python -m examples.sdf` | Share geometry between rendering and particle collisions. |
-| [Multiscale fluorescence](multiscale/README.md) | `pixi run -e examples python -m examples.multiscale` | Share convolution across directions, scales, and implementations. |
+| Example | Purpose | Run | Output |
+| --- | --- | --- | --- |
+| [SDF playground](sdf/README.md) | Share geometry between rendering and particle collisions. | `pixi run -e examples python -m examples.sdf` | Interactive scene |
+| [Multiscale fluorescence](multiscale/README.md) | Share convolution across directions, scales, and implementations. | `pixi run -e examples python -m examples.multiscale` | Original and enhanced images |
+| [Lygia color mapping](lygia/README.md) | Import an external shader library. | `pixi run -e examples python -m examples.lygia --library .wesl/lygia` | Heatmap viewer |
+| [Residual RMSNorm](rmsnorm/README.md) | Select input logic and resource bindings through a feature flag. | `pixi run -e gpu python -m examples.rmsnorm` | Numerical verification |
+| [Stable compaction (advanced)](compaction/README.md) | Share a predicate across a hierarchical scan and scatter. | `pixi run -e gpu python -m examples.compaction` | Exact verification |
 
 Start with the SDF playground.
 Change the surface while particles bounce off it.
@@ -19,46 +23,20 @@ A WESL feature selects direct or workgroup-tiled sampling.
 The viewer downloads and caches a sample microscopy TIFF on first use.
 See [the sample image](imaging/README.md) for its source and channels.
 
+Before running Lygia, fetch its shader files:
+
+```bash
+pixi run python tools/fetch_test_shaders.py
+```
+
+RMSNorm and compaction generate their own inputs and run without a window.
+Start with RMSNorm for compute. Compaction adds a hierarchy of GPU passes.
+
 The `examples` environment provides the optional `examples` dependencies.
 The repository's `wesl.toml` sets `examples/` as the shader root for editor tooling.
 The examples pass that root to `compile_file()` for the same `package::` namespace.
 
-## Headless compute
-
-These examples run without a window or downloaded data.
-They require `wesl`, `wgpu`, and NumPy at runtime.
-Each command verifies its output and prints a result.
-Their READMEs describe targeted Python and native WESL tests.
-
-| Example | Run | WESL demonstrates |
-| --- | --- | --- |
-| [Residual RMSNorm](rmsnorm/README.md) | `pixi run -e gpu python -m examples.rmsnorm` | Fuse an ML normalization and specialize imported input logic. |
-| [Stable compaction](compaction/README.md) | `pixi run -e gpu python -m examples.compaction` | Share a predicate across a hierarchical scan and scatter. |
-
-## Verify
-
-The [Lygia example](lygia/README.md) maps a grayscale image to RGBA with upstream shader imports.
-Fetch the shader files, then write a PNG without opening a window:
-
-```bash
-pixi run python tools/fetch_test_shaders.py
-pixi run -e examples python -m examples.lygia --library .wesl/lygia --output /tmp/lygia.png
-```
-
-Run the SDF checks without opening a window:
-
-```bash
-pixi run -e testing python -m pytest tests/examples/test_sdf.py -q
-```
-
-Compare the multiscale GPU results with NumPy:
-
-```bash
-pixi run -e testing python -m pytest tests/examples/test_multiscale.py
-```
-
-Add `--image` to verify the full TIFF as well as synthetic inputs.
-Synthetic checks do not download the TIFF.
+Each example's README includes its verification command.
 
 ## Shader tests
 

@@ -4,15 +4,16 @@ from pathlib import Path
 import imageio.v3 as imageio
 import numpy
 import wgpu
+from rendercanvas.glfw import RenderCanvas, loop
 
 from .compute import colorize
+from .viewer import Viewer
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Display a Lygia heatmap.")
     parser.add_argument("--library", type=Path, required=True)
     parser.add_argument("--input", type=Path)
-    parser.add_argument("--output", type=Path, default=Path("lygia.png"))
     parser.add_argument("--minimum", type=float, default=0.0)
     parser.add_argument("--maximum", type=float, default=1.0)
     arguments = parser.parse_args()
@@ -34,9 +35,11 @@ def main() -> None:
             minimum=arguments.minimum,
             maximum=arguments.maximum,
         )
-        imageio.imwrite(arguments.output, numpy.rint(colors * 255).astype(numpy.uint8))
     finally:
         device.destroy()
+    canvas = RenderCanvas(title="WESL | Lygia color mapping", size=(960, 640))
+    Viewer(canvas, colors)
+    loop.run()
 
 
 if __name__ == "__main__":
