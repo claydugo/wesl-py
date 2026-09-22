@@ -15,4 +15,4 @@
 - Ignore unknown or disabled names in `keep`, as upstream does.
 - Preserve module context and assertion locations in shader tests.
 - Provide examples for SDF rendering, multiscale image processing, RMSNorm, stream compaction, and color mapping with Lygia. The target GPU runtime validates generated shaders and pipelines.
-- Build wheels with a stable ABI for CPython 3.12 and later and free-threaded CPython 3.15 and later. See [CONTRIBUTING.md](CONTRIBUTING.md#support) for release targets and verification status.
+- Build wheels with a stable ABI for CPython 3.12 and later and free-threaded CPython 3.15 and later.

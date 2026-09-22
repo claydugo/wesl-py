@@ -27,8 +27,9 @@ pixi run python -c "import wesl; print(wesl.__version__)"
 ```
 
 The distribution name is `wesl-py`. Import it as `wesl`.
-Source installation requires Rust and a native linker.
-See [CONTRIBUTING.md](https://github.com/claydugo/wesl-py/blob/main/CONTRIBUTING.md#support) for platform support and source builds.
+Source installation requires Rust 1.97.1 or later and a native linker.
+To work in this repository, follow the
+[checkout setup](https://github.com/claydugo/wesl-py/blob/main/CONTRIBUTING.md#set-up-a-checkout).
 
 ## Usage
 
@@ -200,7 +201,9 @@ Both verify compute results without a window or downloaded data.
 
 ## Contributing
 
-See [CONTRIBUTING.md](https://github.com/claydugo/wesl-py/blob/main/CONTRIBUTING.md) for development setup and targeted checks.
+Bug reports, documentation fixes, examples, and code contributions are welcome.
+See [CONTRIBUTING.md](https://github.com/claydugo/wesl-py/blob/main/CONTRIBUTING.md)
+to report a problem, set up a checkout, or prepare a pull request.
 
 ## License
 

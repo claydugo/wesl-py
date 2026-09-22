@@ -79,7 +79,7 @@ It does not modify the packaged files.
 Install the `testing` extra to obtain pytest and wgpu-py.
 Shader imports need no download, cache, or registration step.
 Editor configuration is optional for running tests.
-See [shader editing](CONTRIBUTING.md#shader-editing) for wgsl-analyzer setup.
+See [shader editing](#shader-editing) for wgsl-analyzer setup.
 
 The test runner uses one shared `wgsl_test` package for assertion results.
 Shader tests reject scoped overrides such as `alpha/wgsl_test` in `dependencies`
@@ -433,7 +433,44 @@ The plugin registers through the `pytest11` entry point. If you disable automati
 plugin loading, load it with `-p wesl.pytest_plugin`.
 Use `-p no:wesl` to disable automatic registration.
 
+## Shader editing
+
+The checked-in `wesl.toml` files configure wgsl-analyzer for this repository.
+Their relative dependency paths point to the shader sources in the checkout.
+The `wgsl_test` imports need no editor setup beyond loading the correct manifest.
+For Lygia imports, first run `pixi run python tools/fetch_test_shaders.py`.
+Configure your editor to use the nearest `wesl.toml` as the project root.
+
+For another development project with a sibling wesl-py checkout, use:
+
+```toml
+edition = "2026_pre"
+root = "shaders"
+
+[dependencies]
+wgsl_test = { path = "../wesl-py/python/wesl/shaders/wgsl_test" }
+```
+
+Save this as your project's `wesl.toml` and set `root` to your shader directory.
+The dependency points to source files and does not depend on a Python environment.
+The [upstream manifest format](https://wesl-lang.dev/spec/WeslToml#dependencies-entry)
+supports relative paths to directories that contain `wesl.toml`.
+Its package discovery supports npm and Cargo.
+
+To use the shaders from a Python installation instead, run this from the directory
+that contains your project's `wesl.toml`:
+
+```bash
+pixi run python -c "import os; from importlib.resources import files; print(os.path.relpath(files('wesl') / 'shaders/wgsl_test'))"
+```
+
+Copy the returned path into the dependency entry.
+Update it if you move or replace the environment.
+This manifest configures the editor. Python compilation registers `wgsl_test` automatically.
+
 ## Repository tests
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for checkout setup and other test commands.
 
 Run these commands from the wesl-py checkout:
 
@@ -449,3 +486,36 @@ Tests report results in the terminal. They do not write image files.
 The WESL assertion syntax follows the upstream
 [wgsl-test API](https://github.com/webgpu-tools/wesl-js/blob/main/packages/wgsl-test/API.md).
 Execution uses wgpu-py. It does not require Node.js or the JavaScript test runner.
+
+Directory fixtures select shader roots and keep example parameters local.
+The root configuration uses importlib mode so test filenames can repeat.
+
+`tests/examples/` contains tests for the application examples and shader testing
+examples. See the [testing examples](tests/examples/testing/README.md) for
+snapshot updates and the [examples index](examples/README.md) for application tests.
+
+### Window tests
+
+GPU tests require a WebGPU adapter. Hardware and software adapters both work.
+Linux CI selects Vulkan and uses Mesa's software adapter.
+Window tests require a display and native cursor positioning.
+On Linux, they require X11. Install Xvfb and xauth to run them in an isolated display:
+
+```bash
+env -u WAYLAND_DISPLAY XDG_SESSION_TYPE=x11 PYGLFW_LIBRARY_VARIANT=x11 xvfb-run -a pixi run -e testing python -m pytest tests/examples/test_example_windows.py -q
+```
+
+Pytest skips these tests without a display or when GLFW uses Wayland.
+
+### Plugin implementation
+
+The pytest plugin delegates parametrization to pytest's collection hook.
+It keeps each collected item and its plugin state.
+It attaches WESL reporting methods to the item.
+Pytest controls fixture setup, including autouse fixtures.
+The runner checks conditional tests after fixture setup.
+The plugin tests cover the minimum and current pytest versions.
+
+The `pytest_generate_tests` hook exposes each shader callable during collection.
+The collector then removes it from the synthetic module.
+This prevents shader names from becoming Python hooks during subsequent collection.

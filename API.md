@@ -371,6 +371,13 @@ All compilation functions accept `filenames`, a mapping from module
 names to display filenames. Values accept strings or path objects.
 File imports use their filesystem paths when reporting errors.
 
+## Threads
+
+The native module declares `gil_used = false`. Each native operation copies its
+Python inputs, then detaches from Python while Rust parses or compiles.
+Regular CPython releases the GIL during this work.
+Concurrent calls can share inputs when callers do not modify those inputs.
+
 ## Build identity
 
 `wesl.__version__` identifies the binding.

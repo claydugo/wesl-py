@@ -1,11 +1,10 @@
 # Open work
 
-Use [publish.md](publish.md) for release verification and publication.
 This file tracks release blockers, settled decisions, maintenance, and deferred features.
 
 ## Before release
 
-- WESL expression traversal can exhaust a small caller stack. The [Windows regression](https://github.com/claydugo/wesl-py/actions/runs/35526430139/job/106119676932) compiles a 10,000-term expression. Its test remains a required check. A failure blocks release under [publish.md](publish.md#release-verification). Keep the regression test after upstream fixes the defect.
+- WESL expression traversal can exhaust a small caller stack. The [Windows regression](https://github.com/claydugo/wesl-py/actions/runs/35526430139/job/106119676932) compiles a 10,000-term expression. Its test remains a required check. A failure blocks release. Keep the regression test after upstream fixes the defect.
 
 ## Before Show HN
 
