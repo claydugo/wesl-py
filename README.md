@@ -6,6 +6,9 @@ WESL extends WGSL with imports and conditional compilation. Organize reusable
 shader code into modules and compile it to ordinary WGSL from Python.
 Compilation runs without a GPU.
 
+Use pytest to [run shader tests](#shader-tests) on a WebGPU adapter.
+Write assertions in WESL and see failures at the original shader file and line.
+
 ## Installation
 
 Requires Python 3.12 or later. No public release is available yet.
@@ -64,10 +67,23 @@ result = wesl.compile_file(
 print(result.wgsl)
 ```
 
+This prints ordinary WGSL:
+
+```wgsl
+@fragment
+fn main(@location(0) color: vec4f) -> @location(0) vec4f {
+    return vec4f(package_exposure__1apply_exposure(color.rgb, 1.0), color.a);
+}
+
+fn package_exposure__1apply_exposure(color: vec3f, stops: f32) -> vec3f {
+    let adjusted = color * exp2(stops);
+    return clamp(adjusted, vec3f(0.0), vec3f(1.0));
+}
+```
+
 `compile_file()` resolves imports from the root file's directory.
 The compiler includes the imported function and removes inactive code.
 Set `clamp_output` to `False` to preserve values outside `[0, 1]`.
-The result contains ordinary WGSL in `result.wgsl`.
 
 Use `compile_source()` for a string or `compile()` for a mapping of module names to sources.
 `check_syntax()` checks WESL syntax.
@@ -85,12 +101,13 @@ import wesl
 compiler = wesl.Compiler(dependencies={"lygia": "../lygia"})
 result = compiler.compile_source("""
     import lygia::color::palette::heatmap::heatmap;
-    @compute @workgroup_size(1) fn main() {
-        let color = heatmap(0.5);
+    @fragment fn main() -> @location(0) vec4f {
+        return vec4f(heatmap(0.5), 1.0);
     }
 """)
 ```
 
+The fragment shader outputs the heatmap color for `0.5`.
 The compiler reads imported files from that directory.
 You manage the library sources. See the [Lygia example](https://github.com/claydugo/wesl-py/blob/main/examples/lygia/README.md)
 for image processing and tests.
@@ -137,6 +154,17 @@ Run it from your project directory:
 ```bash
 pixi run python -m pytest shaders --collect-only -q
 pixi run python -m pytest shaders -q
+```
+
+Change `7u` to `8u` to see a failure at the assertion:
+
+```text
+/path/to/project/shaders/math.test.wesl:5:5: expectEq failed
+        expectEq(3u + 4u, 8u);
+        ^
+actual:   (7.0, 0.0, 0.0, 0.0)
+expected: (8.0, 0.0, 0.0, 0.0)
+assertions: 1, failures: 1
 ```
 
 Collection needs no GPU. Execution requires a hardware or software WebGPU adapter.
