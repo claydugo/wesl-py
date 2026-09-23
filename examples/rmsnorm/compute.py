@@ -31,7 +31,7 @@ def normalize(
         raise ValueError(message)
     directory = Path(__file__).parent
     shader = wesl.compile_file(
-        directory / "normalize.wesl",
+        directory / "shaders/normalize.wesl",
         root_directory=directory.parent,
         options=wesl.CompileOptions(
             features=wesl.Features(flags={"residual": residual is not None})

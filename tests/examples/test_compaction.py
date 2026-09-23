@@ -37,7 +37,7 @@ def test_scan(wesl_compiler: wesl.Compiler, element_count: int) -> None:
             2: numpy.full((element_count + 127) // 128, 0xFFFFFFFF, dtype=numpy.uint32),
         },
         {1: (element_count, "I"), 2: ((element_count + 127) // 128, "I")},
-        wesl_compiler.compile_file("compaction/scan.wesl").wgsl,
+        wesl_compiler.compile_file("compaction/shaders/scan.wesl").wgsl,
         n=(element_count + 127) // 128,
     )
     expected = numpy.empty_like(values)

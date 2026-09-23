@@ -21,10 +21,10 @@ def compact(  # noqa: C901
     directory = Path(__file__).parent
     pipelines = {}
     for name, filename, select_values, constants in (
-        ("select", "scan.wesl", True, {"0": threshold}),
-        ("scan", "scan.wesl", False, {}),
-        ("offsets", "offsets.wesl", False, {}),
-        ("scatter", "scatter.wesl", False, {"0": threshold}),
+        ("select", "shaders/scan.wesl", True, {"0": threshold}),
+        ("scan", "shaders/scan.wesl", False, {}),
+        ("offsets", "shaders/offsets.wesl", False, {}),
+        ("scatter", "shaders/scatter.wesl", False, {"0": threshold}),
     ):
         shader = wesl.compile_file(
             directory / filename,

@@ -8,7 +8,7 @@ All examples require a WebGPU adapter.
 | --- | --- | --- | --- |
 | [SDF playground](sdf/README.md) | Share geometry between rendering and particle collisions. | `pixi run -e examples python -m examples.sdf` | Interactive scene |
 | [Multiscale fluorescence](multiscale/README.md) | Share convolution across directions, scales, and implementations. | `pixi run -e examples python -m examples.multiscale` | Original and enhanced images |
-| [Lygia color mapping](lygia/README.md) | Import an external shader library. | `pixi run -e examples python -m examples.lygia --library .wesl/lygia` | Heatmap viewer |
+| [Lygia landscape](lygia/README.md) | Compose imported MIT-licensed noise with local palettes. | `pixi run -e examples python -m examples.lygia --library .wesl/lygia` | Interactive archipelago |
 | [Residual RMSNorm](rmsnorm/README.md) | Select input logic and resource bindings through a feature flag. | `pixi run -e gpu python -m examples.rmsnorm` | Numerical verification |
 | [Stable compaction (advanced)](compaction/README.md) | Share a predicate across a hierarchical scan and scatter. | `pixi run -e gpu python -m examples.compaction` | Exact verification |
 

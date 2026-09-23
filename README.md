@@ -101,17 +101,18 @@ import wesl
 
 compiler = wesl.Compiler(dependencies={"lygia": "../lygia"})
 result = compiler.compile_source("""
-    import lygia::color::palette::heatmap::heatmap;
-    @fragment fn main() -> @location(0) vec4f {
-        return vec4f(heatmap(0.5), 1.0);
+    import lygia::generative::snoise::snoise3;
+    @fragment fn main(@builtin(position) position: vec4f) -> @location(0) vec4f {
+        let value = 0.5 + 0.5 * snoise3(position.xyz * 0.01);
+        return vec4f(vec3f(value), 1.0);
     }
 """)
 ```
 
-The fragment shader outputs the heatmap color for `0.5`.
+The fragment shader outputs grayscale simplex noise.
 The compiler reads imported files from that directory.
 You manage the library sources. See the [Lygia example](https://github.com/claydugo/wesl-py/blob/main/examples/lygia/README.md)
-for image processing and tests.
+for terrain rendering and tests.
 
 ## Use the generated WGSL
 
@@ -184,7 +185,7 @@ Run these examples from the wesl-py checkout on Linux x86-64.
 
 - [SDF playground](https://github.com/claydugo/wesl-py/blob/main/examples/sdf/README.md) shares geometry between rendering and particle collisions.
 - [Multiscale fluorescence](https://github.com/claydugo/wesl-py/blob/main/examples/multiscale/README.md) shares convolution across image axes, scales, and implementations.
-- [Lygia color mapping](https://github.com/claydugo/wesl-py/blob/main/examples/lygia/README.md) imports an external shader library to display a heatmap.
+- [Lygia landscape](https://github.com/claydugo/wesl-py/blob/main/examples/lygia/README.md) combines imported MIT-licensed noise with local palettes into an interactive archipelago.
 
 These examples open interactive windows:
 

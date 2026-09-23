@@ -18,12 +18,12 @@ It can collect threshold detections, active particles, or work for a later kerne
 Atomic appends can produce different orders between runs.
 This example gives each selected value a unique output position with a prefix scan.
 
-1. [scan.wesl](scan.wesl) converts values to selection bits and scans blocks of 128.
+1. [scan.wesl](shaders/scan.wesl) converts values to selection bits and scans blocks of 128.
    It writes an exclusive prefix for each element and a total for each block.
 2. The same shader scans the block totals with `select_values=False`.
    [compute.py](compute.py) repeats this step until one block remains.
-3. [offsets.wesl](offsets.wesl) adds parent prefixes from the top level down.
-4. [scatter.wesl](scatter.wesl) writes selected values to their prefix positions.
+3. [offsets.wesl](shaders/offsets.wesl) adds parent prefixes from the top level down.
+4. [scatter.wesl](shaders/scatter.wesl) writes selected values to their prefix positions.
 
 All intermediate buffers stay on the GPU.
 Each level uses a separate compute pass in one command submission.
@@ -37,6 +37,9 @@ The `keep_below` feature selects `< threshold` or `>= threshold`.
 Both passes use the same rule, including equality at the boundary.
 Threshold uses numeric override ID zero, which survives import renaming.
 The internal scans compile without the predicate or threshold.
+
+Entry points live in [shaders](shaders).
+They import the predicate through `package::compaction::predicate`.
 
 Call `compact(device, values, threshold=500, keep_below=False)` to use other inputs.
 Values use a one-dimensional NumPy array with dtype `uint32`.

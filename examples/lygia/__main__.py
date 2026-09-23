@@ -5,41 +5,36 @@ import imageio.v3 as imageio
 import numpy
 import wgpu
 from rendercanvas.glfw import RenderCanvas, loop
+from rendercanvas.offscreen import RenderCanvas as OffscreenRenderCanvas
 
-from .compute import colorize
 from .viewer import Viewer
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Display a Lygia heatmap.")
-    parser.add_argument("--library", type=Path, required=True)
-    parser.add_argument("--input", type=Path)
-    parser.add_argument("--minimum", type=float, default=0.0)
-    parser.add_argument("--maximum", type=float, default=1.0)
+    parser = argparse.ArgumentParser(description="Explore a procedural landscape.")
+    parser.add_argument("--library", type=Path, default=Path(".wesl/lygia"))
+    parser.add_argument("--seed", type=int, default=17)
+    parser.add_argument("--screenshot", type=Path)
     arguments = parser.parse_args()
-    if arguments.input is None:
-        vertical, horizontal = numpy.mgrid[-1:1:257j, -1:1:385j]
-        values = numpy.exp(-12 * ((horizontal + 0.3) ** 2 + vertical**2))
-        values += 0.6 * numpy.exp(
-            -40 * ((horizontal - 0.4) ** 2 + (vertical - 0.3) ** 2)
-        )
-        values = values.astype(numpy.float32)
+    if not -2147483648 <= arguments.seed <= 2147483647:  # noqa: PLR2004
+        parser.error("--seed must be between -2147483648 and 2147483647")
+    if arguments.screenshot:
+        canvas = OffscreenRenderCanvas(size=(1440, 900))
     else:
-        values = numpy.asarray(imageio.imread(arguments.input), dtype=numpy.float32)
+        canvas = RenderCanvas(title="WESL | Archipelago")
+        canvas.set_logical_size(1440, 900)
     device = wgpu.gpu.request_adapter_sync().request_device_sync()
     try:
-        colors = colorize(
-            device,
-            values,
-            library_directory=arguments.library,
-            minimum=arguments.minimum,
-            maximum=arguments.maximum,
-        )
+        Viewer(canvas, device, library_directory=arguments.library, seed=arguments.seed)
+        if isinstance(canvas, OffscreenRenderCanvas):
+            for _ in range(3):
+                frame = canvas.draw()
+            imageio.imwrite(arguments.screenshot, numpy.asarray(frame))
+        else:
+            loop.run()
     finally:
+        canvas.close()
         device.destroy()
-    canvas = RenderCanvas(title="WESL | Lygia color mapping", size=(960, 640))
-    Viewer(canvas, colors)
-    loop.run()
 
 
 if __name__ == "__main__":

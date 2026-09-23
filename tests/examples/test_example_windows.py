@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 from importlib import import_module
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -28,6 +29,7 @@ pytestmark = [
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    import wgpu
     from rendercanvas.glfw import GlfwRenderCanvas
 
 
@@ -61,7 +63,14 @@ def draw(
 
     canvas.add_event_handler(observe, "before_draw", order=-100)
     if event is not None:
-        glfw.set_cursor_pos(canvas._window, event["x"], event["y"])  # noqa: SLF001
+        window = canvas._window  # noqa: SLF001
+        window_width, window_height = glfw.get_window_size(window)
+        width, height = canvas.get_logical_size()
+        glfw.set_cursor_pos(
+            window,
+            event["x"] * window_width / width,
+            event["y"] * window_height / height,
+        )
         canvas.add_event_handler(observe, event["event_type"], order=-100)
     try:
         if event is not None:
@@ -89,7 +98,7 @@ def test_native_pointer_coordinates(
                 canvas.set_logical_size(*dimensions)
                 for _ in range(3):
                     draw(canvas, render_loop)
-                for channel, y in ((0, 253), (1, 317), (2, 381)):
+                for channel, y in ((0, 221), (1, 285), (2, 349)):
                     previous = viewer.visible[channel]
                     draw(
                         canvas,
@@ -172,19 +181,74 @@ def test_sdf_pointer_controls(
     assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
 
 
-def test_lygia_pan_and_zoom(
-    canvas: GlfwRenderCanvas, caplog: pytest.LogCaptureFixture
+@pytest.mark.usefixtures("wesl_device")
+def test_lygia_startup_pointer_coordinates(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    colors = numpy.ones((2, 3, 4), dtype=numpy.float32)
-    colors[0, :, :3] = [1, 0, 0]
-    viewer = import_module("examples.lygia.viewer").Viewer(canvas, colors)
+    main = import_module("examples.lygia.__main__").main
+    library_directory = Path(__file__).parents[2] / ".wesl" / "lygia"
+    monkeypatch.setattr(sys, "argv", ["lygia", "--library", str(library_directory)])
+    positions = []
+    animated = []
+
+    def click_evolve() -> None:
+        (canvas,) = loop.get_canvases()
+        try:
+            window = canvas._window  # noqa: SLF001
+            window_width, window_height = glfw.get_window_size(window)
+            width, height = canvas.get_logical_size()
+            canvas._on_cursor_enter(window, entered=True)  # noqa: SLF001
+            canvas._on_cursor_pos(  # noqa: SLF001
+                window, 58 * window_width / width, 518 * window_height / height
+            )
+            canvas._events.flush()  # noqa: SLF001
+            canvas.force_draw()
+            positions.append(tuple(imgui.get_io().mouse_pos))
+            for action in (glfw.PRESS, glfw.RELEASE):
+                canvas._on_mouse_button(  # noqa: SLF001
+                    window, glfw.MOUSE_BUTTON_LEFT, action, 0
+                )
+                canvas._events.flush()  # noqa: SLF001
+                canvas.force_draw()
+            animated.append(canvas._draw_frame.__self__.animated)  # noqa: SLF001
+        finally:
+            canvas.close()
+
+    loop.call_later(0.25, click_evolve)
+    main()
+    numpy.testing.assert_allclose(positions, [(58, 518)])
+    assert animated == [True]
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+
+
+def test_lygia_pan_and_zoom(
+    canvas: GlfwRenderCanvas,
+    wesl_device: wgpu.GPUDevice,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    viewer = import_module("examples.lygia.viewer").Viewer(
+        canvas,
+        wesl_device,
+        library_directory=Path(__file__).parents[2] / ".wesl/lygia",
+    )
     with asyncio.Runner() as render_loop:
         render_loop.get_loop().create_task(loop.run_async())
         try:
             for dimensions in ((960, 640), (640, 480)):
                 canvas.set_logical_size(*dimensions)
                 draw(canvas, render_loop)
-                previous_width = viewer.camera.width
+                draw(
+                    canvas,
+                    render_loop,
+                    {
+                        "event_type": "pointer_move",
+                        "x": 320,
+                        "y": 240,
+                        "buttons": (),
+                        "modifiers": (),
+                    },
+                )
+                previous_scale = viewer.scale
                 draw(
                     canvas,
                     render_loop,
@@ -197,8 +261,8 @@ def test_lygia_pan_and_zoom(
                         "modifiers": (),
                     },
                 )
-                assert viewer.camera.width < previous_width
-                previous_position = viewer.camera.local.position.copy()
+                assert viewer.scale < previous_scale
+                previous_position = viewer.center.copy()
                 for event_type, x in (
                     ("pointer_down", 320),
                     ("pointer_move", 360),
@@ -216,7 +280,7 @@ def test_lygia_pan_and_zoom(
                             "modifiers": (),
                         },
                     )
-                assert numpy.any(viewer.camera.local.position != previous_position)
+                assert numpy.any(viewer.center != previous_position)
         finally:
             canvas.close()
             loop.stop(force=True)

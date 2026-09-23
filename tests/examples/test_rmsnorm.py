@@ -60,7 +60,7 @@ def test_normalize(
     output = compute_with_buffers(
         resources,
         {3: (3, width, "f")},
-        wesl_compiler.compile_file("rmsnorm/normalize.wesl").wgsl,
+        wesl_compiler.compile_file("rmsnorm/shaders/normalize.wesl").wgsl,
         n=3,
         constants={"0": width, "1": epsilon},
     )

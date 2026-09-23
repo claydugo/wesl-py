@@ -1,7 +1,7 @@
-import super::parameters::parameters;
-import super::particle::Particle;
-import super::scene::distance_to_scene;
-import super::surface::normal;
+import package::sdf::parameters::parameters;
+import package::sdf::particle::Particle;
+import package::sdf::scene::distance_to_scene;
+import package::sdf::surface::normal;
 
 @group(0) @binding(1) var<storage, read_write> particles: array<Particle>;
 

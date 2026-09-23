@@ -23,12 +23,16 @@ It imports sphere and smooth-union functions from [primitives.wesl](primitives.w
 
 Two shaders import the same geometry:
 
-- [render.wesl](render.wesl) traces rays in a fragment shader.
-- [simulate.wesl](simulate.wesl) moves particles in a compute shader.
+- [render.wesl](shaders/render.wesl) traces rays in a fragment shader.
+- [simulate.wesl](shaders/simulate.wesl) moves particles in a compute shader.
 
 Both import `distance_to_scene` and `normal`.
 Edit the scene once to change its appearance and its collision surface.
 Python does not concatenate shader files or substitute shader expressions.
+
+Entry points live in [shaders](shaders).
+[renderer.py](renderer.py) compiles the pipelines and submits GPU passes.
+[viewer.py](viewer.py) manages camera input and controls.
 
 The tunnel uses `@if(cutout)` in the shared scene module.
 Python compiles both variants for rendering and simulation at startup.

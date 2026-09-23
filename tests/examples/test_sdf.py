@@ -33,7 +33,7 @@ def test_particle_collisions(*, cutout: bool) -> None:
     )
     module = device.create_shader_module(
         code=wesl.compile_file(
-            directory / "sdf/simulate.wesl",
+            directory / "sdf/shaders/simulate.wesl",
             root_directory=directory,
             options=wesl.CompileOptions(
                 features=wesl.Features(flags={"cutout": cutout})
@@ -94,13 +94,15 @@ def test_sdf_viewer(caplog: pytest.LogCaptureFixture) -> None:
         viewer.previous_time -= 1 / 60
         canvas.draw()
         moving = numpy.frombuffer(
-            viewer.device.queue.read_buffer(viewer.particles), dtype=numpy.float32
+            viewer.renderer.device.queue.read_buffer(viewer.renderer.particles),
+            dtype=numpy.float32,
         ).copy()
         viewer.reset = True
         canvas.set_logical_size(1024, 768)
         resized = numpy.asarray(canvas.draw())
         reset = numpy.frombuffer(
-            viewer.device.queue.read_buffer(viewer.particles), dtype=numpy.float32
+            viewer.renderer.device.queue.read_buffer(viewer.renderer.particles),
+            dtype=numpy.float32,
         )
         assert resized.shape == (768, 1024, 4)
         assert numpy.isfinite(reset).all()

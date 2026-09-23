@@ -1,5 +1,5 @@
-import super::input::load;
-import super::normalization::{width, scale};
+import package::rmsnorm::input::load;
+import package::rmsnorm::normalization::{width, scale};
 
 @group(0) @binding(2) var<storage, read> weights: array<f32>;
 @group(0) @binding(3) var<storage, read_write> output: array<f32>;
