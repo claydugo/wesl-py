@@ -19,7 +19,7 @@ The tunnel feature compiles into both shaders from the same scene module.
 
 Continue with multiscale fluorescence for image processing across multiple passes.
 One convolution serves both image axes and both Gaussian scales.
-A WESL feature selects direct or workgroup-tiled sampling.
+A WESL feature selects the filter direction.
 The viewer downloads and caches a sample microscopy TIFF on first use.
 See [the sample image](imaging/README.md) for its source and channels.
 

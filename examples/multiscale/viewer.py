@@ -1,17 +1,33 @@
 # ruff: noqa: D101, D102
 
+from enum import StrEnum
+
 import numpy
 import pygfx
+import wgpu
 from imgui_bundle import imgui
 from rendercanvas import BaseRenderCanvas
 from wgpu.utils.imgui import ImguiRenderer
 
 from examples.common import composite
-from examples.multiscale.compute import enhance
+from examples.multiscale.compute import (
+    analyze,
+    create_shader,
+    distance_field,
+    enhance,
+    unwrap,
+)
+
+
+class Analysis(StrEnum):
+    ENHANCEMENT = "Enhanced fluorescence"
+    CORRELATION = "Channel correlation"
+    DISTANCE = "Perimeter distance"
+    POLAR = "Polar view"
 
 
 class Viewer:
-    def __init__(
+    def __init__(  # noqa: PLR0915
         self,
         canvas: BaseRenderCanvas,
         channels: numpy.ndarray,
@@ -26,13 +42,25 @@ class Viewer:
         _, self.height, self.width = self.channels.shape
         self.weights = numpy.array([0.12, 1.5, 1.5, 0], dtype=numpy.float32)
         self.visible = [True, True, True]
+        self.mode = Analysis.ENHANCEMENT
+        self.modes = list(Analysis)
         self.settings = {
             "sigma": 6.0,
             "strength": 3.0,
-            "tiled": False,
             "process": False,
             "color": False,
+            "display": False,
+            "minimum_signal": 0.06,
+            "maximum_brightfield": 0.9,
+            "opacity": 0.85,
+            "spacing": 20.0,
+            "center_x": (self.width - 1) / 2,
+            "center_y": (self.height - 1) / 2,
+            "maximum_radius": min(self.width, self.height) / 2,
         }
+        self.radial_profiles = None
+        self.distance_profiles = None
+        self.analysis_shader = None
         self.source, self.fine, self.coarse, self.output = enhance(
             self.channels, 6.0, 3.0
         )
@@ -42,16 +70,41 @@ class Viewer:
         processed_texture, self.processed_shader, self.processed_weights = composite(
             self.output, self.colors, self.weights, (self.width, self.height)
         )
+        self.original_texture = original_texture
+        self.processed_texture = processed_texture
+        self.analysis_texture = pygfx.Texture(
+            dim=2,
+            size=(self.width, self.height, 1),
+            format="rgba8unorm",
+            usage=wgpu.TextureUsage.STORAGE_BINDING | wgpu.TextureUsage.TEXTURE_BINDING,
+        )
+        self.guide_texture = pygfx.Texture(
+            dim=2,
+            size=(self.width, self.height, 1),
+            format="rgba8unorm",
+            usage=wgpu.TextureUsage.STORAGE_BINDING | wgpu.TextureUsage.TEXTURE_BINDING,
+        )
+        self.display_parameters = self.renderer.device.create_buffer(
+            size=32, usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST
+        )
+        self.guide_shader = create_shader(
+            "display.wesl",
+            (self.width, self.height),
+            entry_point="polar_guide",
+        )
+        self.guide_shader.set_resource(1, original_texture)
+        self.guide_shader.set_resource(2, self.guide_texture)
+        self.guide_shader.set_resource(3, self.display_parameters)
 
         self.scenes = []
         self.cameras = []
         self.viewports = []
+        self.geometries = []
         for texture in (original_texture, processed_texture):
             scene = pygfx.Scene()
             scene.add(pygfx.Background.from_color("#0c1017"))
-            image = pygfx.Image(
-                pygfx.Geometry(grid=texture), pygfx.ImageBasicMaterial(clim=(0, 255))
-            )
+            geometry = pygfx.Geometry(grid=texture)
+            image = pygfx.Image(geometry, pygfx.ImageBasicMaterial(clim=(0, 255)))
             image.local.scale_y = -1
             scene.add(image)
             camera = pygfx.OrthographicCamera()
@@ -59,6 +112,7 @@ class Viewer:
             self.scenes.append(scene)
             self.cameras.append(camera)
             self.viewports.append(pygfx.Viewport(self.renderer))
+            self.geometries.append(geometry)
         self.controller = pygfx.PanZoomController(self.cameras[0])
         self.controller.add_camera(self.cameras[1])
         self.controller.register_events(self.viewports[0])
@@ -74,7 +128,7 @@ class Viewer:
 
         self.canvas.request_draw(self.draw_frame)
 
-    def draw_controls(self) -> None:
+    def draw_controls(self) -> None:  # noqa: C901, PLR0912, PLR0915
         canvas_width, canvas_height = self.canvas.get_logical_size()
         imgui.set_next_window_pos((16, 16), imgui.Cond_.always)
         imgui.set_next_window_size((288, canvas_height - 32), imgui.Cond_.always)
@@ -88,21 +142,20 @@ class Viewer:
             "Explore fine branches and broad structures in the fluorescence channels."
         )
         imgui.spacing()
+        imgui.begin_disabled(self.mode == Analysis.POLAR)
         changed, self.settings["sigma"] = imgui.slider_float(
             "Scale", float(self.settings["sigma"]), 0.7, 12.0, "%.1f px"
         )
         if changed:
             self.settings["process"] = True
+        imgui.end_disabled()
+        imgui.begin_disabled(self.mode != Analysis.ENHANCEMENT)
         changed, self.settings["strength"] = imgui.slider_float(
             "Strength", float(self.settings["strength"]), 0.0, 6.0
         )
         if changed:
             self.settings["process"] = True
-        changed, self.settings["tiled"] = imgui.checkbox(
-            "Use tiled convolution", bool(self.settings["tiled"])
-        )
-        if changed:
-            self.settings["process"] = True
+        imgui.end_disabled()
         imgui.separator()
         imgui.text("Channels")
         for channel, label in enumerate(self.labels):
@@ -119,18 +172,123 @@ class Viewer:
                 self.settings["color"] = True
             imgui.pop_id()
         imgui.separator()
+        imgui.text("Analysis")
+        imgui.set_next_item_width(-1)
+        changed, selected = imgui.combo(
+            "##analysis",
+            self.modes.index(self.mode),
+            [mode.value for mode in self.modes],
+        )
+        self.mode = self.modes[selected]
+        if changed:
+            self.settings["process"] = True
+        if self.mode == Analysis.CORRELATION:
+            imgui.set_next_item_width(128)
+            changed, self.settings["maximum_brightfield"] = imgui.slider_float(
+                "Max brightfield",
+                float(self.settings["maximum_brightfield"]),
+                0.0,
+                1.0,
+            )
+            if changed:
+                self.settings["process"] = True
+        if self.mode == Analysis.DISTANCE:
+            imgui.set_next_item_width(160)
+            changed, self.settings["minimum_signal"] = imgui.slider_float(
+                "Min signal",
+                float(self.settings["minimum_signal"]),
+                0.001,
+                1.0,
+            )
+            if changed:
+                self.settings["process"] = True
+        if self.mode == Analysis.DISTANCE:
+            changed, self.settings["spacing"] = imgui.slider_float(
+                "Contours", float(self.settings["spacing"]), 2.0, 100.0, "%.1f px"
+            )
+            if changed:
+                self.settings["display"] = True
+        if self.mode in (Analysis.CORRELATION, Analysis.DISTANCE):
+            changed, self.settings["opacity"] = imgui.slider_float(
+                "Overlay", float(self.settings["opacity"]), 0.0, 1.0
+            )
+            if changed:
+                self.settings["display"] = True
+        if self.mode == Analysis.POLAR:
+            changed, self.settings["center_x"] = imgui.slider_float(
+                "Center X", float(self.settings["center_x"]), 0.0, self.width - 1.0
+            )
+            if changed:
+                self.settings["process"] = True
+            changed, self.settings["center_y"] = imgui.slider_float(
+                "Center Y", float(self.settings["center_y"]), 0.0, self.height - 1.0
+            )
+            if changed:
+                self.settings["process"] = True
+            changed, self.settings["maximum_radius"] = imgui.slider_float(
+                "Radius",
+                float(self.settings["maximum_radius"]),
+                1.0,
+                float(numpy.hypot(self.width, self.height)),
+                "%.1f px",
+            )
+            if changed:
+                self.settings["process"] = True
+        if self.mode in (Analysis.POLAR, Analysis.DISTANCE):
+            if self.mode == Analysis.POLAR:
+                profiles = self.radial_profiles
+                imgui.text("Mean intensity vs radius")
+                if profiles is not None and len(profiles):
+                    imgui.text(f"0 to {profiles[-1, 3]:.0f} px")
+            else:
+                profiles = self.distance_profiles
+                imgui.text_wrapped("Mean intensity vs edge distance")
+                if profiles is not None and len(profiles):
+                    imgui.text(f"0 to {profiles[-1, 3] + profiles[0, 3]:.0f} px")
+                else:
+                    imgui.text("No foreground above threshold.")
+            if profiles is not None and len(profiles):
+                for channel, label in enumerate(("GFP", "RFP")):
+                    imgui.plot_lines(
+                        label,
+                        numpy.ascontiguousarray(profiles[:, channel]),
+                        scale_min=0.0,
+                        scale_max=1.0,
+                        graph_size=(180, 48),
+                    )
+        imgui.separator()
         imgui.text_wrapped("Drag either image to pan. Scroll to zoom both views.")
         if imgui.button("Reset view"):
             for camera, scene in zip(self.cameras, self.scenes, strict=True):
                 camera.show_object(scene.children[1], match_aspect=True)
         imgui.spacing()
-        imgui.text_wrapped(
-            "Brightfield stays unchanged. The fluorescence channels use "
-            "a difference of Gaussian scales."
-        )
+        if self.mode == Analysis.ENHANCEMENT:
+            imgui.text_wrapped(
+                "Brightfield stays unchanged. The fluorescence channels use "
+                "a difference of Gaussian scales."
+            )
+        elif self.mode == Analysis.CORRELATION:
+            imgui.text_wrapped(
+                "Blue: negative correlation. White: zero. Red: positive. "
+                "Brightfield above the cutoff is excluded from statistics. "
+                "Constant neighborhoods have no overlay."
+            )
+        elif self.mode == Analysis.DISTANCE:
+            imgui.text_wrapped(
+                "Yellow: near the perimeter. Blue: far. The threshold estimates "
+                "the fluorescence footprint. Distances are approximate. "
+                "Profiles use original intensities inside that footprint."
+            )
+        else:
+            imgui.text_wrapped(
+                "Left to right: 0 to 360 degrees clockwise from the right. "
+                "Top to bottom: center to selected radius. Profiles use raw "
+                "intensity and exclude samples outside the image. "
+                "They include background inside the image. Radius is not time."
+            )
         imgui.end()
         panel_width = (canvas_width - 336) / 2
-        for index, title in enumerate(("Original composite", "Enhanced fluorescence")):
+        for index, title in enumerate(("Original composite", self.mode)):
             imgui.set_next_window_pos(
                 (320 + index * panel_width, 16), imgui.Cond_.always
             )
@@ -142,19 +300,79 @@ class Viewer:
             imgui.text(title)
             imgui.end()
 
-    def draw_frame(self) -> None:
+    def draw_frame(self) -> None:  # noqa: C901, PLR0912, PLR0915
         if self.settings["process"]:
-            _, _, _, result = enhance(
-                self.channels,
-                float(self.settings["sigma"]),
-                float(self.settings["strength"]),
-                tiled=bool(self.settings["tiled"]),
-            )
-            self.processed_shader.set_resource(0, result)
-            self.processed_shader.dispatch(
-                (self.width + 15) // 16, (self.height + 15) // 16
-            )
+            dimensions = (self.width, self.height)
+            if self.mode == Analysis.ENHANCEMENT:
+                _, _, _, result = enhance(
+                    self.channels,
+                    float(self.settings["sigma"]),
+                    float(self.settings["strength"]),
+                )
+            elif self.mode == Analysis.CORRELATION:
+                result = analyze(
+                    self.source,
+                    dimensions,
+                    float(self.settings["sigma"]),
+                    maximum_brightfield=float(self.settings["maximum_brightfield"]),
+                )
+            elif self.mode == Analysis.DISTANCE:
+                result, profiles = distance_field(
+                    self.source,
+                    dimensions,
+                    float(self.settings["sigma"]),
+                    minimum_signal=float(self.settings["minimum_signal"]),
+                )
+                self.distance_profiles = numpy.frombuffer(
+                    self.renderer.device.queue.read_buffer(profiles),
+                    dtype=numpy.float32,
+                ).reshape(-1, 4)
+                occupied = numpy.flatnonzero(self.distance_profiles[:, 2])
+                self.distance_profiles = self.distance_profiles[
+                    : occupied[-1] + 1 if len(occupied) else 0
+                ]
+            else:
+                result, profiles = unwrap(
+                    self.source,
+                    dimensions,
+                    (
+                        float(self.settings["center_x"]),
+                        float(self.settings["center_y"]),
+                    ),
+                    float(self.settings["maximum_radius"]),
+                )
+                self.radial_profiles = numpy.frombuffer(
+                    self.renderer.device.queue.read_buffer(profiles),
+                    dtype=numpy.float32,
+                ).reshape(self.height, 4)
+                occupied = numpy.flatnonzero(self.radial_profiles[:, 2])
+                self.radial_profiles = self.radial_profiles[
+                    : occupied[-1] + 1 if len(occupied) else 0
+                ]
+            if self.mode in (Analysis.ENHANCEMENT, Analysis.POLAR):
+                self.processed_shader.set_resource(0, result)
+                self.processed_shader.dispatch(
+                    (self.width + 15) // 16, (self.height + 15) // 16
+                )
+                self.geometries[1].grid = self.processed_texture
+                self.analysis_shader = None
+            else:
+                self.analysis_shader = create_shader(
+                    "display.wesl",
+                    dimensions,
+                    entry_point=(
+                        "correlation_overlay"
+                        if self.mode == Analysis.CORRELATION
+                        else "distance_overlay"
+                    ),
+                )
+                self.analysis_shader.set_resource(0, result)
+                self.analysis_shader.set_resource(1, self.original_texture)
+                self.analysis_shader.set_resource(2, self.analysis_texture)
+                self.analysis_shader.set_resource(3, self.display_parameters)
+                self.geometries[1].grid = self.analysis_texture
             self.settings["process"] = False
+            self.settings["display"] = True
         if self.settings["color"]:
             displayed_weights = self.weights.copy()
             displayed_weights[:3] *= self.visible
@@ -167,6 +385,36 @@ class Viewer:
                 )
                 shader.dispatch((self.width + 15) // 16, (self.height + 15) // 16)
             self.settings["color"] = False
+            self.settings["display"] = True
+        if self.settings["display"]:
+            parameters = numpy.array(
+                [
+                    self.settings["center_x"],
+                    self.settings["center_y"],
+                    self.settings["maximum_radius"],
+                    self.settings["opacity"],
+                    self.settings["spacing"],
+                    0,
+                    0,
+                    0,
+                ],
+                dtype=numpy.float32,
+            )
+            self.renderer.device.queue.write_buffer(
+                self.display_parameters, 0, parameters
+            )
+            if self.analysis_shader is not None:
+                self.analysis_shader.dispatch(
+                    (self.width + 15) // 16, (self.height + 15) // 16
+                )
+            if self.mode == Analysis.POLAR:
+                self.guide_shader.dispatch(
+                    (self.width + 15) // 16, (self.height + 15) // 16
+                )
+                self.geometries[0].grid = self.guide_texture
+            else:
+                self.geometries[0].grid = self.original_texture
+            self.settings["display"] = False
         canvas_width, canvas_height = self.canvas.get_logical_size()
         panel_width = (canvas_width - 336) / 2
         for index, (viewport, scene, camera) in enumerate(

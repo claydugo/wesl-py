@@ -53,19 +53,18 @@ def test_multiscale(pytestconfig: pytest.Config) -> None:
             expected[1:] = numpy.clip(
                 channels[1:] + 2 * (references[0] - references[1]), 0, 1
             )
-            for tiled in (False, True):
-                source, fine, coarse, output = enhance(  # noqa: RUF059
-                    channels, sigma, 2.0, tiled=tiled
-                )
-                for buffer, reference in zip((fine, coarse), references, strict=True):
-                    actual = numpy.frombuffer(
-                        device.queue.read_buffer(buffer), dtype=numpy.float32
-                    ).reshape(channels.shape)
-                    numpy.testing.assert_allclose(
-                        actual[1:], reference, rtol=3e-5, atol=2e-6
-                    )
+            source, fine, coarse, output = enhance(  # noqa: RUF059
+                channels, sigma, 2.0
+            )
+            for buffer, reference in zip((fine, coarse), references, strict=True):
                 actual = numpy.frombuffer(
-                    device.queue.read_buffer(output), dtype=numpy.float32
+                    device.queue.read_buffer(buffer), dtype=numpy.float32
                 ).reshape(channels.shape)
-                numpy.testing.assert_array_equal(actual[0], channels[0])
-                numpy.testing.assert_allclose(actual, expected, rtol=3e-5, atol=2e-6)
+                numpy.testing.assert_allclose(
+                    actual[1:], reference, rtol=3e-5, atol=2e-6
+                )
+            actual = numpy.frombuffer(
+                device.queue.read_buffer(output), dtype=numpy.float32
+            ).reshape(channels.shape)
+            numpy.testing.assert_array_equal(actual[0], channels[0])
+            numpy.testing.assert_allclose(actual, expected, rtol=3e-5, atol=2e-6)

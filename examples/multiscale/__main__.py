@@ -24,6 +24,11 @@ else:
     canvas.set_logical_size(1600, 960)
 channels, colors, labels = load_colony()
 viewer = Viewer(canvas, channels, colors, labels)
+viewer.settings.update(
+    center_x=916.0,
+    center_y=976.0,
+    maximum_radius=880.0,
+)
 if isinstance(canvas, OffscreenRenderCanvas):
     for _ in range(3):
         frame = canvas.draw()

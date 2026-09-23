@@ -1,8 +1,8 @@
-import super::super::imaging::indexing::linear_index;
-import super::boundary::clamp_position;
-import super::coefficients::{radius, weights};
+import super::indexing::linear_index;
+import super::sampling::{clamp_position, source};
 
-@group(0) @binding(0) var<storage, read> source: array<f32>;
+@id(0) override radius: i32;
+@group(0) @binding(2) var<storage, read> weights: array<f32>;
 
 fn direction() -> vec2<i32> {
     @if(horizontal) { return vec2<i32>(1, 0); }

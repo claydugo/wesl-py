@@ -1,7 +1,7 @@
 # Microscopy image and shared shaders
 
 [Multiscale fluorescence](../multiscale/README.md) uses this microscopy image
-and color compositing code.
+and the WESL library in this directory.
 
 ## Sample image
 
@@ -23,6 +23,51 @@ for acquisition details and the
 [imageio integration](https://github.com/imageio/imageio/pull/1115)
 for the resource name.
 
+## Shared operations
+
+These modules provide image operations for compute kernels.
+The multiscale example keeps its entry points in [shaders](../multiscale/shaders)
+and schedules passes in [compute.py](../multiscale/compute.py).
+
+| Module | Provides |
+| --- | --- |
+| [indexing.wesl](indexing.wesl) | Map channel and pixel coordinates to a buffer index. |
+| [sampling.wesl](sampling.wesl) | Clamp coordinates and sample a channel. |
+| [gaussian.wesl](gaussian.wesl) | Define the Gaussian weights and radius, and convolve along one axis. |
+| [statistics.wesl](statistics.wesl) | Define moments, compute correlation, and identify constant neighborhoods. |
+| [coordinates.wesl](coordinates.wesl) | Convert a polar grid to source coordinates. |
+| [reduction.wesl](reduction.wesl) | Sum four components across a workgroup. |
+
+Sampling builds on indexing.
+Gaussian convolution imports indexing and clamping from sampling.
+The filter uses `convolve`:
+
+```wesl
+import package::imaging::gaussian::convolve;
+```
+
+The correlation kernel imports the same Gaussian parameters:
+
+```wesl
+import package::imaging::gaussian::{radius, weights};
+```
+
+Compile these kernels with `examples` as the root directory.
+WESL resolves `package::imaging` relative to that root.
+The compiler removes unused declarations, including resource bindings.
+Correlation uses its own accumulation without importing the convolution buffer.
+
+Sampling and convolution share a planar channel buffer at binding zero.
+Convolution reads Gaussian weights at binding two.
+Python sets the radius through override ID zero.
+The `horizontal` feature selects the axis for convolution.
+Clamping, statistics, and coordinate conversion do not need resource bindings.
+
+`sum_workgroup` requires a workgroup of 256 invocations.
+Every invocation must call it at the same point in control flow.
+Each supplies a `vec4<f32>` and its local invocation index.
+The function uses workgroup memory and barriers to return the componentwise sum.
+
 ## GPU compositing
 
 The example keeps its algorithm in `.wesl` files and schedules passes
@@ -32,7 +77,6 @@ to a pygfx texture.
 
 | File | Responsibility |
 | --- | --- |
-| [indexing.wesl](indexing.wesl) | Map channel and pixel coordinates to a buffer index. |
 | [color.wesl](color.wesl) | Map each channel's intensity through its lookup table. |
 | [composite.wesl](composite.wesl) | Apply the channel gains and add the colors into an RGBA texture. |
 
