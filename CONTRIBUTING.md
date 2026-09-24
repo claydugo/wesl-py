@@ -8,7 +8,8 @@ If you want to try wesl-py, start with the [README](README.md) and
 
 Open an [issue](https://github.com/claydugo/wesl-py/issues) with a small example,
 what you expect, and what happens instead.
-For a bug, include the error output, your Python and wesl-py versions, and your OS.
+For a bug, include the error output, your Python and wesl-py versions, and your
+OS.
 For a GPU failure, also include the adapter and backend.
 
 Questions about unclear documentation are useful reports too.
@@ -82,11 +83,11 @@ The Rust regression test runs with
 
 GPU checks use additional environments:
 
-| Area | Command |
-| --- | --- |
-| Generated WGSL | `pixi run -e gpu python -m pytest tests/test_compute.py -q` |
-| Shader executor and pytest plugin | `pixi run -e testing python -m pytest tests/test_testing.py tests/test_pytest_plugin.py tests/shaders -q` |
-| Minimum pytest version | `pixi run -e testing-minimum python -m pytest tests/test_pytest_plugin.py -q` |
+- Generated WGSL: `pixi run -e gpu python -m pytest tests/test_compute.py -q`
+- Shader executor and pytest plugin: `pixi run -e testing python -m pytest
+  tests/test_testing.py tests/test_pytest_plugin.py tests/shaders -q`
+- Minimum pytest version: `pixi run -e testing-minimum python -m pytest
+  tests/test_pytest_plugin.py -q`
 
 The `gpu` environment adds NumPy and wgpu-py.
 The `testing` environment also includes the example dependencies and pytest plugins.
@@ -110,13 +111,17 @@ pixi run format-check
 
 These tasks select the `dev` environment.
 After a Rust change, run `pixi reinstall --locked -e dev wesl-py` first.
-`lint` runs Ruff, Clippy, ty, Pyrefly, Pyright, and native stubtest.
+`lint` runs Ruff, markdownlint, Clippy, ty, Pyrefly, Pyright, and native stubtest.
 The type checkers check the Python API. Stubtest checks the compiled extension.
-`pixi run format` applies Ruff and rustfmt.
+`pixi run format` applies Ruff, rustfmt, and automatic markdownlint fixes.
+Rustfmt uses the Rust 2024 style.
+Markdownlint enables all rules and respects `.gitignore`.
 
 Ruff discovers Python files from the repository root.
-Cargo denies Clippy's `all` and `pedantic` groups plus selected restriction and nursery lints.
-See [Cargo.toml](Cargo.toml) and [clippy.toml](clippy.toml) for the rules and complexity limits.
+Cargo denies Clippy's `all` and `pedantic` groups plus selected restriction and
+nursery lints.
+See [Cargo.toml](Cargo.toml) and [clippy.toml](clippy.toml) for the rules and
+complexity limits.
 The binding uses `expect` attributes with reasons for its argument count and length.
 
 Run these additional checks when the change affects the corresponding area:
@@ -140,14 +145,17 @@ Window tests require a display and native cursor positioning.
 On Linux, they require X11. Install Xvfb and xauth to run them in an isolated display:
 
 ```bash
-env -u WAYLAND_DISPLAY XDG_SESSION_TYPE=x11 PYGLFW_LIBRARY_VARIANT=x11 xvfb-run -a pixi run -e testing python -m pytest tests/examples/test_example_windows.py -q
+env -u WAYLAND_DISPLAY XDG_SESSION_TYPE=x11 PYGLFW_LIBRARY_VARIANT=x11 \
+  xvfb-run -a pixi run -e testing python -m pytest \
+  tests/examples/test_example_windows.py -q
 ```
 
 Pytest skips these tests without a display or when GLFW uses Wayland.
 
 ## Edit shaders
 
-Configure your editor to use the nearest `wesl.toml` as the wgsl-analyzer project root.
+Configure your editor to use the nearest `wesl.toml` as the wgsl-analyzer
+project root.
 The manifests point to shader sources in the checkout.
 See [shader editing](docs/testing.md#shader-editing) for setup in other projects.
 

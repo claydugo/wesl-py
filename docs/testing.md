@@ -70,10 +70,11 @@ Multiple conditional definitions of one name produce one item.
 Import assertions from `wgsl_test`. The installed package includes the two
 [upstream assertion shaders](https://github.com/webgpu-tools/wesl-js/tree/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test/shaders)
 and registers them automatically for compilation and testing.
-Only attribution comments differ from upstream. The distribution names upstream `lib.wesl` as `package.wesl`
-to identify the package root for the resolver and wgsl-analyzer.
-The runner instruments them to capture typed values, source locations, assertion counts,
-and completion status.
+Only attribution comments differ from upstream. The distribution names upstream
+`lib.wesl` as `package.wesl` to identify the package root for the resolver and
+wgsl-analyzer.
+The runner instruments them to capture typed values, source locations, assertion
+counts, and completion status.
 It does not modify the packaged files.
 
 Install the `testing` extra to obtain pytest and wgpu-py.
@@ -99,16 +100,19 @@ def wesl_dependencies():
     return {"library": Path("path/to/library")}
 ```
 
-The [imports example](../examples/imports.py) fetches and registers an upstream module.
-See [library directories](api.md#compile-strings-and-files) for the registration API.
+The [imports example](../examples/imports.py) fetches and registers an upstream
+module.
+See [library directories](api.md#compile-strings-and-files) for the registration
+API.
 
-| Function | Comparison |
-| --- | --- |
-| `expect(condition)` | Boolean is true |
-| `expectEq(actual, expected)` | Exact `u32` equality |
-| `expectNear(actual, expected)` | `f32` comparison with relative tolerance `0.001` and absolute tolerance `0.000001` |
-| `expectWithin(actual, expected, relative, absolute)` | `f32` comparison with explicit tolerances |
-| `expectUlp(actual, expected, maximum)` | At most `maximum` representable `f32` steps apart |
+- `expect(condition)`: Boolean is true
+- `expectEq(actual, expected)`: Exact `u32` equality
+- `expectNear(actual, expected)`: `f32` comparison with relative tolerance
+  `0.001` and absolute tolerance `0.000001`
+- `expectWithin(actual, expected, relative, absolute)`: `f32` comparison with
+  explicit tolerances
+- `expectUlp(actual, expected, maximum)`: At most `maximum` representable `f32`
+  steps apart
 
 The floating-point functions also have `Vec2`, `Vec3`, and `Vec4` suffixes.
 For example, `expectNearVec3` accepts two `vec3f` values.
@@ -119,7 +123,8 @@ infinity. GPU floating-point behavior still applies.
 
 A failure reports the first failing assertion and underlines its source span.
 Paths are relative to the project root.
-The report shows actual and expected values, followed by the failure and assertion counts.
+The report shows actual and expected values, followed by the failure and
+assertion counts.
 If several assertions fail, the report labels the first failure.
 
 Scalar values retain their types. Unsigned integers retain all 32 bits.
@@ -181,8 +186,9 @@ Its `n` argument counts workgroups. `constants` sets override values in the pipe
 Use the device API directly for other entry points, bind groups, textures, or samplers.
 Use pytest parametrization for input and feature matrices.
 
-See the [executable examples](../tests/examples/testing/README.md) for shared feature flags,
-compute dispatch, texture sampling, image comparisons, and compilation failures.
+See the [executable examples](../tests/examples/testing/README.md) for shared
+feature flags, compute dispatch, texture sampling, image comparisons, and
+compilation failures.
 
 ### Resources for WESL tests
 
@@ -248,8 +254,8 @@ Create a render pipeline through `wesl_device` and pass the compiled WGSL to
 and readback layout in the test.
 The [fragment example](../tests/examples/testing/test_fragment.py) renders a texture
 with a sampler and a uniform buffer. The
-[pipeline example](../tests/examples/testing/test_pipeline.py) shares a texture between
-compute and rendering.
+[pipeline example](../tests/examples/testing/test_pipeline.py) shares a texture
+between compute and rendering.
 
 ### Image snapshots
 
@@ -289,19 +295,18 @@ The plugin does not support native WESL `@snapshot` annotations.
 
 The plugin provides these fixtures:
 
-| Fixture | Default |
-| --- | --- |
-| `wesl_device` | One device per pytest session or xdist worker |
-| `wesl_compiler` | A `Compiler` using the shared compilation fixtures |
-| `wesl_resources` | Empty mapping of groups to bind-group entries |
-| `wesl_modules` | Empty mapping of additional WESL modules |
-| `wesl_dependencies` | Empty mapping of package names to directories |
-| `wesl_filenames` | Empty mapping of module names to source filenames |
-| `wesl_features` | Default `Features`, shared by both options fixtures |
-| `wesl_options` | `CompileOptions` for `wesl_compiler`, using `wesl_features` |
-| `wesl_test_options` | `TestOptions` for native WESL tests, using `wesl_features` |
-| `wesl_constants` | Empty mapping of WGSL overrides |
-| `wesl_root_directory` | Resolved `wesl_root` directory |
+- `wesl_device`: One device per pytest session or xdist worker
+- `wesl_compiler`: A `Compiler` using the shared compilation fixtures
+- `wesl_resources`: Empty mapping of groups to bind-group entries
+- `wesl_modules`: Empty mapping of additional WESL modules
+- `wesl_dependencies`: Empty mapping of package names to directories
+- `wesl_filenames`: Empty mapping of module names to source filenames
+- `wesl_features`: Default `Features`, shared by both options fixtures
+- `wesl_options`: `CompileOptions` for `wesl_compiler`, using `wesl_features`
+- `wesl_test_options`: `TestOptions` for native WESL tests, using
+  `wesl_features`
+- `wesl_constants`: Empty mapping of WGSL overrides
+- `wesl_root_directory`: Resolved `wesl_root` directory
 
 Override fixtures in `conftest.py`. Parametrized fixtures produce separate shader
 test cases with normal pytest IDs. Use `pytest_collection_modifyitems` to attach
@@ -334,8 +339,8 @@ def wesl_features(request):
     return wesl.Features(flags={"vector": request.param})
 ```
 
-Override `wesl_device` to select an adapter, request features or limits, or use an
-application's device. The fixture that creates a device owns its teardown.
+Override `wesl_device` to select an adapter, request features or limits, or use
+an application's device. The fixture that creates a device owns its teardown.
 `wesl.testing.run_test()` works outside pytest. Its signature is:
 
 ```python
@@ -373,14 +378,17 @@ The function raises `ShaderAssertionError` on assertion failure and
 
 `ShaderAssertionError` inherits from `AssertionError` and exposes these attributes:
 
-| Attribute | Value |
-| --- | --- |
-| `diagnostic` | A [`wesl.Diagnostic`](api.md#diagnostics) for the first failing assertion. |
-| `filename` | The display path relative to the root directory, or the module name if no filename exists. |
-| `actual` | The actual value from the first failure: a Python `bool`, `int`, `float`, or tuple of floats. |
-| `expected` | The expected value from the first failure, with the same type as `actual`. |
-| `checks` | The total number of assertions executed, including passing assertions. |
-| `failures` | The total number of failed assertions. |
+- `diagnostic`: A [`wesl.Diagnostic`](api.md#diagnostics) for the first failing
+  assertion.
+- `filename`: The display path relative to the root directory, or the module
+  name if no filename exists.
+- `actual`: The actual value from the first failure: a Python `bool`, `int`,
+  `float`, or tuple of floats.
+- `expected`: The expected value from the first failure, with the same type as
+  `actual`.
+- `checks`: The total number of assertions executed, including passing
+  assertions.
+- `failures`: The total number of failed assertions.
 
 Vectors contain two, three, or four components.
 Integer reports preserve exact values. Boolean failures expose `False` and `True`.
@@ -453,7 +461,12 @@ To use the shaders from a Python installation instead, run this from the directo
 that contains your project's `wesl.toml`:
 
 ```bash
-pixi run python -c "import os; from importlib.resources import files; print(os.path.relpath(files('wesl') / 'shaders/wgsl_test'))"
+pixi run python -c "
+import os
+from importlib.resources import files
+
+print(os.path.relpath(files('wesl') / 'shaders/wgsl_test'))
+"
 ```
 
 Copy the returned path into the dependency entry.

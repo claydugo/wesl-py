@@ -393,6 +393,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/kernel-headers_linux-64-4.18.0-he073ed8_9.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/libgcc-devel_linux-64-16.2.0-he3ce08f_104.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/libstdcxx-devel_linux-64-16.2.0-h86e191b_104.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/markdownlint-cli2-0.23.3-h5ac6406_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/mypy_extensions-1.1.0-pyha770c72_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/nodeenv-1.10.0-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/packaging-26.3-pyhc364b38_0.conda
@@ -3597,6 +3598,17 @@ packages:
   run_exports: {}
   size: 69017
   timestamp: 1778169663339
+- conda: https://conda.anaconda.org/conda-forge/noarch/markdownlint-cli2-0.23.3-h5ac6406_0.conda
+  sha256: 45b0913f97baa92310fe259a36e2d21ab7e18ea091ee2cc530774a7d357c4570
+  md5: c65177cc0ce74738af6b25ceb78d2965
+  depends:
+  - nodejs
+  license: MIT
+  license_family: MIT
+  purls: []
+  run_exports: {}
+  size: 2246247
+  timestamp: 1789995027396
 - conda: https://conda.anaconda.org/conda-forge/noarch/mdurl-0.1.2-pyhd8ed1ab_1.conda
   sha256: 78c1bbe1723449c52b7a9df1af2ee5f005209f67e40b6e1d3c7619127c43b1c7
   md5: 592132998493b3ff25fd7479396e8351

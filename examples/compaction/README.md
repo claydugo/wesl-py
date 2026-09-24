@@ -18,11 +18,13 @@ It can collect threshold detections, active particles, or work for a later kerne
 Atomic appends can produce different orders between runs.
 This example gives each selected value a unique output position with a prefix scan.
 
-1. [scan.wesl](shaders/scan.wesl) converts values to selection bits and scans blocks of 128.
+1. [scan.wesl](shaders/scan.wesl) converts values to selection bits and scans
+   blocks of 128.
    It writes an exclusive prefix for each element and a total for each block.
 2. The same shader scans the block totals with `select_values=False`.
    [compute.py](compute.py) repeats this step until one block remains.
-3. [offsets.wesl](shaders/offsets.wesl) adds parent prefixes from the top level down.
+3. [offsets.wesl](shaders/offsets.wesl) adds parent prefixes from the top level
+   down.
 4. [scatter.wesl](shaders/scatter.wesl) writes selected values to their prefix positions.
 
 All intermediate buffers stay on the GPU.
@@ -54,13 +56,17 @@ The first level needs `ceil(element_count / 128)` workgroups on the x axis.
 ## Tests
 
 ```bash
-pixi run -e testing python -m pytest tests/examples/test_compaction.py tests/examples/compaction -q
+pixi run -e testing python -m pytest \
+  tests/examples/test_compaction.py tests/examples/compaction -q
 ```
 
 The tests compare prefixes and selected values with NumPy across hierarchy boundaries.
 
-Pytest discovers [predicate.test.wesl](../../tests/examples/compaction/predicate.test.wesl) as native shader tests.
-[conftest.py](../../tests/examples/compaction/conftest.py) supplies both predicate variants and the threshold override.
+Pytest discovers
+[predicate.test.wesl](../../tests/examples/compaction/predicate.test.wesl) as
+native shader tests.
+[conftest.py](../../tests/examples/compaction/conftest.py) supplies both
+predicate variants and the threshold override.
 
 Collect the native tests without GPU dependencies:
 

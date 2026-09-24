@@ -14,7 +14,8 @@ Run the compilation tests and collect the native tests without GPU dependencies:
 
 ```bash
 pixi run -e test python -m pytest tests/examples/testing/test_compilation.py -v
-pixi run -e test python -m pytest tests/examples/testing/shaders --collect-only -q
+pixi run -e test python -m pytest \
+  tests/examples/testing/shaders --collect-only -q
 ```
 
 The `wesl_compiler` fixture reads the shared compilation configuration.
@@ -54,7 +55,8 @@ pixi run -e testing python -m pytest tests/examples/testing/shaders/buffers -v
 
 The local [conftest.py](shaders/buffers/conftest.py) supplies two buffers through
 `wesl_resources`. One contains input values. The other contains the NumPy reference.
-The fixture yields native bind-group entries and destroys its buffers after each test.
+The fixture yields native bind-group entries and destroys its buffers after each
+test.
 
 Its `wesl_constants` fixture selects two values for the shader's `gain` override.
 These values combine with both feature variants to produce four named cases.
@@ -73,7 +75,9 @@ The fragment cases use images of size 2 by 2, 4 by 2, and 2 by 4.
 Run only these numerical checks with:
 
 ```bash
-pixi run -e testing python -m pytest tests/examples/testing/test_compute.py tests/examples/testing/test_fragment.py -v
+pixi run -e testing python -m pytest \
+  tests/examples/testing/test_compute.py \
+  tests/examples/testing/test_fragment.py -v
 ```
 
 The [pipeline test](test_pipeline.py) joins compute and rendering:
@@ -116,8 +120,11 @@ Select the file explicitly to see the shader location, actual value, expected
 value and assertion count:
 
 ```bash
-pixi run -e testing python -m pytest tests/examples/testing/shaders/failure_demo.wesl -k clamped -v --junitxml=failure.xml
-pixi run -e testing python -m pytest tests/examples/testing/shaders/failure_demo.wesl -k clamped --tb=line
+pixi run -e testing python -m pytest \
+  tests/examples/testing/shaders/failure_demo.wesl \
+  -k clamped -v --junitxml=failure.xml
+pixi run -e testing python -m pytest \
+  tests/examples/testing/shaders/failure_demo.wesl -k clamped --tb=line
 ```
 
 Both commands fail intentionally. The first command also records the assertion
@@ -129,7 +136,8 @@ Use normal pytest selection and reporting:
 
 ```bash
 pixi run -e testing python -m pytest tests/examples/testing -k clamped -v
-pixi run -e testing python -m pytest tests/examples/testing/shaders/buffers -k double_gain -v
+pixi run -e testing python -m pytest \
+  tests/examples/testing/shaders/buffers -k double_gain -v
 pixi run -e testing python -m pytest tests/examples/testing -m wesl -v
 pixi run -e testing python -m pytest tests/examples/testing -n 2 --junitxml=results.xml
 ```

@@ -68,14 +68,14 @@ The retention options follow
 [wesl-rs `CompileOptions`](https://docs.rs/wesl/0.4.4/wesl/struct.CompileOptions.html).
 `keep_main` and `mangle_main` map to upstream's `keep_root` and `mangle_root`.
 
-| Option | Effect |
-| --- | --- |
-| `strip=True` | Keep selected root declarations and their dependencies. |
-| `strip=False` | Preserve all declarations in each loaded module and resolve their dependencies. |
-| `keep=None` | Select entry points when stripping is enabled. |
-| `keep=["answer"]` | Select these original root names when stripping is enabled. |
-| `keep=[]` | Select no root declarations when stripping is enabled. |
-| `keep_main=True` | Select all active root declarations when stripping is enabled. |
+- `strip=True`: Keep selected root declarations and their dependencies.
+- `strip=False`: Preserve all declarations in each loaded module and resolve
+  their dependencies.
+- `keep=None`: Select entry points when stripping is enabled.
+- `keep=["answer"]`: Select these original root names when stripping is enabled.
+- `keep=[]`: Select no root declarations when stripping is enabled.
+- `keep_main=True`: Select all active root declarations when stripping is
+  enabled.
 
 `strip=False` overrides `keep_main` and `keep`.
 `keep_main=True` overrides `keep`.
@@ -83,7 +83,8 @@ The compiler ignores unknown names in `keep`. This includes declarations that co
 translation removes.
 
 A root with only unused helpers produces empty WGSL under the default options.
-The compiler loads modules when declarations depend on them. It does not scan every file in a package.
+The compiler loads modules when declarations depend on them. It does not scan
+every file in a package.
 The binding enables upstream's lazy import resolution.
 
 Set `mangle_main=True` to rename root declarations as well as imported declarations.
@@ -91,14 +92,13 @@ Selections always use original names, independent of mangling.
 
 The remaining `CompileOptions` fields also use upstream names and defaults:
 
-| Option | Effect |
-| --- | --- |
-| `imports=True` | Resolve imports. |
-| `condcomp=True` | Evaluate conditional translation attributes. |
-| `lower=False` | Enable upstream lowering when set to `True`. This build inlines aliases and constants. |
-| `validate=True` | Run upstream compiler checks. |
-| `sourcemap=True` | Record source text and declaration names. |
-| `mangler=ManglerKind.Escape` | Select the declaration naming scheme. |
+- `imports=True`: Resolve imports.
+- `condcomp=True`: Evaluate conditional translation attributes.
+- `lower=False`: Enable upstream lowering when set to `True`. This build inlines
+  aliases and constants.
+- `validate=True`: Run upstream compiler checks.
+- `sourcemap=True`: Record source text and declaration names.
+- `mangler=ManglerKind.Escape`: Select the declaration naming scheme.
 
 The build does not enable upstream generics or evaluation.
 `CompileOptions` does not expose the inactive generics option.
@@ -112,7 +112,8 @@ The pinned wesl-rs 0.4.4 compiler has these known limitations:
   See the [10,000-term expression failure](https://github.com/claydugo/wesl-py/actions/runs/35526430139/job/106119676932).
 
 The binding uses the published crates without local compiler patches.
-It stays on 0.4.4 so existing shader libraries remain usable without visibility modifiers.
+It stays on 0.4.4 so existing shader libraries remain usable without visibility
+modifiers.
 See the [upstream recommendation](https://github.com/webgpu-tools/wesl-rs/issues/300#issuecomment-5757180358).
 
 `mangler` accepts `ManglerKind.Escape`, `ManglerKind.Hash`,
@@ -255,12 +256,11 @@ All compilation functions return an immutable `CompileResult`.
 Use `result.wgsl` to pass the shader to wgpu-py.
 `str(result)` also returns WGSL. Results support equality and pickle.
 
-| Attribute | Meaning |
-| --- | --- |
-| `wgsl` | Compiled WGSL source. |
-| `modules` | Tuple of loaded module names in upstream order, with the root first. |
-| `entry_points` | Tuple of entry-point names in the emitted WGSL. |
-| `sources` | Dictionary from loaded module names to immutable `Source` records. |
+- `wgsl`: Compiled WGSL source.
+- `modules`: Tuple of loaded module names in upstream order, with the root
+  first.
+- `entry_points`: Tuple of entry-point names in the emitted WGSL.
+- `sources`: Dictionary from loaded module names to immutable `Source` records.
 
 Each access to `sources` returns a dictionary copy.
 The source text comes from the upstream source map.
@@ -354,15 +354,14 @@ Syntax errors retain their module context.
 is an immutable value. It supports equality, hashing, and pickle.
 Compiler exceptions also preserve their diagnostics through pickle.
 
-| Attribute | Meaning |
-| --- | --- |
-| `message` | Error message without the source excerpt. |
-| `module` | WESL module name, when available. |
-| `filename` | Display filename, when available. |
-| `source` | Source text associated with the error, when available. |
-| `span` | UTF-8 byte offsets `(start, end)` with an exclusive end. |
-| `line`, `column` | The start position, with one-based line and character numbers. |
-| `end_line`, `end_column` | The exclusive end position, with the same numbering. |
+- `message`: Error message without the source excerpt.
+- `module`: WESL module name, when available.
+- `filename`: Display filename, when available.
+- `source`: Source text associated with the error, when available.
+- `span`: UTF-8 byte offsets `(start, end)` with an exclusive end.
+- `line`, `column`: The start position, with one-based line and character
+  numbers.
+- `end_line`, `end_column`: The exclusive end position, with the same numbering.
 
 Missing metadata is `None`. EOF spans have equal offsets at the source
 length in bytes. These offsets are not Python character indices.
@@ -385,8 +384,8 @@ Concurrent calls can share inputs when callers do not modify those inputs.
 ## Build identity
 
 `wesl.__version__` identifies the binding.
-`wesl.__version__` matches Python distribution metadata. This package uses the published WESL and
-`wgsl-parse` 0.4.4 crates without local patches.
+`wesl.__version__` matches Python distribution metadata. This package uses the
+published WESL and `wgsl-parse` 0.4.4 crates without local patches.
 Report parser defects to the [upstream issue tracker](https://github.com/webgpu-tools/wesl-rs/issues).
 See [LICENSE](../LICENSE) for source provenance and third-party notices.
 

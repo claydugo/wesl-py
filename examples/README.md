@@ -43,7 +43,8 @@ Each example's README includes its verification command.
 
 ## Shader tests
 
-The [testing examples](../tests/examples/testing/README.md) use pytest without an interactive window.
+The [testing examples](../tests/examples/testing/README.md) use pytest without
+an interactive window.
 They cover compilation, native WESL tests, compute dispatch, and fragment images.
 The tour also covers resources from Python fixtures, a texture shared between
 compute and rendering, stored baselines, and an explicit failure demo.

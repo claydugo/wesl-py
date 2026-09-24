@@ -29,14 +29,18 @@ Follow these modules to see how the library builds up:
 
 1. [indexing.wesl](../imaging/indexing.wesl) maps image coordinates to buffer indices.
    [sampling.wesl](../imaging/sampling.wesl) adds clamping and channel access.
-2. [gaussian.wesl](../imaging/gaussian.wesl) imports indexing and clamping to implement convolution.
+2. [gaussian.wesl](../imaging/gaussian.wesl) imports indexing and clamping to
+   implement convolution.
    It also defines the weights and radius that kernels can import separately.
-3. [filter.wesl](shaders/filter.wesl) imports convolution and provides a compute entry point.
-   [correlation.wesl](shaders/correlation.wesl) combines Gaussian weights with shared statistics.
+3. [filter.wesl](shaders/filter.wesl) imports convolution and provides a compute
+   entry point.
+   [correlation.wesl](shaders/correlation.wesl) combines Gaussian weights with
+   shared statistics.
 4. [compute.py](compute.py) uploads coefficients and schedules the GPU passes.
    Enhancement uses the same filter in two directions and at two scales.
 
-The viewer in [viewer.py](viewer.py) connects that computation to the controls and display.
+The viewer in [viewer.py](viewer.py) connects that computation to the controls
+and display.
 `enhance()` and `composite()` use pygfx's shared GPU device for their resources.
 
 The scale slider sets `sigma` in source pixels.
@@ -81,7 +85,8 @@ The colony is dark against a bright background in this sample.
 The shader excludes brighter pixels before computing the statistics.
 
 The mask does not use GFP or RFP values.
-Selecting pixels by their summed fluorescence can induce negative correlation between independent channels.
+Selecting pixels by their summed fluorescence can induce negative correlation
+between independent channels.
 Background pixels have no overlay.
 The shader also masks either channel when its local variance is at most `1e-6`.
 
@@ -148,7 +153,8 @@ Radius is a spatial coordinate, not elapsed time.
 
 `smooth()` accepts an arbitrary number of fields.
 Enhancement and boundary estimation use the same filter.
-[correlation.wesl](shaders/correlation.wesl) accumulates correlation statistics in two passes.
+[correlation.wesl](shaders/correlation.wesl) accumulates correlation statistics
+in two passes.
 Both kernels import Gaussian weights and boundary handling.
 The `horizontal` feature specializes both kernels.
 
@@ -185,18 +191,23 @@ It removes unused declarations, including resource bindings.
 
 ```bash
 pixi run -e testing python -m pytest tests/examples/test_multiscale.py -q
-pixi run -e testing python -m pytest tests/examples/test_multiscale_analysis.py tests/examples/multiscale tests/examples/test_example_render.py -q
+pixi run -e testing python -m pytest \
+  tests/examples/test_multiscale_analysis.py tests/examples/multiscale \
+  tests/examples/test_example_render.py -q
 ```
 
-[test_multiscale.py](../../tests/examples/test_multiscale.py) compares the filter with separable NumPy convolution.
+[test_multiscale.py](../../tests/examples/test_multiscale.py) compares the
+filter with separable NumPy convolution.
 Add `--image` to verify the full TIFF as well as synthetic inputs.
 Synthetic checks do not download the TIFF.
 
 [test_multiscale_analysis.py](../../tests/examples/test_multiscale_analysis.py)
 compares correlation, distances, polar samples, and profiles with NumPy references.
-It verifies that background pixels do not create correlation at a constant foreground edge.
+It verifies that background pixels do not create correlation at a constant
+foreground edge.
 It also verifies independent channels and correlation after brightness offsets.
 [analysis.test.wesl](../../tests/examples/multiscale/analysis.test.wesl)
 tests the imported statistics and coordinate functions directly.
-The render tests exercise every view and verify that display gains do not change correlation.
+The render tests exercise every view and verify that display gains do not change
+correlation.
 They verify that polar profiles omit unsampled rings.

@@ -5,8 +5,8 @@ and the WESL library in this directory.
 
 ## Sample image
 
-`load_colony()` in [common.py](../multiscale/common.py) loads a microscopy image of a
-bacterial colony from `imageio:bacterial_colony.tif` with the tifffile plugin.
+`load_colony()` in [common.py](../multiscale/common.py) loads a microscopy image
+of a bacterial colony from `imageio:bacterial_colony.tif` with the tifffile plugin.
 Imageio downloads and caches the image on first use.
 The TIFF contains three `uint8` planes with shape `(3, 2048, 2048)`:
 

@@ -45,13 +45,16 @@ The example uses core f32 operations without optional GPU features.
 ## Tests
 
 ```bash
-pixi run -e testing python -m pytest tests/examples/test_rmsnorm.py tests/examples/rmsnorm -q
+pixi run -e testing python -m pytest \
+  tests/examples/test_rmsnorm.py tests/examples/rmsnorm -q
 ```
 
 The tests compare both shader variants with NumPy and verify input limits.
 
-Pytest discovers [row.test.wesl](../../tests/examples/rmsnorm/row.test.wesl) as native shader tests.
-[conftest.py](../../tests/examples/rmsnorm/conftest.py) supplies their buffers, feature flags, and pipeline constants.
+Pytest discovers [row.test.wesl](../../tests/examples/rmsnorm/row.test.wesl) as
+native shader tests.
+[conftest.py](../../tests/examples/rmsnorm/conftest.py) supplies their buffers,
+feature flags, and pipeline constants.
 
 Collect the native tests without GPU dependencies:
 

@@ -77,20 +77,29 @@ fn addition() {
 ```
 
 Run `pixi run python -m pytest shaders -q`.
-The pytest plugin collects `@test` functions and reports failures at the shader file and line.
-The package includes assertion shaders. Execution requires a hardware or software WebGPU adapter.
+The pytest plugin collects `@test` functions and reports failures at the shader
+file and line.
+The package includes assertion shaders. Execution requires a hardware or
+software WebGPU adapter.
 See the [shader testing guide](https://github.com/claydugo/wesl-py/blob/main/docs/testing.md)
 for Python fixtures, compute tests, and image comparisons.
 
 ## Examples
 
-- [Third-party imports](https://github.com/claydugo/wesl-py/blob/main/examples/imports.py): fetch a library module and compile a shader that uses it.
-- [SDF playground](https://github.com/claydugo/wesl-py/blob/main/examples/sdf/README.md): share geometry between rendering and particle collisions.
-- [Multiscale fluorescence](https://github.com/claydugo/wesl-py/blob/main/examples/multiscale/README.md): share convolution across image axes, scales, and implementations.
-- [RMSNorm](https://github.com/claydugo/wesl-py/blob/main/examples/rmsnorm/README.md) and [compaction](https://github.com/claydugo/wesl-py/blob/main/examples/compaction/README.md): verify compute results without a window.
+- [Third-party imports](https://github.com/claydugo/wesl-py/blob/main/examples/imports.py):
+  fetch a library module and compile a shader that uses it.
+- [SDF playground](https://github.com/claydugo/wesl-py/blob/main/examples/sdf/README.md):
+  share geometry between rendering and particle collisions.
+- [Multiscale fluorescence](https://github.com/claydugo/wesl-py/blob/main/examples/multiscale/README.md):
+  share convolution across image axes, scales, and implementations.
+- [RMSNorm](https://github.com/claydugo/wesl-py/blob/main/examples/rmsnorm/README.md)
+  and [compaction](https://github.com/claydugo/wesl-py/blob/main/examples/compaction/README.md):
+  verify compute results without a window.
 
-See the [examples index](https://github.com/claydugo/wesl-py/blob/main/examples/README.md) for commands.
+See the [examples index](https://github.com/claydugo/wesl-py/blob/main/examples/README.md)
+for commands.
 
 ## License
 
-MIT. See [LICENSE](https://github.com/claydugo/wesl-py/blob/main/LICENSE) for third-party notices.
+MIT. See [LICENSE](https://github.com/claydugo/wesl-py/blob/main/LICENSE) for
+third-party notices.
