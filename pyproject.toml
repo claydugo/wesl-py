@@ -27,17 +27,6 @@ testing = [
     "pytest>=8.2",
     "wgpu==0.32.0",
 ]
-examples = [
-    "glfw>=2.7",
-    "imageio>=2.37",
-    "imgui-bundle>=1.92.801,<1.92.900",
-    "numpy>=2.1",
-    "pygfx>=0.17",
-    "rendercanvas>=2.7.2",
-    "tifffile>=2024.8.30",
-    "wgpu==0.32.0",
-]
-
 [project.entry-points.pytest11]
 wesl = "wesl.pytest_plugin"
 

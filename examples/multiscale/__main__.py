@@ -5,7 +5,7 @@ import imageio.v3 as imageio
 import numpy
 from rendercanvas.offscreen import RenderCanvas as OffscreenRenderCanvas
 
-from examples.common import load_colony
+from examples.multiscale.common import load_colony
 from examples.multiscale.viewer import Viewer
 
 parser = argparse.ArgumentParser(

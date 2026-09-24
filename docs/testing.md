@@ -459,21 +459,3 @@ pixi run python -c "import os; from importlib.resources import files; print(os.p
 Copy the returned path into the dependency entry.
 Update it if you move or replace the environment.
 This manifest configures the editor. Python compilation registers `wgsl_test` automatically.
-
-## Plugin implementation
-
-The pytest plugin delegates parametrization to pytest's collection hook.
-It keeps each collected item and its plugin state.
-It attaches WESL reporting methods to the item.
-Pytest controls fixture setup, including autouse fixtures.
-The runner checks conditional tests after fixture setup.
-The plugin tests cover the minimum and current pytest versions.
-
-The `pytest_generate_tests` hook exposes each shader callable during collection.
-The collector then removes it from the synthetic module.
-This prevents shader names from becoming Python hooks during subsequent collection.
-
-The plugin modifies undocumented pytest traceback fields to preserve shader locations
-in terminal, JUnit, and xdist reports. Keep the regression tests for these reports.
-Pytest supports [custom failure strings](https://docs.pytest.org/en/stable/example/nonpython.html),
-but a replacement must preserve the locations in all three formats.

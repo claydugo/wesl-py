@@ -28,7 +28,7 @@ def composite(
 ) -> tuple[pygfx.Texture, ComputeShader, wgpu.GPUBuffer]:
     device = get_shared().device
     width, height = dimensions
-    directory = Path(__file__).parent
+    directory = Path(__file__).parents[1]
     shader = ComputeShader(
         wesl.compile_file(
             directory / "imaging/composite.wesl", root_directory=directory

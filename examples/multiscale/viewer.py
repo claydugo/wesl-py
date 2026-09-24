@@ -9,7 +9,7 @@ from imgui_bundle import imgui
 from rendercanvas import BaseRenderCanvas
 from wgpu.utils.imgui import ImguiRenderer
 
-from examples.common import composite
+from examples.multiscale.common import composite
 from examples.multiscale.compute import (
     analyze,
     create_shader,

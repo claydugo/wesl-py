@@ -21,8 +21,6 @@ jobs:
       - run: pixi run --locked lint
       - run: pixi run --locked format-check
       - run: pixi run --locked -e test cargo test --locked --test upstream
-      - run: pixi run --locked -e test python -m pytest tests -q
-      - run: pixi run --locked test-freethreading
       - run: pixi run --locked check-dependencies
 
   sdist:
@@ -130,8 +128,6 @@ jobs:
           manylinux: "2_28"
           working-directory: source
           args: --release --locked --out ../dist -i python3.15
-      - if: runner.os != 'Linux'
-        run: pixi run --locked -e artifacts-py315 maturin build --manifest-path source/Cargo.toml --release --locked --out dist -i python
       - name: Repair macOS wheels
         if: runner.os == 'macOS'
         shell: bash
@@ -150,55 +146,13 @@ jobs:
       - name: Audit Python ABI
         shell: bash
         run: pixi run --locked -e artifacts abi3audit --strict --summary dist/*-cp312-abi3-*.whl
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: wheel-${{ matrix.target }}
-          path: dist/*.whl
-          if-no-files-found: error
-
-  test-wheel:
-    needs: wheel
-    name: Test ${{ matrix.platform.target }} / ${{ matrix.runtime.python }} / ${{ matrix.runtime.wheel }}
-    runs-on: ${{ matrix.platform.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        platform:
-          - runner: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-          - runner: macos-26
-            target: aarch64-apple-darwin
-          - runner: windows-2025
-            target: x86_64-pc-windows-msvc
-        runtime:
-          - python: "3.12"
-            wheel: cp312-abi3
-          - python: "3.13"
-            wheel: cp312-abi3
-          - python: "3.14"
-            wheel: cp312-abi3
-          - python: "3.15"
-            wheel: cp312-abi3
-          - python: "3.15"
-            wheel: cp315-abi3.abi3t
-          - python: "3.15t"
-            wheel: cp315-abi3.abi3t
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: wheel-${{ matrix.platform.target }}
-          path: dist
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
         with:
-          python-version: ${{ matrix.runtime.python }}
+          python-version: "3.12"
           activate-environment: true
       - name: Install wheel
         shell: bash
-        env:
-          WHEEL_TAG: ${{ matrix.runtime.wheel }}
-        run: uv pip install pytest dist/*-"$WHEEL_TAG"-*.whl
+        run: uv pip install pytest dist/*-cp312-abi3-*.whl
       - run: uv pip check
       - name: Test wheel installation
         shell: bash
@@ -224,14 +178,63 @@ jobs:
           PY
       - name: Test Python API
         run: python -m pytest tests -q
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: wheel-${{ matrix.target }}
+          path: dist/*.whl
+          if-no-files-found: error
 
-  compute:
+  test-wheel:
     needs: wheel
+    name: Test Linux / Python ${{ matrix.python }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        extra: [examples, testing]
+        python: ["3.13", "3.14", "3.15"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: wheel-x86_64-unknown-linux-gnu
+          path: dist
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        with:
+          python-version: ${{ matrix.python }}
+          activate-environment: true
+      - run: uv pip install pytest dist/*-cp312-abi3-*.whl
+      - run: uv pip check
+      - run: python -m pytest tests -q
+
+  freethreading:
+    needs: wheel
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: wheel-x86_64-unknown-linux-gnu
+          path: dist
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        with:
+          python-version: "3.15"
+          activate-environment: true
+      - run: uv pip install pytest dist/*-cp315-abi3.abi3t-*.whl
+      - run: uv pip check
+      - run: python -m pytest tests -q
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        with:
+          python-version: "3.15t"
+          activate-environment: true
+          venv-path: .venv-freethreading
+      - run: uv pip install pytest dist/*-cp315-abi3.abi3t-*.whl
+      - run: uv pip check
+      - run: python -m pytest tests -q
+
+  compute:
+    needs: wheel
+    runs-on: ubuntu-24.04
     env:
       WGPU_BACKEND_TYPE: Vulkan
       VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.json
@@ -246,13 +249,10 @@ jobs:
           python-version: "3.12"
           activate-environment: true
       - name: Install wheel with extra
-        env:
-          EXTRA: ${{ matrix.extra }}
         run: |
           wheels=(dist/*-cp312-abi3-*.whl)
-          uv pip install pytest "${wheels[0]}[$EXTRA]"
+          uv pip install pytest "${wheels[0]}[testing]"
       - name: Install shader test dependencies
-        if: matrix.extra == 'testing'
         run: uv pip install numpy pytest-regressions pytest-xdist
       - run: uv pip check
       - name: Install Mesa Vulkan driver
@@ -264,10 +264,29 @@ jobs:
           XDG_RUNTIME_DIR: ${{ runner.temp }}
         run: python -m pytest tests -q
       - name: Install minimum pytest version
-        if: matrix.extra == 'testing'
         run: uv pip install pytest==8.2.0
       - name: Test minimum pytest version
-        if: matrix.extra == 'testing'
         env:
           XDG_RUNTIME_DIR: ${{ runner.temp }}
         run: python -m pytest tests/test_pytest_plugin.py -q
+
+  examples:
+    runs-on: ubuntu-24.04
+    env:
+      WGPU_BACKEND_TYPE: Vulkan
+      VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e
+        with:
+          pixi-version: v0.80.0
+          environments: testing
+          locked: true
+      - name: Install Mesa Vulkan driver
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mesa-vulkan-drivers libvulkan1
+      - name: Test examples
+        env:
+          XDG_RUNTIME_DIR: ${{ runner.temp }}
+        run: pixi run --locked -e testing python -m pytest tests/examples -q

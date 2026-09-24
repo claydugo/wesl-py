@@ -36,9 +36,6 @@ pytest = ">=8.2"
 numpy = ">=1.26"
 wgpu-py = "==0.32.0"
 
-[feature.examples.pypi-dependencies]
-wesl-py = { path = ".", editable = true, extras = ["examples"] }
-
 [feature.examples.dependencies]
 imageio = ">=2.37"
 imgui-bundle = ">=1.92.801,<1.92.900"
@@ -95,12 +92,6 @@ freethreading = { features = ["build", "freethreading"], platforms = ["linux-64"
 features = ["build", "artifacts"]
 no-default-feature = true
 dependencies = { python = "3.12.*" }
-
-[environments.artifacts-py315]
-features = ["build", "artifacts"]
-no-default-feature = true
-channels = ["conda-forge", "conda-forge/label/python_rc"]
-dependencies = { python = "3.15.*", python-gil = "*" }
 
 [tasks]
 test = { cmd = "cargo test --locked --workspace --all-features && python -m pytest", default-environment = "testing" }

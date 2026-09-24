@@ -5,7 +5,7 @@ import pytest
 numpy = pytest.importorskip("numpy")
 pytest.importorskip("pygfx")
 get_shared = import_module("pygfx.renderers.wgpu").get_shared
-load_colony = import_module("examples.common").load_colony
+load_colony = import_module("examples.multiscale.common").load_colony
 enhance = import_module("examples.multiscale.compute").enhance
 
 

@@ -5,7 +5,7 @@ and the WESL library in this directory.
 
 ## Sample image
 
-`load_colony()` in [common.py](../common.py) loads a microscopy image of a
+`load_colony()` in [common.py](../multiscale/common.py) loads a microscopy image of a
 bacterial colony from `imageio:bacterial_colony.tif` with the tifffile plugin.
 Imageio downloads and caches the image on first use.
 The TIFF contains three `uint8` planes with shape `(3, 2048, 2048)`:
@@ -72,7 +72,7 @@ The function uses workgroup memory and barriers to return the componentwise sum.
 
 The example keeps its algorithm in `.wesl` files and schedules passes
 in `compute.py`. It imports indexing and color functions from this directory.
-`composite()` in [common.py](../common.py) connects the composite shader
+`composite()` in [common.py](../multiscale/common.py) connects the composite shader
 to a pygfx texture.
 
 | File | Responsibility |

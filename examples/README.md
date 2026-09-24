@@ -35,7 +35,7 @@ pixi run python examples/imports.py
 RMSNorm and compaction generate their own inputs and run without a window.
 Start with RMSNorm for compute. Compaction adds a hierarchy of GPU passes.
 
-The `examples` environment provides the optional `examples` dependencies.
+The Pixi `examples` environment provides the graphics and image dependencies.
 The repository's `wesl.toml` sets `examples/` as the shader root for editor tooling.
 The examples pass that root to `compile_file()` for the same `package::` namespace.
 

@@ -92,7 +92,14 @@ The `gpu` environment adds NumPy and wgpu-py.
 The `testing` environment also includes the example dependencies and pytest plugins.
 These tests accept hardware and software WebGPU adapters.
 Each [example](examples/README.md) documents its own test command.
-See [repository tests](#repository-tests) for snapshots and window tests.
+See the [testing examples](tests/examples/testing/README.md) for snapshot updates
+and [window tests](#window-tests) for display requirements.
+
+The WESL tests exercise the SDF example's production functions.
+The Python tests verify the executor and its failure reports.
+The assertion syntax follows the upstream
+[wgsl-test API](https://github.com/webgpu-tools/wesl-js/blob/main/packages/wgsl-test/API.md).
+Execution uses wgpu-py. It does not require Node.js or the JavaScript test runner.
 
 For code changes, run the style and type checks:
 
@@ -125,30 +132,6 @@ examples, shader tests, and snapshots. It selects the `testing` environment.
 Use the targeted commands above while working on a change.
 For prose-only changes, verify links and commands in the affected documentation.
 
-## Repository tests
-
-Run these commands from the wesl-py checkout:
-
-```bash
-pixi run -e testing python -m pytest tests/shaders -v
-pixi run -e testing python -m pytest tests/test_testing.py -q
-```
-
-The WESL tests exercise the SDF example's production functions.
-The Python tests verify the executor and its failure reports.
-Tests report results in the terminal. They do not write image files.
-
-The WESL assertion syntax follows the upstream
-[wgsl-test API](https://github.com/webgpu-tools/wesl-js/blob/main/packages/wgsl-test/API.md).
-Execution uses wgpu-py. It does not require Node.js or the JavaScript test runner.
-
-Directory fixtures select shader roots and keep example parameters local.
-The root configuration uses importlib mode so test filenames can repeat.
-
-`tests/examples/` contains tests for the application examples and shader testing
-examples. See the [testing examples](tests/examples/testing/README.md) for
-snapshot updates and the [examples index](examples/README.md) for application tests.
-
 ### Window tests
 
 GPU tests require a WebGPU adapter. Hardware and software adapters both work.
@@ -176,6 +159,9 @@ Update the relevant guide or example when changing the public API.
 
 The [CI workflow](.github/workflows/artifacts.yml) runs development checks and
 verifies built packages.
+It tests Python 3.12 wheels on Linux, macOS, and Windows.
+Linux also tests those wheels on Python 3.13, 3.14, and 3.15.
+The free-threaded wheel runs on Linux with Python 3.15 and 3.15t.
 
 ## Maintenance
 
@@ -189,3 +175,24 @@ verifies built packages.
   after the canvas closes while the viewer remains referenced.
   The [wgpu renderer](https://github.com/pygfx/wgpu-py/blob/main/wgpu/utils/imgui/imgui_renderer.py)
   creates the ImGui context without a cleanup method.
+
+### Pytest plugin
+
+Directory fixtures select shader roots and keep example parameters local.
+The root configuration uses importlib mode so test filenames can repeat.
+
+The pytest plugin delegates parametrization to pytest's collection hook.
+It keeps each collected item and its plugin state.
+It attaches WESL reporting methods to the item.
+Pytest controls fixture setup, including autouse fixtures.
+The runner checks conditional tests after fixture setup.
+The plugin tests cover the minimum and current pytest versions.
+
+The `pytest_generate_tests` hook exposes each shader callable during collection.
+The collector then removes it from the synthetic module.
+This prevents shader names from becoming Python hooks during subsequent collection.
+
+The plugin modifies undocumented pytest traceback fields to preserve shader locations
+in terminal, JUnit, and xdist reports. Keep the regression tests for these reports.
+Pytest supports [custom failure strings](https://docs.pytest.org/en/stable/example/nonpython.html),
+but a replacement must preserve the locations in all three formats.
