@@ -34,9 +34,6 @@ wesl = "wesl.pytest_plugin"
 python-source = "python"
 module-name = "wesl._native"
 locked = true
-include = [
-    { path = "Cargo.lock", format = "sdist" },
-]
 
 [tool.ruff]
 target-version = "py312"
@@ -63,4 +60,3 @@ convention = "numpy"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["--import-mode=importlib"]
-markers = ["gpu: requires a WebGPU adapter (hardware or software)"]

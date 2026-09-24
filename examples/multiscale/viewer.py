@@ -36,7 +36,6 @@ class Viewer:
     ) -> None:
         self.canvas = canvas
         self.channels = channels
-        self.colors = colors
         self.labels = labels
         self.renderer = pygfx.WgpuRenderer(self.canvas)
         _, self.height, self.width = self.channels.shape
@@ -61,14 +60,12 @@ class Viewer:
         self.radial_profiles = None
         self.distance_profiles = None
         self.analysis_shader = None
-        self.source, self.fine, self.coarse, self.output = enhance(
-            self.channels, 6.0, 3.0
-        )
+        self.source, _, _, output = enhance(self.channels, 6.0, 3.0)
         original_texture, self.original_shader, self.original_weights = composite(
-            self.source, self.colors, self.weights, (self.width, self.height)
+            self.source, colors, self.weights, (self.width, self.height)
         )
         processed_texture, self.processed_shader, self.processed_weights = composite(
-            self.output, self.colors, self.weights, (self.width, self.height)
+            output, colors, self.weights, (self.width, self.height)
         )
         self.original_texture = original_texture
         self.processed_texture = processed_texture
@@ -202,7 +199,6 @@ class Viewer:
             )
             if changed:
                 self.settings["process"] = True
-        if self.mode == Analysis.DISTANCE:
             changed, self.settings["spacing"] = imgui.slider_float(
                 "Contours", float(self.settings["spacing"]), 2.0, 100.0, "%.1f px"
             )

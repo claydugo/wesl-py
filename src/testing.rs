@@ -262,7 +262,7 @@ pub(super) fn compile_test(
         let resolver = TestResolver {
             inner: resolver,
             root: root.clone(),
-            test_name: test_name.clone(),
+            test_name,
             entry_point: entry_point.clone(),
         };
         let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
@@ -302,14 +302,6 @@ pub(super) fn compile_test(
                 source.into_owned(),
             );
         }
-        for declaration in &result.syntax.global_declarations {
-            if let Some(ident) = declaration.ident()
-                && let Some((module, name)) = EscapeMangler.unmangle(&ident.name())
-            {
-                sourcemap.add_decl(ident.name().to_string(), module, name);
-            }
-        }
-        result.sourcemap = Some(sourcemap);
         let mut assertions = HashMap::new();
         let mut result_name = None;
         let mut compiled_entry = None;
@@ -320,24 +312,25 @@ pub(super) fn compile_test(
                 aliases.insert(alias.ident.name().to_string(), alias.ty.ident.name().to_string());
             }
             if let Some(ident) = declaration.ident()
-                && let Some((module, name)) = result.sourcemap.get_decl(&ident.name())
+                && let Some((module, name)) = EscapeMangler.unmangle(&ident.name())
             {
-                if module == &assertion_module {
+                if module == assertion_module {
                     if name.starts_with("expect") {
-                        assertions.insert(ident.name().to_string(), name.to_owned());
+                        assertions.insert(ident.name().to_string(), name.clone());
                     }
-                } else if module == &result_module && name == "testResult" {
+                } else if module == result_module && name == "testResult" {
                     result_name = Some(ident.name().to_string());
-                } else if module == &root {
+                } else if module == root {
                     if name == entry_point {
                         compiled_entry = Some(ident.name().to_string());
                     }
                     if matches!(&**declaration, GlobalDeclaration::Declaration(value)
                         if value.kind == DeclarationKind::Override)
                     {
-                        overrides.insert(name.to_owned(), ident.name().to_string());
+                        overrides.insert(name.clone(), ident.name().to_string());
                     }
                 }
+                sourcemap.add_decl(ident.name().to_string(), module, name);
             }
         }
         let Some(compiled_entry) = compiled_entry else {
@@ -350,7 +343,7 @@ pub(super) fn compile_test(
         let mut wrappers = Vec::new();
         for declaration in &mut result.syntax.global_declarations {
             if let GlobalDeclaration::Struct(structure) = &mut **declaration
-                && result.sourcemap.get_decl(&structure.ident.name())
+                && sourcemap.get_decl(&structure.ident.name())
                     .is_some_and(|(module, name)| module == &result_module && name == "TestResult")
             {
                 for member in &mut structure.members {
@@ -366,17 +359,11 @@ pub(super) fn compile_test(
             function.attributes.retain(|attribute| {
                 !matches!(&**attribute, Attribute::Custom(custom) if custom.name == "test")
             });
-            let Some(module) = result
-                .sourcemap
-                .get_decl(&function.ident.name())
-                .map(|(module, _)| module.clone())
-            else {
+            let Some((module, name)) = sourcemap.get_decl(&function.ident.name()) else {
                 continue;
             };
-            if module == assertion_module || module == result_module {
-                if result.sourcemap.get_decl(&function.ident.name())
-                    .is_some_and(|(_, name)| name == "recordFailure")
-                {
+            if module == &assertion_module || module == &result_module {
+                if name == "recordFailure" {
                     function.body.statements.retain(|statement| {
                         !matches!(&**statement, Statement::If(_))
                     });
@@ -399,9 +386,9 @@ pub(super) fn compile_test(
                             "shader assertions require a bool first parameter or at least two parameters".to_owned(),
                         ).diagnostic().with_module_path(
                             module.clone(),
-                            result.sourcemap.get_display_name(&module).map(str::to_owned),
+                            sourcemap.get_display_name(module).map(str::to_owned),
                         ).with_span(declaration.span());
-                        diagnostic.detail.source = result.sourcemap.get_source(&module).map(str::to_owned);
+                        diagnostic.detail.source = sourcemap.get_source(module).map(str::to_owned);
                         return Err(Failure::from_diagnostic(diagnostic));
                     };
                     let name = function.ident.name();
@@ -456,11 +443,8 @@ pub(super) fn compile_test(
                         sites.push(Diagnostic {
                             message: name.clone(),
                             module: Some(module.to_string()),
-                            filename: result
-                                .sourcemap
-                                .get_display_name(&module)
-                                .map(str::to_owned),
-                            source: result.sourcemap.get_source(&module).map(str::to_owned),
+                            filename: sourcemap.get_display_name(module).map(str::to_owned),
+                            source: sourcemap.get_source(module).map(str::to_owned),
                             span: Some((range.start, range.end)),
                         });
                         let site = u32::try_from(sites.len())

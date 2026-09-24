@@ -156,7 +156,7 @@ def distance_field(
     shader.set_constant("minimum_signal", minimum_signal)
     shader.dispatch((width + 15) // 16, (height + 15) // 16)
     shader = create_shader("perimeter/jump.wesl", dimensions)
-    step = 1 << (max(dimensions) - 1).bit_length()
+    step = (1 << (max(dimensions) - 1).bit_length()) // 2
     while step:
         shader.set_resource(0, seeds)
         shader.set_resource(1, intermediate)

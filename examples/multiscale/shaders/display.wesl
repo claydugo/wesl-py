@@ -16,20 +16,17 @@ struct DisplayParameters {
 @compute @workgroup_size(16, 16)
 fn polar_guide(@builtin(global_invocation_id) position: vec3<u32>) {
     if (any(position.xy >= vec2<u32>(width, height))) { return; }
-    let base = textureLoad(original, vec2<i32>(position.xy), 0).rgb;
+    var color = textureLoad(original, vec2<i32>(position.xy), 0).rgb;
     let pixel = vec2<f32>(position.xy);
     let center = parameters.center;
-    var color = base;
-    var opacity = 0.0;
     let displacement = abs(pixel - center);
     let cross = (displacement.x < 1.0 && displacement.y < 8.0)
              || (displacement.y < 1.0 && displacement.x < 8.0);
     let ring = abs(distance(pixel, center) - parameters.radius) < 1.0;
     if (cross || ring) {
         color = vec3<f32>(1.0, 0.85, 0.2);
-        opacity = 1.0;
     }
-    textureStore(output, position.xy, vec4<f32>(mix(base, color, opacity), 1.0));
+    textureStore(output, position.xy, vec4<f32>(color, 1.0));
 }
 
 @compute @workgroup_size(16, 16)

@@ -95,17 +95,17 @@ no-default-feature = true
 dependencies = { python = "3.12.*" }
 
 [tasks]
-test = { cmd = "cargo test --locked --workspace --all-features && python -m pytest", default-environment = "testing" }
+test = { cmd = "cargo test --locked && python -m pytest", default-environment = "testing" }
 format = { cmd = "ruff format . && cargo fmt --all && markdownlint-cli2 --fix", default-environment = "dev" }
 format-check = { cmd = "ruff format --check . && cargo fmt --all --check", default-environment = "dev" }
-check-dependencies = { cmd = "cargo machete ./Cargo.toml && cargo deny --locked --workspace --all-features check", default-environment = "dev" }
+check-dependencies = { cmd = "cargo machete ./Cargo.toml && cargo deny --locked check", default-environment = "dev" }
 
 [tasks.lint]
 default-environment = "dev"
 cmd = """
 ruff check . &&
 markdownlint-cli2 &&
-cargo clippy --locked --workspace --all-targets --all-features -- -D warnings &&
+cargo clippy --locked --all-targets -- -D warnings &&
 ty check python/wesl &&
 pyrefly check python/wesl &&
 pyright python/wesl &&

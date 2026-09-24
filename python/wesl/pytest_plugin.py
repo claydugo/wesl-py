@@ -133,11 +133,9 @@ class WeslModule(pytest.Module):
         module.__file__ = str(self.path)
         self.obj = module
         self.locations = {}
-        collected = set()
         for name, start, end in tests:
-            if name in collected:
+            if name in self.locations:
                 continue
-            collected.add(name)
 
             def run_shader(
                 *,

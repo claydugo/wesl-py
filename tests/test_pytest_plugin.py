@@ -727,17 +727,27 @@ def test_device_creation_failure_is_an_error(
     pytester: pytest.Pytester, policy: str
 ) -> None:
     pytester.makeconftest("""
+        from functools import partial
+
         import pytest
         import wgpu
 
-        @pytest.fixture
-        def wesl_device():
+        @pytest.fixture(scope="session", autouse=True)
+        def invalid_device_limits():
             adapter = wgpu.gpu.request_adapter_sync()
-            return adapter.request_device_sync(
-                required_limits={
-                    "max-buffer-size": adapter.limits["max-buffer-size"] + 1,
-                },
-            )
+            with pytest.MonkeyPatch.context() as monkeypatch:
+                monkeypatch.setattr(wgpu.gpu, "request_adapter_sync", lambda: adapter)
+                monkeypatch.setattr(
+                    adapter,
+                    "request_device_sync",
+                    partial(
+                        adapter.request_device_sync,
+                        required_limits={
+                            "max-buffer-size": adapter.limits["max-buffer-size"] + 1,
+                        },
+                    ),
+                )
+                yield
     """)
     pytester.makefile(".test.wesl", device="@test fn dispatch() {}")
     result = pytester.runpytest_subprocess("-q", "-ra", f"--wesl-gpu={policy}")

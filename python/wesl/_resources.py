@@ -43,11 +43,9 @@ def load_modules(
                 selected[name] = (module_path, filename.suffix, child)
     modules = {}
     filenames = {}
-    for name, (_, _, resource) in sorted(selected.items()):
+    for name, (_, suffix, resource) in sorted(selected.items()):
         modules[name] = resource.read_bytes().decode("utf-8")
         filenames[name] = (
-            str(resource.resolve())
-            if isinstance(resource, Path)
-            else name + (".wesl" if resource.name.endswith(".wesl") else ".wgsl")
+            str(resource.resolve()) if isinstance(resource, Path) else name + suffix
         )
     return LoadedModules(modules, filenames)
