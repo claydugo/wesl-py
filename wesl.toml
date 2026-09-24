@@ -3,4 +3,3 @@ root = "examples"
 
 [dependencies]
 wgsl_test = { path = "python/wesl/shaders/wgsl_test" }
-lygia = { path = ".wesl/lygia" }

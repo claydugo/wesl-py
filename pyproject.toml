@@ -9,7 +9,7 @@ description = "Python bindings for the Rust WESL compiler"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
-license-files = ["LICENSE", "licenses/NOTICE", "licenses/WGSL-TEST-MIT", "licenses/RUST-DEPENDENCIES"]
+license-files = ["LICENSE"]
 classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -21,7 +21,6 @@ classifiers = [
 [project.urls]
 Repository = "https://github.com/claydugo/wesl-py"
 Issues = "https://github.com/claydugo/wesl-py/issues"
-Changelog = "https://github.com/claydugo/wesl-py/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 testing = [
@@ -70,7 +69,6 @@ convention = "numpy"
 "tests/*.py" = ["D100", "D103", "INP001", "S101"]
 "tests/test_testing.py" = ["E402", "PLR2004"]
 "tests/examples/testing/*.py" = ["ICN001"]
-"tools/*.py" = ["D100", "INP001", "S101"]
 "examples/*.py" = ["D100", "D103", "ICN001", "INP001", "S101"]
 
 [tool.pytest.ini_options]

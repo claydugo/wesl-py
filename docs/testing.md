@@ -17,7 +17,7 @@ For your Pixi project, add the checkout with its extra:
 wesl-py = { path = "/path/to/wesl-py", extras = ["testing"] }
 ```
 
-See [installation](README.md#installation) for requirements.
+See [installation](../README.md#installation) for requirements.
 The first test requires no `conftest.py` or manual plugin registration.
 
 ## WESL tests
@@ -96,18 +96,11 @@ import pytest
 
 @pytest.fixture
 def wesl_dependencies():
-    return {"lygia": Path("path/to/lygia")}
+    return {"library": Path("path/to/library")}
 ```
 
-The Lygia example has a repository setup script that fetches its two required shaders.
-Run it from the wesl-py checkout:
-
-```bash
-pixi run python tools/fetch_test_shaders.py
-```
-
-This script is only for the example. Installed users manage their own library sources.
-See [library directories](API.md#compile-strings-and-files) for the registration API.
+The [imports example](../examples/imports.py) fetches and registers an upstream module.
+See [library directories](api.md#compile-strings-and-files) for the registration API.
 
 | Function | Comparison |
 | --- | --- |
@@ -188,7 +181,7 @@ Its `n` argument counts workgroups. `constants` sets override values in the pipe
 Use the device API directly for other entry points, bind groups, textures, or samplers.
 Use pytest parametrization for input and feature matrices.
 
-See the [executable examples](tests/examples/testing/README.md) for shared feature flags,
+See the [executable examples](../tests/examples/testing/README.md) for shared feature flags,
 compute dispatch, texture sampling, image comparisons, and compilation failures.
 
 ### Resources for WESL tests
@@ -253,9 +246,9 @@ Python calls to `run_test()` pass resources and constants explicitly.
 Create a render pipeline through `wesl_device` and pass the compiled WGSL to
 `create_shader_module()`. Choose the vertex shader, attachments, texture formats,
 and readback layout in the test.
-The [fragment example](tests/examples/testing/test_fragment.py) renders a texture
+The [fragment example](../tests/examples/testing/test_fragment.py) renders a texture
 with a sampler and a uniform buffer. The
-[pipeline example](tests/examples/testing/test_pipeline.py) shares a texture between
+[pipeline example](../tests/examples/testing/test_pipeline.py) shares a texture between
 compute and rendering.
 
 ### Image snapshots
@@ -286,8 +279,8 @@ the values. Keep approved baselines in version control.
 
 Use `--force-regen` with a selected test to update a mismatched baseline.
 The update fails that test; run it again to verify the new baseline.
-See the [snapshot example](tests/examples/testing/test_snapshot.py) and its
-[update commands](tests/examples/testing/README.md).
+See the [snapshot example](../tests/examples/testing/test_snapshot.py) and its
+[update commands](../tests/examples/testing/README.md).
 
 This comparison reports numerical differences by array index.
 The plugin does not support native WESL `@snapshot` annotations.
@@ -366,7 +359,7 @@ def run_test(
 `modules` maps module names to WESL source strings.
 `test_name` names a test function in the `root` module.
 `root`, `filenames`, `root_directory`, and `dependencies` use the
-[compilation conventions](API.md#compile-strings-and-files).
+[compilation conventions](api.md#compile-strings-and-files).
 
 `resources` maps bind-group numbers to entry lists, as described
 in [Resources for WESL tests](#resources-for-wesl-tests).
@@ -382,7 +375,7 @@ The function raises `ShaderAssertionError` on assertion failure and
 
 | Attribute | Value |
 | --- | --- |
-| `diagnostic` | A [`wesl.Diagnostic`](API.md#diagnostics) for the first failing assertion. |
+| `diagnostic` | A [`wesl.Diagnostic`](api.md#diagnostics) for the first failing assertion. |
 | `filename` | The display path relative to the root directory, or the module name if no filename exists. |
 | `actual` | The actual value from the first failure: a Python `bool`, `int`, `float`, or tuple of floats. |
 | `expected` | The expected value from the first failure, with the same type as `actual`. |
@@ -438,7 +431,6 @@ Use `-p no:wesl` to disable automatic registration.
 The checked-in `wesl.toml` files configure wgsl-analyzer for this repository.
 Their relative dependency paths point to the shader sources in the checkout.
 The `wgsl_test` imports need no editor setup beyond loading the correct manifest.
-For Lygia imports, first run `pixi run python tools/fetch_test_shaders.py`.
 Configure your editor to use the nearest `wesl.toml` as the project root.
 
 For another development project with a sibling wesl-py checkout, use:
@@ -468,46 +460,7 @@ Copy the returned path into the dependency entry.
 Update it if you move or replace the environment.
 This manifest configures the editor. Python compilation registers `wgsl_test` automatically.
 
-## Repository tests
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for checkout setup and other test commands.
-
-Run these commands from the wesl-py checkout:
-
-```bash
-pixi run -e testing python -m pytest tests/shaders -v
-pixi run -e testing python -m pytest tests/test_testing.py -q
-```
-
-The WESL tests exercise the SDF example's production functions.
-The Python tests verify the executor and its failure reports.
-Tests report results in the terminal. They do not write image files.
-
-The WESL assertion syntax follows the upstream
-[wgsl-test API](https://github.com/webgpu-tools/wesl-js/blob/main/packages/wgsl-test/API.md).
-Execution uses wgpu-py. It does not require Node.js or the JavaScript test runner.
-
-Directory fixtures select shader roots and keep example parameters local.
-The root configuration uses importlib mode so test filenames can repeat.
-
-`tests/examples/` contains tests for the application examples and shader testing
-examples. See the [testing examples](tests/examples/testing/README.md) for
-snapshot updates and the [examples index](examples/README.md) for application tests.
-
-### Window tests
-
-GPU tests require a WebGPU adapter. Hardware and software adapters both work.
-Linux CI selects Vulkan and uses Mesa's software adapter.
-Window tests require a display and native cursor positioning.
-On Linux, they require X11. Install Xvfb and xauth to run them in an isolated display:
-
-```bash
-env -u WAYLAND_DISPLAY XDG_SESSION_TYPE=x11 PYGLFW_LIBRARY_VARIANT=x11 xvfb-run -a pixi run -e testing python -m pytest tests/examples/test_example_windows.py -q
-```
-
-Pytest skips these tests without a display or when GLFW uses Wayland.
-
-### Plugin implementation
+## Plugin implementation
 
 The pytest plugin delegates parametrization to pytest's collection hook.
 It keeps each collected item and its plugin state.
@@ -519,3 +472,8 @@ The plugin tests cover the minimum and current pytest versions.
 The `pytest_generate_tests` hook exposes each shader callable during collection.
 The collector then removes it from the synthetic module.
 This prevents shader names from becoming Python hooks during subsequent collection.
+
+The plugin modifies undocumented pytest traceback fields to preserve shader locations
+in terminal, JUnit, and xdist reports. Keep the regression tests for these reports.
+Pytest supports [custom failure strings](https://docs.pytest.org/en/stable/example/nonpython.html),
+but a replacement must preserve the locations in all three formats.

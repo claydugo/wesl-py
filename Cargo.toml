@@ -9,9 +9,9 @@ repository = "https://github.com/claydugo/wesl-py"
 license = "MIT"
 include = [
     "src/**", "/Cargo.toml", "/Cargo.lock", "python/**",
-    "/pyproject.toml", "/README.md", "/CONTRIBUTING.md", "/API.md", "/CHANGELOG.md", "/LICENSE", "licenses/**", "tests/**",
+    "/pyproject.toml", "/README.md", "/CONTRIBUTING.md", "/LICENSE", "docs/**", "tests/**",
     "examples/**", "/pixi.toml", "/pixi.lock", "/clippy.toml", "/deny.toml",
-    "/wesl.toml", "/TESTING.md", "tools/**",
+    "/wesl.toml",
 ]
 
 [lib]

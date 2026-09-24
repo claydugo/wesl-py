@@ -60,10 +60,10 @@ Reinstall it after changing either Python or Rust code before testing Python 3.1
 | `python/wesl/shaders/wgsl_test/` | Bundled upstream assertion shaders |
 | `tests/` | Python, Rust, and shader tests |
 | `examples/` | Graphics and compute examples, with tests in `tests/examples/` |
-| `tools/` | Release checks, license notices, and shader downloads |
+| `docs/` | API reference and shader testing guide |
 
-See the [API reference](API.md) for compiler behavior and
-[shader testing guide](TESTING.md) for the executor and pytest fixtures.
+See the [API reference](docs/api.md) for compiler behavior and
+[shader testing guide](docs/testing.md) for the executor and pytest fixtures.
 
 ## Verify your change
 
@@ -92,8 +92,7 @@ The `gpu` environment adds NumPy and wgpu-py.
 The `testing` environment also includes the example dependencies and pytest plugins.
 These tests accept hardware and software WebGPU adapters.
 Each [example](examples/README.md) documents its own test command.
-For Lygia tests, first run `pixi run python tools/fetch_test_shaders.py`.
-See [repository tests](TESTING.md#repository-tests) for snapshots and window tests.
+See [repository tests](#repository-tests) for snapshots and window tests.
 
 For code changes, run the style and type checks:
 
@@ -117,21 +116,57 @@ Run these additional checks when the change affects the corresponding area:
 
 - Native threading: `pixi run test-freethreading` verifies import without the GIL,
   concurrent compilation, diagnostics, and shader instrumentation on Python 3.15t.
-  See [thread behavior](API.md#threads).
+  See [thread behavior](docs/api.md#threads).
 - Rust dependencies: `pixi run check-dependencies` runs Machete against the binding
   manifest and Cargo-deny for licenses and RustSec advisories.
-  Run `pixi run python tools/update_licenses.py` after changing Cargo dependencies.
 
 `pixi run test` runs all Rust tests and one pytest session over `tests/`, including
 examples, shader tests, and snapshots. It selects the `testing` environment.
 Use the targeted commands above while working on a change.
 For prose-only changes, verify links and commands in the affected documentation.
 
+## Repository tests
+
+Run these commands from the wesl-py checkout:
+
+```bash
+pixi run -e testing python -m pytest tests/shaders -v
+pixi run -e testing python -m pytest tests/test_testing.py -q
+```
+
+The WESL tests exercise the SDF example's production functions.
+The Python tests verify the executor and its failure reports.
+Tests report results in the terminal. They do not write image files.
+
+The WESL assertion syntax follows the upstream
+[wgsl-test API](https://github.com/webgpu-tools/wesl-js/blob/main/packages/wgsl-test/API.md).
+Execution uses wgpu-py. It does not require Node.js or the JavaScript test runner.
+
+Directory fixtures select shader roots and keep example parameters local.
+The root configuration uses importlib mode so test filenames can repeat.
+
+`tests/examples/` contains tests for the application examples and shader testing
+examples. See the [testing examples](tests/examples/testing/README.md) for
+snapshot updates and the [examples index](examples/README.md) for application tests.
+
+### Window tests
+
+GPU tests require a WebGPU adapter. Hardware and software adapters both work.
+Linux CI selects Vulkan and uses Mesa's software adapter.
+Window tests require a display and native cursor positioning.
+On Linux, they require X11. Install Xvfb and xauth to run them in an isolated display:
+
+```bash
+env -u WAYLAND_DISPLAY XDG_SESSION_TYPE=x11 PYGLFW_LIBRARY_VARIANT=x11 xvfb-run -a pixi run -e testing python -m pytest tests/examples/test_example_windows.py -q
+```
+
+Pytest skips these tests without a display or when GLFW uses Wayland.
+
 ## Edit shaders
 
 Configure your editor to use the nearest `wesl.toml` as the wgsl-analyzer project root.
 The manifests point to shader sources in the checkout.
-See [shader editing](TESTING.md#shader-editing) for setup in other projects.
+See [shader editing](docs/testing.md#shader-editing) for setup in other projects.
 
 ## Open a pull request
 
@@ -141,3 +176,16 @@ Update the relevant guide or example when changing the public API.
 
 The [CI workflow](.github/workflows/artifacts.yml) runs development checks and
 verifies built packages.
+
+## Maintenance
+
+- Keep the ImGui upper bound while PyPI wgpu 0.32.0 uses the removed
+  `cmd_lists_count` attribute. Conda's [backend patch](https://github.com/conda-forge/wgpu-py-feedstock/blob/main/recipe/0001-Use-len-draw_data.cmd_lists-in-imgui-backend.patch)
+  makes newer versions work. Verify the PyPI dependencies before changing the bound.
+- Retain the Rust statement traversal until the upstream visitor covers plain
+  `else` branches. WESL 0.5.0 omits them in [its visitor](https://github.com/webgpu-tools/wesl-rs/blob/63a3627ba31258565df177f3f553beed8ff45338/crates/wesl/src/pass/visit.rs).
+- Review GPU resource and ImGui context cleanup for repeated viewer use.
+  The SDF viewer has no explicit teardown. Its particle buffer remains usable
+  after the canvas closes while the viewer remains referenced.
+  The [wgpu renderer](https://github.com/pygfx/wgpu-py/blob/main/wgpu/utils/imgui/imgui_renderer.py)
+  creates the ImGui context without a cleanup method.

@@ -4,7 +4,6 @@ on:
   pull_request:
   push:
     branches: [main]
-    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -22,7 +21,6 @@ jobs:
       - run: pixi run --locked lint
       - run: pixi run --locked format-check
       - run: pixi run --locked -e test cargo test --locked --test upstream
-      - run: pixi run --locked python tools/fetch_test_shaders.py
       - run: pixi run --locked -e test python -m pytest tests -q
       - run: pixi run --locked test-freethreading
       - run: pixi run --locked check-dependencies
@@ -36,10 +34,8 @@ jobs:
           pixi-version: v0.80.0
           environments: artifacts
           locked: true
-      - run: pixi run --locked -e artifacts python tools/update_licenses.py --check
       - run: pixi run --locked -e artifacts maturin sdist --out dist
       - run: pixi run --locked -e artifacts twine check --strict dist/*.tar.gz
-      - run: pixi run --locked -e artifacts python tools/check_sdist.py dist/*.tar.gz
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
         with:
           python-version: "3.12"
@@ -226,7 +222,6 @@ jobs:
           assert "wgsl_test" in shader.modules
           assert find_spec("maturin") is None
           PY
-      - run: python tools/fetch_test_shaders.py
       - name: Test Python API
         run: python -m pytest tests -q
 
@@ -264,7 +259,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y mesa-vulkan-drivers libvulkan1
-      - run: python tools/fetch_test_shaders.py
       - name: Test Python API and GPU integration
         env:
           XDG_RUNTIME_DIR: ${{ runner.temp }}

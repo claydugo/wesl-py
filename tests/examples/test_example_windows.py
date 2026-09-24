@@ -5,7 +5,6 @@ import logging
 import os
 import sys
 from importlib import import_module
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -29,7 +28,6 @@ pytestmark = [
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    import wgpu
     from rendercanvas.glfw import GlfwRenderCanvas
 
 
@@ -174,113 +172,6 @@ def test_sdf_pointer_controls(
                             },
                         )
                     assert getattr(viewer, attribute) is not previous
-        finally:
-            canvas.close()
-            loop.stop(force=True)
-            render_loop.run(asyncio.sleep(0))
-    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
-
-
-@pytest.mark.usefixtures("wesl_device")
-def test_lygia_startup_pointer_coordinates(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    main = import_module("examples.lygia.__main__").main
-    library_directory = Path(__file__).parents[2] / ".wesl" / "lygia"
-    monkeypatch.setattr(sys, "argv", ["lygia", "--library", str(library_directory)])
-    positions = []
-    animated = []
-
-    def click_evolve() -> None:
-        (canvas,) = loop.get_canvases()
-        try:
-            window = canvas._window  # noqa: SLF001
-            window_width, window_height = glfw.get_window_size(window)
-            width, height = canvas.get_logical_size()
-            canvas._on_cursor_enter(window, entered=True)  # noqa: SLF001
-            canvas._on_cursor_pos(  # noqa: SLF001
-                window, 58 * window_width / width, 518 * window_height / height
-            )
-            canvas._events.flush()  # noqa: SLF001
-            canvas.force_draw()
-            positions.append(tuple(imgui.get_io().mouse_pos))
-            for action in (glfw.PRESS, glfw.RELEASE):
-                canvas._on_mouse_button(  # noqa: SLF001
-                    window, glfw.MOUSE_BUTTON_LEFT, action, 0
-                )
-                canvas._events.flush()  # noqa: SLF001
-                canvas.force_draw()
-            animated.append(canvas._draw_frame.__self__.animated)  # noqa: SLF001
-        finally:
-            canvas.close()
-
-    loop.call_later(0.25, click_evolve)
-    main()
-    numpy.testing.assert_allclose(positions, [(58, 518)])
-    assert animated == [True]
-    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
-
-
-def test_lygia_pan_and_zoom(
-    canvas: GlfwRenderCanvas,
-    wesl_device: wgpu.GPUDevice,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    viewer = import_module("examples.lygia.viewer").Viewer(
-        canvas,
-        wesl_device,
-        library_directory=Path(__file__).parents[2] / ".wesl/lygia",
-    )
-    with asyncio.Runner() as render_loop:
-        render_loop.get_loop().create_task(loop.run_async())
-        try:
-            for dimensions in ((960, 640), (640, 480)):
-                canvas.set_logical_size(*dimensions)
-                draw(canvas, render_loop)
-                draw(
-                    canvas,
-                    render_loop,
-                    {
-                        "event_type": "pointer_move",
-                        "x": 320,
-                        "y": 240,
-                        "buttons": (),
-                        "modifiers": (),
-                    },
-                )
-                previous_scale = viewer.scale
-                draw(
-                    canvas,
-                    render_loop,
-                    {
-                        "event_type": "wheel",
-                        "x": 320,
-                        "y": 240,
-                        "dx": 0,
-                        "dy": -120,
-                        "modifiers": (),
-                    },
-                )
-                assert viewer.scale < previous_scale
-                previous_position = viewer.center.copy()
-                for event_type, x in (
-                    ("pointer_down", 320),
-                    ("pointer_move", 360),
-                    ("pointer_up", 360),
-                ):
-                    draw(
-                        canvas,
-                        render_loop,
-                        {
-                            "event_type": event_type,
-                            "x": x,
-                            "y": 240,
-                            "button": 1,
-                            "buttons": () if event_type == "pointer_up" else (1,),
-                            "modifiers": (),
-                        },
-                    )
-                assert numpy.any(viewer.center != previous_position)
         finally:
             canvas.close()
             loop.stop(force=True)

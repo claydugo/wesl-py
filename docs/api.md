@@ -33,7 +33,7 @@ The function accepts mappings and preserves their contents.
 
 `CompileOptions` holds the upstream compiler options.
 The shader runner accepts `TestOptions` instead.
-See [shader test options](TESTING.md#fixtures-and-pytest-behavior).
+See [shader test options](testing.md#fixtures-and-pytest-behavior).
 It is a mutable dataclass with keyword arguments.
 Omit `options` to use upstream defaults.
 
@@ -103,11 +103,13 @@ The remaining `CompileOptions` fields also use upstream names and defaults:
 The build does not enable upstream generics or evaluation.
 `CompileOptions` does not expose the inactive generics option.
 
-The pinned wesl-rs 0.4.4 release has two known compiler limitations:
+The pinned wesl-rs 0.4.4 compiler has these known limitations:
 
 - `imports=False` can strip root entry points. Use `strip=False` with this option.
 - `lower=True` can lose explicit constant types or leave unresolved constant references.
   Keep `lower=False` for runtime shaders until upstream fixes these cases.
+- Large expressions can exhaust a small caller stack on Windows.
+  See the [10,000-term expression failure](https://github.com/claydugo/wesl-py/actions/runs/35526430139/job/106119676932).
 
 The binding uses the published crates without local compiler patches.
 It stays on 0.4.4 so existing shader libraries remain usable without visibility modifiers.
@@ -171,18 +173,20 @@ Missing imported files raise `CompileError`.
 The installed package includes `wgsl_test`, which needs no registration.
 It provides the upstream assertion shaders for compilation and testing.
 
-Register other library directories with `dependencies`.
-Replace `path/to/lygia` with your Lygia checkout:
+Register other library directories with `dependencies`:
 
 ```python
 import wesl
 
-compiler = wesl.Compiler(dependencies={"lygia": "path/to/lygia"})
+compiler = wesl.Compiler(dependencies={"library": "path/to/library"})
 result = compiler.compile_source(
-    "import lygia::color::palette::heatmap::heatmap; "
-    "@fragment fn main() -> @location(0) vec4f { return vec4f(heatmap(0.5), 1.0); }"
+    "import library::math::exposure; "
+    "@fragment fn main() -> @location(0) vec4f { return vec4f(exposure(0.5)); }"
 )
 ```
+
+The [imports example](../examples/imports.py) fetches an upstream module and
+compiles a shader that imports it.
 
 `compile`, `compile_source`, and `compile_file` also accept `dependencies`.
 Values are directory paths. Relative paths use the working directory.
@@ -384,11 +388,9 @@ Concurrent calls can share inputs when callers do not modify those inputs.
 `wesl.__version__` matches Python distribution metadata. This package uses the published WESL and
 `wgsl-parse` 0.4.4 crates without local patches.
 Report parser defects to the [upstream issue tracker](https://github.com/webgpu-tools/wesl-rs/issues).
-See [NOTICE](licenses/NOTICE) for source provenance.
+See [LICENSE](../LICENSE) for source provenance and third-party notices.
 
 The binding enables imports, conditional translation, name mangling,
 source diagnostics, and upstream validation by default. It disables evaluation
 and generics at build time. Lowering is available through `CompileOptions`.
 Upstream validation does not catch every WGSL error.
-
-The unreleased package keeps version `0.1.0`.

@@ -1,39 +1,27 @@
 # wesl-py
 
 Python bindings for the [Rust WESL compiler](https://github.com/webgpu-tools/wesl-rs).
-
-WESL extends WGSL with imports and conditional compilation. Organize reusable
-shader code into modules and compile it to ordinary WGSL from Python.
-Compilation runs without a GPU.
-
-Use pytest to [run shader tests](#shader-tests) on a WebGPU adapter.
-Write assertions in WESL and see failures at the original shader file and line.
+WESL adds imports and conditional compilation to WGSL.
+Compile shaders from Python, or run WESL tests with pytest.
+Compilation needs no GPU.
 
 ## Installation
 
-Requires Python 3.12 or later. No public release is available yet.
-Add a checkout as a dependency in your project's `pixi.toml`:
+Requires Python 3.12 or later and Rust 1.97.1 or later with a native linker.
+Add a checkout to your project's `pixi.toml`:
 
 ```toml
 [pypi-dependencies]
 wesl-py = { path = "/path/to/wesl-py" }
 ```
 
-Install it from your project directory:
+Run `pixi install`. The distribution name is `wesl-py`; import it as `wesl`.
+See [CONTRIBUTING.md](https://github.com/claydugo/wesl-py/blob/main/CONTRIBUTING.md)
+to work in this repository.
 
-```bash
-pixi install
-pixi run python -c "import wesl; print(wesl.__version__)"
-```
+## Compile a shader
 
-The distribution name is `wesl-py`. Import it as `wesl`.
-Source installation requires Rust 1.97.1 or later and a native linker.
-To work in this repository, follow the
-[checkout setup](https://github.com/claydugo/wesl-py/blob/main/CONTRIBUTING.md#set-up-a-checkout).
-
-## Usage
-
-Put a reusable exposure function in `shaders/exposure.wesl`:
+Put a reusable function in `shaders/exposure.wesl`:
 
 ```wesl
 fn apply_exposure(color: vec3f, stops: f32) -> vec3f {
@@ -54,7 +42,7 @@ fn main(@location(0) color: vec4f) -> @location(0) vec4f {
 }
 ```
 
-Compile the shader with output clamping enabled:
+Compile with output clamping enabled:
 
 ```python
 import wesl
@@ -68,79 +56,15 @@ result = wesl.compile_file(
 print(result.wgsl)
 ```
 
-This prints ordinary WGSL:
+Pass `result.wgsl` to your renderer. With an existing wgpu-py device, call
+`device.create_shader_module(code=result.wgsl)`. The GPU runtime validates the WGSL.
+Use `compile_source()` for a string or `compile()` for a mapping of modules.
+See the [API reference](https://github.com/claydugo/wesl-py/blob/main/docs/api.md)
+for options, library imports, and diagnostics.
 
-```wgsl
-@fragment
-fn main(@location(0) color: vec4f) -> @location(0) vec4f {
-    return vec4f(package_exposure__1apply_exposure(color.rgb, 1.0), color.a);
-}
+## Test a shader
 
-fn package_exposure__1apply_exposure(color: vec3f, stops: f32) -> vec3f {
-    let adjusted = color * exp2(stops);
-    return clamp(adjusted, vec3f(0.0), vec3f(1.0));
-}
-```
-
-`compile_file()` resolves imports from the root file's directory.
-The compiler includes the imported function and removes inactive code.
-Set `clamp_output` to `False` to preserve values outside `[0, 1]`.
-
-Use `compile_source()` for a string or `compile()` for a mapping of module names to sources.
-`check_syntax()` checks WESL syntax.
-
-See the [API reference](https://github.com/claydugo/wesl-py/blob/main/API.md) for compilation options and diagnostics.
-
-## Library imports
-
-Register a directory to import an external shader library.
-For a Lygia checkout at `../lygia`:
-
-```python
-import wesl
-
-compiler = wesl.Compiler(dependencies={"lygia": "../lygia"})
-result = compiler.compile_source("""
-    import lygia::generative::snoise::snoise3;
-    @fragment fn main(@builtin(position) position: vec4f) -> @location(0) vec4f {
-        let value = 0.5 + 0.5 * snoise3(position.xyz * 0.01);
-        return vec4f(vec3f(value), 1.0);
-    }
-""")
-```
-
-The fragment shader outputs grayscale simplex noise.
-The compiler reads imported files from that directory.
-You manage the library sources. See the [Lygia example](https://github.com/claydugo/wesl-py/blob/main/examples/lygia/README.md)
-for terrain rendering and tests.
-
-## Use the generated WGSL
-
-Pass `result.wgsl` to your renderer or compute framework.
-For example, with an existing wgpu-py device:
-
-```python
-shader_module = device.create_shader_module(code=result.wgsl)
-```
-
-Compilation runs upstream WESL checks.
-The target GPU runtime validates the generated shader and pipeline.
-
-## Shader tests
-
-`wesl-py` provides a pytest plugin and bundles assertion shaders from the WESL project's
-[wgsl-test](https://github.com/webgpu-tools/wesl-js/tree/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test).
-With pytest in the environment, it automatically collects `@test` functions from
-`*.test.wesl` files. Pytest requires no `conftest.py` or manual plugin registration.
-
-Use the `testing` extra to install pytest and wgpu-py for execution.
-Set the dependency entry in your project's `pixi.toml` to:
-
-```toml
-[pypi-dependencies]
-wesl-py = { path = "/path/to/wesl-py", extras = ["testing"] }
-```
-
+Add `extras = ["testing"]` to the dependency entry and run `pixi install`.
 Save this as `shaders/math.test.wesl`:
 
 ```wesl
@@ -152,62 +76,21 @@ fn addition() {
 }
 ```
 
-Run it from your project directory:
-
-```bash
-pixi run python -m pytest shaders --collect-only -q
-pixi run python -m pytest shaders -q
-```
-
-Change `7u` to `8u` to see a failure at the assertion:
-
-```text
-shaders/math.test.wesl:5:5: expectEq failed
-  |
-5 |     expectEq(3u + 4u, 8u);
-  |     ^^^^^^^^^^^^^^^^^^^^
-
-  actual:   7u
-  expected: 8u
-
-1 of 1 assertions failed
-```
-
-Collection needs no GPU. Execution requires a hardware or software WebGPU adapter.
-The bundled assertions need no JavaScript, download, or registration step.
-If you disable automatic pytest plugin loading, use `-p wesl.pytest_plugin`.
-You can also test compute and fragment shaders from Python with NumPy inputs
-and assertions. See [TESTING.md](https://github.com/claydugo/wesl-py/blob/main/TESTING.md).
+Run `pixi run python -m pytest shaders -q`.
+The pytest plugin collects `@test` functions and reports failures at the shader file and line.
+The package includes assertion shaders. Execution requires a hardware or software WebGPU adapter.
+See the [shader testing guide](https://github.com/claydugo/wesl-py/blob/main/docs/testing.md)
+for Python fixtures, compute tests, and image comparisons.
 
 ## Examples
 
-Run these examples from the wesl-py checkout on Linux x86-64.
+- [Third-party imports](https://github.com/claydugo/wesl-py/blob/main/examples/imports.py): fetch a library module and compile a shader that uses it.
+- [SDF playground](https://github.com/claydugo/wesl-py/blob/main/examples/sdf/README.md): share geometry between rendering and particle collisions.
+- [Multiscale fluorescence](https://github.com/claydugo/wesl-py/blob/main/examples/multiscale/README.md): share convolution across image axes, scales, and implementations.
+- [RMSNorm](https://github.com/claydugo/wesl-py/blob/main/examples/rmsnorm/README.md) and [compaction](https://github.com/claydugo/wesl-py/blob/main/examples/compaction/README.md): verify compute results without a window.
 
-- [SDF playground](https://github.com/claydugo/wesl-py/blob/main/examples/sdf/README.md) shares geometry between rendering and particle collisions.
-- [Multiscale fluorescence](https://github.com/claydugo/wesl-py/blob/main/examples/multiscale/README.md) shares convolution across image axes, scales, and implementations.
-- [Lygia landscape](https://github.com/claydugo/wesl-py/blob/main/examples/lygia/README.md) combines imported MIT-licensed noise with local palettes into an interactive archipelago.
-
-These examples open interactive windows:
-
-```bash
-pixi run -e examples python -m examples.sdf
-pixi run -e examples python -m examples.multiscale
-pixi run python tools/fetch_test_shaders.py
-pixi run -e examples python -m examples.lygia --library .wesl/lygia
-```
-
-The [examples index](https://github.com/claydugo/wesl-py/blob/main/examples/README.md)
-also includes RMSNorm and an advanced compaction example.
-Both verify compute results without a window or downloaded data.
-
-## Contributing
-
-Bug reports, documentation fixes, examples, and code contributions are welcome.
-See [CONTRIBUTING.md](https://github.com/claydugo/wesl-py/blob/main/CONTRIBUTING.md)
-to report a problem, set up a checkout, or prepare a pull request.
+See the [examples index](https://github.com/claydugo/wesl-py/blob/main/examples/README.md) for commands.
 
 ## License
 
-This project's code uses the [MIT license](https://github.com/claydugo/wesl-py/blob/main/LICENSE).
-The packaged wgsl-test shaders use the [upstream MIT license](https://github.com/claydugo/wesl-py/blob/main/licenses/WGSL-TEST-MIT).
-See [NOTICE](https://github.com/claydugo/wesl-py/blob/main/licenses/NOTICE) for shader provenance.
+MIT. See [LICENSE](https://github.com/claydugo/wesl-py/blob/main/LICENSE) for third-party notices.
