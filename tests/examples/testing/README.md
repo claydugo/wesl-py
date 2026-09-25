@@ -20,7 +20,7 @@ pixi run -e test python -m pytest \
 
 The `wesl_compiler` fixture reads the shared compilation configuration.
 The `wesl_device` fixture supplies a WebGPU device.
-The `wesl_root_directory` fixture sets `shaders/` as the package root.
+The local `wesl.toml` sets `shaders/` as the package root.
 Calls to `wesl_compiler.compile_file()` resolve relative paths from that root.
 
 The `wesl_features` fixture selects clamped and unclamped implementations.

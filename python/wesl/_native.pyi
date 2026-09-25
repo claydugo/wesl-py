@@ -83,6 +83,7 @@ def compile(
     filenames: dict[str, str],
     root_directory: str | None,
     dependencies: dict[str, str],
+    dependency_aliases: dict[str, str] | None = None,
 ) -> CompileResult: ...
 def check_syntax(source: str, filename: str) -> None: ...
 def discover_tests(source: str, filename: str) -> list[tuple[str, int, int]]: ...
@@ -95,4 +96,5 @@ def compile_test(
     root_directory: str | None,
     result_binding: int,
     dependencies: dict[str, str],
+    dependency_aliases: dict[str, str] | None = None,
 ) -> tuple[str, str, list[Diagnostic], dict[str, str]] | None: ...

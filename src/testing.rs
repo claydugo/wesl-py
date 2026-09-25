@@ -13,7 +13,9 @@ use wgsl_parse::{
     },
 };
 
-use crate::{Diagnostic, Failure, FeatureValue, Features, ModuleResolver, module_path};
+use crate::{
+    Diagnostic, Failure, FeatureValue, Features, ModuleResolver, ProjectResolver, module_path,
+};
 
 #[derive(FromPyObject)]
 pub(super) struct TestOptions<'py> {
@@ -24,7 +26,7 @@ pub(super) struct TestOptions<'py> {
 }
 
 struct TestResolver {
-    inner: ModuleResolver,
+    inner: ProjectResolver<ModuleResolver>,
     root: ModulePath,
     test_name: String,
     entry_point: String,
@@ -106,7 +108,7 @@ pub(super) fn discover_tests(
 type CompiledTest = Option<(String, String, Vec<Diagnostic>, HashMap<String, String>)>;
 
 #[pyfunction]
-#[pyo3(signature = (modules, root, test_name, options, filenames, root_directory, result_binding, dependencies))]
+#[pyo3(signature = (modules, root, test_name, options, filenames, root_directory, result_binding, dependencies, dependency_aliases=None))]
 #[expect(
     clippy::too_many_arguments,
     clippy::too_many_lines,
@@ -123,6 +125,7 @@ pub(super) fn compile_test(
     root_directory: Option<PathBuf>,
     result_binding: u32,
     dependencies: HashMap<String, PathBuf>,
+    dependency_aliases: Option<HashMap<String, String>>,
 ) -> PyResult<CompiledTest> {
     let modules = modules.items()?.extract::<Vec<(String, String)>>()?;
     let TestOptions {
@@ -131,10 +134,10 @@ pub(super) fn compile_test(
         validate,
         features,
     } = options;
+    let Features { default, flags } = features;
     let features = wesl::Features {
-        default: features.default.try_into()?,
-        flags: features
-            .flags
+        default: default.try_into()?,
+        flags: flags
             .items()?
             .extract::<Vec<(String, FeatureValue)>>()?
             .into_iter()
@@ -168,6 +171,7 @@ pub(super) fn compile_test(
             files: root_directory.map(FileResolver::new),
             dependencies: dependency_resolver,
             dependency_names: dependencies.into_keys().collect(),
+            dependency_aliases,
         };
         for (path, source) in modules {
             let path = module_path(&path)?;
@@ -260,7 +264,10 @@ pub(super) fn compile_test(
             .replace("expected: vec4f,", "expected: vec4f, site: u32, completed: u32, checks: u32,");
         resolver.modules.add_module(result_module.clone(), result_source.into());
         let resolver = TestResolver {
-            inner: resolver,
+            inner: ProjectResolver {
+                active: resolver.dependency_aliases.is_some(),
+                inner: resolver,
+            },
             root: root.clone(),
             test_name,
             entry_point: entry_point.clone(),

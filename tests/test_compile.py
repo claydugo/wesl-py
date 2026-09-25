@@ -80,7 +80,7 @@ def test_stripping_root_preservation_and_mangling() -> None:
     assert wesl.compile(modules).wgsl.strip() == ""
     assert (
         "fn value("
-        in wesl.compile(modules, options=wesl.CompileOptions(keep_main=True)).wgsl
+        in wesl.compile(modules, options=wesl.CompileOptions(keep_root=True)).wgsl
     )
     assert (
         "fn value("
@@ -88,12 +88,12 @@ def test_stripping_root_preservation_and_mangling() -> None:
     )
     assert (
         wesl.compile(modules, options=wesl.CompileOptions(strip=False)).wgsl
-        == wesl.compile(modules, options=wesl.CompileOptions(keep_main=True)).wgsl
+        == wesl.compile(modules, options=wesl.CompileOptions(keep_root=True)).wgsl
     )
     assert (
         "fn package_main_value("
         in wesl.compile(
-            modules, options=wesl.CompileOptions(strip=False, mangle_main=True)
+            modules, options=wesl.CompileOptions(strip=False, mangle_root=True)
         ).wgsl
     )
     assert (
@@ -103,7 +103,7 @@ def test_stripping_root_preservation_and_mangling() -> None:
     assert (
         "fn value("
         in wesl.compile(
-            modules, options=wesl.CompileOptions(keep=["missing"], keep_main=True)
+            modules, options=wesl.CompileOptions(keep=["missing"], keep_root=True)
         ).wgsl
     )
 
@@ -184,7 +184,7 @@ def test_feature_error_policy() -> None:
     "options",
     [
         wesl.CompileOptions(strip=False),
-        wesl.CompileOptions(keep_main=True),
+        wesl.CompileOptions(keep_root=True),
     ],
 )
 def test_unused_helpers_resolve_imports_when_preserved(
@@ -227,7 +227,7 @@ def test_imported_names_collide_with_preserved_root_names() -> None:
     assert (
         "fn package_main_main("
         in wesl.compile(
-            modules, options=wesl.CompileOptions(strip=False, mangle_main=True)
+            modules, options=wesl.CompileOptions(strip=False, mangle_root=True)
         ).wgsl
     )
 
@@ -411,7 +411,7 @@ def test_incremental_conditional_translation() -> None:
     partial = wesl.compile_source(
         source,
         options=wesl.CompileOptions(
-            keep_main=True,
+            keep_root=True,
             features=wesl.Features(
                 default=wesl.Feature.Enable, flags={"pending": wesl.Feature.Keep}
             ),
@@ -426,11 +426,11 @@ def test_incremental_conditional_translation() -> None:
     preserved = wesl.compile_source(
         source,
         options=wesl.CompileOptions(
-            keep_main=True, features=wesl.Features(default=wesl.Feature.Keep)
+            keep_root=True, features=wesl.Features(default=wesl.Feature.Keep)
         ),
     )
     disabled = wesl.compile_source(
-        source, options=wesl.CompileOptions(keep_main=True, condcomp=False)
+        source, options=wesl.CompileOptions(keep_root=True, condcomp=False)
     )
     assert disabled.wgsl == preserved.wgsl
 
@@ -496,7 +496,7 @@ def test_manglers_rename_imported_functions(
     [
         {"strip": 1},
         {"keep": "main"},
-        {"features": {}},
+        {"features": []},
         {"mangler": "escape"},
         {"sourcemap": "false"},
     ],
@@ -523,9 +523,9 @@ def test_compile_options_preserve_all_fields_through_pickle() -> None:
         validate=False,
         sourcemap=False,
         mangler=wesl.ManglerKind.Hash,
-        mangle_main=True,
+        mangle_root=True,
         keep=["main"],
-        keep_main=True,
+        keep_root=True,
         features=wesl.Features(
             default=wesl.Feature.Error,
             flags={
@@ -560,7 +560,7 @@ def test_compile_options_apply_mutations_without_sharing_defaults() -> None:
     source = "@if(enabled) @compute @workgroup_size(1) fn main() {}"
     disabled = wesl.compile_source(source, options=options)
     options.features.flags["enabled"] = True
-    options.mangle_main = True
+    options.mangle_root = True
     enabled = wesl.compile_source(source, options=options)
     assert disabled.entry_points == ()
     assert enabled.entry_points == ("package_main_main",)
@@ -583,7 +583,7 @@ def test_disabled_imports_preserve_the_root_entry_point() -> None:
 def test_compiler_options_cross_process_boundaries() -> None:
     source = "@if(enabled) @compute @workgroup_size(1) fn main() {}"
     options = wesl.CompileOptions(
-        mangle_main=True,
+        mangle_root=True,
         mangler=wesl.ManglerKind.Hash,
         features=wesl.Features(default=wesl.Feature.Error, flags={"enabled": True}),
     )
@@ -595,3 +595,73 @@ def test_compiler_options_cross_process_boundaries() -> None:
             timeout=10
         )
     assert result == expected
+
+
+def test_feature_mappings_and_call_overrides(modules: dict[str, str]) -> None:
+    flags = UserDict({"enabled": True})
+    options = wesl.CompileOptions(features=wesl.Features(flags=flags))
+    assert "7u" in wesl.compile(modules, options=options).wgsl
+    assert "3u" in wesl.compile(modules, options=options, features={}).wgsl
+    assert (
+        "3u"
+        in wesl.compile(
+            modules, options=options, features=MappingProxyType({"enabled": False})
+        ).wgsl
+    )
+    assert options.features.flags is flags
+    assert flags == {"enabled": True}
+    with pytest.raises(wesl.CompileError, match="enabled"):
+        wesl.compile(
+            modules,
+            features=wesl.Features(default=wesl.Feature.Error),
+        )
+    flags["enabled"] = False
+    assert "3u" in wesl.compile(modules, options=options).wgsl
+
+
+def test_compiler_call_options_preserve_stored_settings(tmp_path: Path) -> None:
+    source = (
+        "@if(enabled) fn selected() -> u32 { return 7u; } "
+        "@else fn selected() -> u32 { return 3u; } "
+        "fn other() {} @compute @workgroup_size(1) fn main() {}"
+    )
+    (tmp_path / "main.wesl").write_text(source)
+    options = wesl.CompileOptions(
+        features=wesl.Features(flags={"enabled": False}), keep=["other"]
+    )
+    compiler = wesl.Compiler(
+        root_directory=tmp_path,
+        options=options,
+        features={"enabled": True},
+        keep=["selected"],
+    )
+    assert "7u" in compiler.compile_source(source).wgsl
+    assert "7u" in compiler.compile_file("main.wesl").wgsl
+    assert "3u" in compiler.compile_source(source, features={}).wgsl
+    assert "3u" in compiler.compile_file("main.wesl", features={}).wgsl
+    selected = compiler.compile_source(source, keep=None)
+    assert selected.entry_points == ("main",)
+    assert "selected" not in selected.wgsl
+    assert not compiler.compile_file("main.wesl", keep=[]).wgsl.strip()
+    assert "fn other(" in compiler.compile_source(source, keep_root=True).wgsl
+    assert "fn other(" in compiler.compile_file("main.wesl", strip=False).wgsl
+    assert compiler.keep == ["selected"]
+    assert compiler.features == {"enabled": True}
+    assert options.keep == ["other"]
+    assert options.features.flags == {"enabled": False}
+
+
+def test_declaration_keywords_follow_upstream_selection() -> None:
+    source = "fn twice(value: f32) -> f32 { return value * 2.0; } fn other() {}"
+    assert not wesl.compile_source(source).wgsl.strip()
+    selected = wesl.compile_source(source, keep=["twice"])
+    assert "fn twice(" in selected.wgsl
+    assert "fn other(" not in selected.wgsl
+    assert "fn other(" in wesl.compile_source(source, keep_root=True).wgsl
+    options = wesl.CompileOptions(keep_root=True, strip=False)
+    result = wesl.compile_source(
+        source, options=options, keep=["twice"], keep_root=False, strip=True
+    )
+    assert result == selected
+    assert options.keep_root
+    assert not options.strip

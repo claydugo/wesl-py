@@ -47,8 +47,19 @@ The runner calls it from one compute invocation. A function with no assertions
 passes when execution completes. Use Python tests for parallel dispatch and
 fragment shaders.
 
-Imports resolve through the existing WESL compiler. The default package root is
-pytest's root directory. Configure a different directory with:
+Imports resolve through the existing WESL compiler.
+Each test uses the nearest ancestor `wesl.toml` for its root and path dependencies.
+File compilation uses the same discovery rule.
+Without a manifest, the default package root is the test file's parent directory.
+Configure a project root in `wesl.toml`:
+
+```toml
+edition = "2026_pre"
+root = "shaders"
+```
+
+An explicit pytest setting overrides the manifest's root.
+This path is relative to pytest's root directory:
 
 ```toml
 [tool.pytest.ini_options]
@@ -299,14 +310,14 @@ The plugin provides these fixtures:
 - `wesl_compiler`: A `Compiler` using the shared compilation fixtures
 - `wesl_resources`: Empty mapping of groups to bind-group entries
 - `wesl_modules`: Empty mapping of additional WESL modules
-- `wesl_dependencies`: Empty mapping of package names to directories
+- `wesl_dependencies`: Package names and directories from the nearest manifest
 - `wesl_filenames`: Empty mapping of module names to source filenames
 - `wesl_features`: Default `Features`, shared by both options fixtures
 - `wesl_options`: `CompileOptions` for `wesl_compiler`, using `wesl_features`
 - `wesl_test_options`: `TestOptions` for native WESL tests, using
   `wesl_features`
 - `wesl_constants`: Empty mapping of WGSL overrides
-- `wesl_root_directory`: Resolved `wesl_root` directory
+- `wesl_root_directory`: Explicit `wesl_root`, manifest root, or test file's parent
 
 Override fixtures in `conftest.py`. Parametrized fixtures produce separate shader
 test cases with normal pytest IDs. Use `pytest_collection_modifyitems` to attach
@@ -336,8 +347,13 @@ import wesl
 
 @pytest.fixture(params=[False, True], ids=["scalar", "vector"])
 def wesl_features(request):
-    return wesl.Features(flags={"vector": request.param})
+    return {"vector": request.param}
 ```
+
+`wesl_features` accepts a mapping or a `Features` instance.
+Mappings use `Feature.Disable` for unspecified flags.
+The default options fixtures convert mappings to `Features` instances.
+Use `Features` to select another default policy.
 
 Override `wesl_device` to select an adapter, request features or limits, or use
 an application's device. The fixture that creates a device owns its teardown.

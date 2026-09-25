@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import sys
+from collections.abc import Mapping
 from os.path import abspath
 from pathlib import Path
 from types import ModuleType
@@ -19,13 +20,16 @@ from . import (
     TestOptions,
     _native,
 )
+from ._project import load_project
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping, Sequence
+    from collections.abc import Iterator, Sequence
     from typing import Any
 
     import wgpu
     from _pytest._io import TerminalWriter
+
+    from . import Feature
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -39,7 +43,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addini(
         "wesl_root",
         "Shader package directory relative to pytest's root directory",
-        default=".",
+        default="",
     )
 
 
@@ -291,8 +295,9 @@ def wesl_compiler(
 
 
 @pytest.fixture
-def wesl_dependencies() -> Mapping[str, str | Path]:
-    return {}
+def wesl_dependencies(request: pytest.FixtureRequest) -> Mapping[str, str | Path]:
+    project = load_project(request.node.path.parent)
+    return {} if project is None else project.load_dependencies()
 
 
 @pytest.fixture
@@ -316,13 +321,25 @@ def wesl_features() -> Features:
 
 
 @pytest.fixture
-def wesl_options(wesl_features: Features) -> CompileOptions:
-    return CompileOptions(features=wesl_features)
+def wesl_options(
+    wesl_features: Features | Mapping[str, bool | Feature],
+) -> CompileOptions:
+    return CompileOptions(
+        features=Features(flags=dict(wesl_features))
+        if isinstance(wesl_features, Mapping)
+        else wesl_features
+    )
 
 
 @pytest.fixture
-def wesl_test_options(wesl_features: Features) -> TestOptions:
-    return TestOptions(features=wesl_features)
+def wesl_test_options(
+    wesl_features: Features | Mapping[str, bool | Feature],
+) -> TestOptions:
+    return TestOptions(
+        features=Features(flags=dict(wesl_features))
+        if isinstance(wesl_features, Mapping)
+        else wesl_features
+    )
 
 
 @pytest.fixture
@@ -331,5 +348,10 @@ def wesl_constants() -> Mapping[str, float]:
 
 
 @pytest.fixture
-def wesl_root_directory(pytestconfig: pytest.Config) -> Path:
-    return Path(abspath(pytestconfig.rootpath / pytestconfig.getini("wesl_root")))  # noqa: PTH100
+def wesl_root_directory(
+    request: pytest.FixtureRequest, pytestconfig: pytest.Config
+) -> Path:
+    if directory := pytestconfig.getini("wesl_root"):
+        return Path(abspath(pytestconfig.rootpath / directory))  # noqa: PTH100
+    project = load_project(request.node.path.parent)
+    return request.node.path.parent if project is None else project.root_directory

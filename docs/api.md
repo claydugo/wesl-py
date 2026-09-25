@@ -15,27 +15,35 @@ modules = {
         @if(!enabled) fn value() -> u32 { return 3u; }
     """,
 }
-options = wesl.CompileOptions(
-    features=wesl.Features(flags={"enabled": True}),
-    keep=["answer"],
-)
-result = wesl.compile(modules, options=options)
+result = wesl.compile(modules, features={"enabled": True}, keep=["answer"])
 print(result.wgsl)
 ```
 
-`compile(modules, *, root="package::main", options=None, filenames=None,
-root_directory=None, dependencies=None)` returns a `CompileResult`.
+`compile(modules, *, root="package::main", options=None, features=None,
+keep=..., keep_root=None, strip=None, filenames=None, root_directory=None,
+dependencies=None)` returns a `CompileResult`.
 
 Module keys and `root` use names such as `package::main` and
 `package::settings`. Imports resolve through `modules` by default.
 An explicit `root_directory` also enables file imports.
 The function accepts mappings and preserves their contents.
 
+`features`, `keep`, `keep_root`, and `strip` override the corresponding fields in
+`options` for one call. They do not mutate the supplied options.
+Omit `keep` to use the stored selection. Pass `keep=None` to select entry points.
+Pass `keep=[]` to select no root declarations.
+The other keyword overrides use `None` to retain the stored setting.
+
 `CompileOptions` holds the upstream compiler options.
 The shader runner accepts `TestOptions` instead.
 See [shader test options](testing.md#fixtures-and-pytest-behavior).
 It is a mutable dataclass with keyword arguments.
 Omit `options` to use upstream defaults.
+
+`features` accepts a mapping such as `{"enabled": True}` or a `Features` instance.
+Mappings use the default policy, `Feature.Disable`.
+`CompileOptions.features` and `TestOptions.features` hold `Features` instances.
+A call-level feature setting replaces the stored setting without merging flags.
 
 `Features()` holds the conditional translation settings in a mutable dataclass.
 Its default policy is `Feature.Disable`. Its flag dictionary starts empty.
@@ -66,7 +74,8 @@ Applications can pass these values to process workers.
 
 The retention options follow
 [wesl-rs `CompileOptions`](https://docs.rs/wesl/0.4.4/wesl/struct.CompileOptions.html).
-`keep_main` and `mangle_main` map to upstream's `keep_root` and `mangle_root`.
+`keep_root` and `mangle_root` refer to the root module.
+They do not refer to a function named `main`.
 
 - `strip=True`: Keep selected root declarations and their dependencies.
 - `strip=False`: Preserve all declarations in each loaded module and resolve
@@ -74,20 +83,23 @@ The retention options follow
 - `keep=None`: Select entry points when stripping is enabled.
 - `keep=["answer"]`: Select these original root names when stripping is enabled.
 - `keep=[]`: Select no root declarations when stripping is enabled.
-- `keep_main=True`: Select all active root declarations when stripping is
+- `keep_root=True`: Select all active root declarations when stripping is
   enabled.
 
-`strip=False` overrides `keep_main` and `keep`.
-`keep_main=True` overrides `keep`.
+`strip=False` overrides `keep_root` and `keep`.
+`keep_root=True` overrides `keep`.
 The compiler ignores unknown names in `keep`. This includes declarations that conditional
 translation removes.
 
 A root with only unused helpers produces empty WGSL under the default options.
+Use `compile_source(source, keep=["answer"])` to retain a helper and its dependencies.
+Use `keep_root=True` to retain all active root declarations, or `strip=False`
+to disable stripping.
 The compiler loads modules when declarations depend on them. It does not scan
 every file in a package.
 The binding enables upstream's lazy import resolution.
 
-Set `mangle_main=True` to rename root declarations as well as imported declarations.
+Set `mangle_root=True` to rename root declarations as well as imported declarations.
 Selections always use original names, independent of mangling.
 
 The remaining `CompileOptions` fields also use upstream names and defaults:
@@ -154,7 +166,10 @@ provides imported sources. It must not contain the root module.
 The compiler does not open this label.
 
 `compile_file(filename, ...)` reads the root file as UTF-8.
-Its parent directory is the default `root_directory`.
+It searches the file's directory and its ancestors for the nearest `wesl.toml`.
+The manifest supplies the default `root_directory` and path dependencies.
+Without a manifest, the file's parent directory is the default `root_directory`.
+Explicit root and dependency settings take precedence over manifest settings.
 The file path must be inside that directory. Its relative path determines
 the root module name. For example, `nested/main.wesl` becomes
 `package::nested::main`.
@@ -165,7 +180,7 @@ File paths and root directories can contain `..`.
 Invalid root file paths raise the corresponding Python file exception.
 A file outside `root_directory` raises `ValueError`.
 
-Both functions accept `options` from `compile()`.
+Both functions accept `options` and the keyword overrides from `compile()`.
 Files load only when the compiler resolves an import.
 The resolver first checks the supplied `modules` mapping.
 It then looks for a `.wesl` file, with `.wgsl` as a fallback.
@@ -200,8 +215,37 @@ Imports share registered directories by package name, including self-qualified i
 An explicit dependency such as `alpha/common` takes precedence over `common`
 when `alpha` imports it. Entries in `modules` override files.
 
-Each compilation reads the current sources. The binding does not download libraries
-or read `wesl.toml`.
+Each compilation reads the current sources. The binding does not download libraries.
+
+For a WESL project, put the root and dependency paths in `wesl.toml`:
+
+```toml
+edition = "2026_pre"
+root = "shaders"
+
+[dependencies]
+library = { path = "../library" }
+```
+
+The root and dependency paths are relative to the manifest that declares them.
+The default root is `shaders`. Each path dependency must contain its own `wesl.toml`.
+Its manifest supplies its root and dependencies. Transitive dependencies retain
+their package scopes. Cyclic path dependencies raise `ValueError`.
+
+Imports can use the package's declared dependencies and the bundled `wgsl_test`.
+References to the same manifest share one package instance and its shader state.
+A scoped override such as `alpha/common` replaces that dependency for `alpha`.
+Other packages keep their declared dependency. Different scoped overrides create
+separate package instances.
+
+The loader supports the `2026_pre` edition and explicit path dependencies.
+Package-manager dependencies and `dependencies = "auto"` raise `NotImplementedError`.
+
+Manifest `include` and `exclude` patterns do not filter explicitly requested imports
+or pytest collection.
+
+`compile()` and `compile_source()` do not discover manifests.
+Use `Compiler.from_project()` to supply project settings to in-memory compilation.
 
 Named libraries can also use `modules`:
 
@@ -225,14 +269,14 @@ If `noise::lib` imports `arithmetic::one`, supply that dependency under
 WESL source still uses normal import syntax.
 For example, `alpha/common` and `beta/common` identify separate dependencies.
 Neither falls back to a virtual module named `common`.
-These keys identify virtual modules. The binding does not construct an upstream
+These keys identify virtual modules. Virtual module mappings do not define a
 package dependency graph or deduplicate package instances.
 Use `dependencies` to register directories for named libraries.
 
 ## Reuse compilation settings
 
-`Compiler` stores `options`, `modules`, `filenames`, `root_directory`, and
-`dependencies`.
+`Compiler` stores `options`, `features`, `keep`, `keep_root`, `strip`, `modules`,
+`filenames`, `root_directory`, and `dependencies`.
 These are optional keyword arguments. Each instance owns its default settings.
 Supplied settings and mappings remain shared with the caller.
 This example uses `shaders/main.wesl` from [above](#compile-strings-and-files):
@@ -245,9 +289,23 @@ result = compiler.compile_file("main.wesl")
 result = compiler.compile_source("@compute @workgroup_size(1) fn main() {}")
 ```
 
-`compile_source(source, *, root="package::main", filename="<string>")`
-uses the stored settings. `compile_file(filename)` resolves relative paths
-from `root_directory`, or the working directory when no root is set.
+Load a manifest from a directory or its nearest ancestor with:
+
+```python
+compiler = wesl.Compiler.from_project(".", features={"enabled": True})
+result = compiler.compile_file("main.wesl")
+```
+
+This constructor raises `FileNotFoundError` if it finds no manifest.
+It accepts the same settings as `Compiler`. Explicit settings override the manifest.
+It stores the project settings for subsequent compilation.
+`Compiler.compile_file()` uses these settings without searching for another manifest.
+
+`compile_source(source, *, root="package::main", filename="<string>", ...)`
+uses the stored settings. Both methods accept `features`, `keep`, `keep_root`, and
+`strip` overrides for one call.
+`compile_file(filename, ...)` resolves relative paths from `root_directory`,
+or the working directory when `root_directory` is `None`.
 Each call compiles again. The object does not cache results.
 
 ## Compilation results

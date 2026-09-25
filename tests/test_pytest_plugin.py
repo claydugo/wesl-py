@@ -37,6 +37,51 @@ def test_collect_without_gpu_dependencies(pytester: pytest.Pytester) -> None:
     assert result.ret == 0
 
 
+@pytest.mark.gpu
+@pytest.mark.parametrize("manifest", [False, True])
+def test_compilation_and_shader_tests_share_project_settings(
+    pytester: pytest.Pytester, *, manifest: bool
+) -> None:
+    if manifest:
+        pytester.makefile(".toml", wesl='edition = "2026_pre"\nroot = "shaders"\n')
+    shaders = pytester.path / "shaders"
+    shaders.mkdir()
+    (shaders / "exposure.wesl").write_text(
+        "@if(enabled) fn exposure() -> u32 { return 7u; } "
+        "@else fn exposure() -> u32 { return 3u; }"
+    )
+    (shaders / "main.wesl").write_text(
+        "import package::exposure::exposure; "
+        "@compute @workgroup_size(1) fn main() { let result = exposure(); }"
+    )
+    (shaders / "exposure.test.wesl").write_text(
+        "import package::exposure::exposure; "
+        "@test fn result() { "
+        "@if(enabled) wgsl_test::expectEq(exposure(), 7u); "
+        "@else wgsl_test::expectEq(exposure(), 3u); }"
+    )
+    pytester.makeconftest("""
+        import pytest
+
+        @pytest.fixture(params=[False, True])
+        def wesl_features(request):
+            return {"enabled": request.param}
+    """)
+    (shaders / "test_compile.py").write_text("""
+import wesl
+
+def test_compile(wesl_compiler, wesl_features):
+    result = wesl_compiler.compile_file("main.wesl")
+    expected = "7u" if wesl_features["enabled"] else "3u"
+    assert expected in result.wgsl
+    assert result == wesl.compile_file(
+        "shaders/main.wesl", features=wesl_features
+    )
+""")
+    result = pytester.runpytest_subprocess("shaders", "-q")
+    result.assert_outcomes(passed=4)
+
+
 def test_options_import_does_not_collect_class(pytester: pytest.Pytester) -> None:
     pytester.makepyfile("""
         from wesl import TestOptions
@@ -45,6 +90,99 @@ def test_options_import_does_not_collect_class(pytester: pytest.Pytester) -> Non
             TestOptions()
     """)
     result = pytester.runpytest_subprocess("-q", "-W", "error")
+    result.assert_outcomes(passed=1)
+
+
+@pytest.mark.gpu
+def test_shader_tests_load_manifest_dependencies(pytester: pytest.Pytester) -> None:
+    pytester.makefile(
+        ".toml",
+        wesl='edition = "2026_pre"\nroot = "shaders"\n'
+        '[dependencies]\nlibrary = { path = "library" }\n',
+    )
+    shaders = pytester.path / "shaders"
+    shaders.mkdir()
+    library = pytester.path / "library"
+    (library / "src").mkdir(parents=True)
+    (library / "wesl.toml").write_text('edition = "2026_pre"\nroot = "src"\n')
+    (library / "src/package.wesl").write_text("fn value() -> u32 { return 7u; }")
+    (shaders / "library.test.wesl").write_text(
+        "@test fn imported() { wgsl_test::expectEq(library::value(), 7u); }"
+    )
+    result = pytester.runpytest_subprocess("shaders", "-q")
+    result.assert_outcomes(passed=1)
+
+
+@pytest.mark.gpu
+def test_dependency_fixture_overrides_missing_manifest_paths(
+    pytester: pytest.Pytester,
+) -> None:
+    pytester.makefile(
+        ".toml",
+        wesl='edition = "2026_pre"\nroot = "shaders"\n'
+        '[dependencies]\nlibrary = { path = "unavailable" }\n',
+    )
+    pytester.makeconftest("""
+        from pathlib import Path
+        import pytest
+
+        @pytest.fixture
+        def wesl_dependencies():
+            return {"library": Path(__file__).parent / "replacement"}
+    """)
+    shaders = pytester.path / "shaders"
+    shaders.mkdir()
+    replacement = pytester.path / "replacement"
+    replacement.mkdir()
+    (replacement / "package.wesl").write_text("fn value() -> u32 { return 7u; }")
+    (shaders / "library.test.wesl").write_text(
+        "@test fn imported() { wgsl_test::expectEq(library::value(), 7u); }"
+    )
+    (shaders / "test_compile.py").write_text("""
+def test_compile(wesl_compiler):
+    result = wesl_compiler.compile_file("main.wesl")
+    assert "7u" in result.wgsl
+""")
+    (shaders / "main.wesl").write_text(
+        "@compute @workgroup_size(1) fn main() { let value = library::value(); }"
+    )
+    result = pytester.runpytest_subprocess("shaders", "-q")
+    result.assert_outcomes(passed=2)
+
+
+@pytest.mark.gpu
+def test_shader_tests_share_transitive_dependency_state(
+    pytester: pytest.Pytester,
+) -> None:
+    pytester.makefile(
+        ".toml",
+        wesl='edition = "2026_pre"\nroot = "."\n'
+        '[dependencies]\nalpha = { path = "alpha" }\nbeta = { path = "beta" }\n',
+    )
+    for name in ("alpha", "beta"):
+        directory = pytester.path / name
+        directory.mkdir()
+        (directory / "wesl.toml").write_text(
+            'edition = "2026_pre"\nroot = "."\n[dependencies]\n'
+            'common = { path = "../common" }\n'
+        )
+        (directory / "package.wesl").write_text(
+            "import {common::next}; fn value() -> u32 { return next(); }"
+        )
+    common = pytester.path / "common"
+    common.mkdir()
+    (common / "wesl.toml").write_text('edition = "2026_pre"\nroot = "."\n')
+    (common / "package.wesl").write_text(
+        "var<private> counter: u32 = 0u; "
+        "fn next() -> u32 { counter += 1u; return counter; }"
+    )
+    pytester.makefile(
+        ".test.wesl",
+        shared_state="@test fn shared_state() { "
+        "wgsl_test::expectEq(alpha::value(), 1u); "
+        "wgsl_test::expectEq(beta::value(), 2u); }",
+    )
+    result = pytester.runpytest_subprocess("shared_state.test.wesl", "-q")
     result.assert_outcomes(passed=1)
 
 

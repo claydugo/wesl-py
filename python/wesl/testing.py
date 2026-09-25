@@ -9,6 +9,7 @@ from typing import Any, cast
 import wgpu
 
 from . import Diagnostic, TestOptions, _native
+from ._project import ProjectDependencies
 
 __all__ = [
     "ShaderAssertionError",
@@ -135,6 +136,7 @@ def run_test(
                 else {name: fspath(path) for name, path in dependencies.items()}
             ),
         },
+        dependencies.aliases if isinstance(dependencies, ProjectDependencies) else None,
     )
     if compiled is None:
         raise ShaderTestDisabledError("WESL conditions disable this test")

@@ -49,9 +49,7 @@ import wesl
 
 result = wesl.compile_file(
     "shaders/main.wesl",
-    options=wesl.CompileOptions(
-        features=wesl.Features(flags={"clamp_output": True}),
-    ),
+    features={"clamp_output": True},
 )
 print(result.wgsl)
 ```
@@ -61,6 +59,16 @@ Pass `result.wgsl` to your renderer. With an existing wgpu-py device, call
 Use `compile_source()` for a string or `compile()` for a mapping of modules.
 See the [API reference](https://github.com/claydugo/wesl-py/blob/main/docs/api.md)
 for options, library imports, and diagnostics.
+
+For a project with multiple shader directories, add `wesl.toml` at the project root:
+
+```toml
+edition = "2026_pre"
+root = "shaders"
+```
+
+File compilation and pytest discover this manifest and use the same import root.
+Without a manifest, both use the shader file's parent directory.
 
 ## Test a shader
 

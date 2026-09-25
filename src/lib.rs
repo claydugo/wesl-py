@@ -11,11 +11,12 @@ use pyo3::{
     types::{PyMapping, PyTuple, PyType},
 };
 use wesl::{
-    FileResolver, ModulePath, ResolveError, Resolver, Router, SourceMap, VirtualResolver, Wesl,
+    FileResolver, ModulePath, ResolveError, Resolver, Router, SourceMap, SourceMapper,
+    VirtualResolver, Wesl,
 };
 use wgsl_parse::{
     error::ErrorKind,
-    syntax::{GlobalDeclaration, ImportStatement, PathOrigin, TranslationUnit},
+    syntax::{GlobalDeclaration, ImportContent, ImportStatement, PathOrigin, TranslationUnit},
 };
 
 mod testing;
@@ -72,9 +73,9 @@ struct CompileOptions<'py> {
     validate: bool,
     sourcemap: bool,
     mangler: ManglerKind,
-    mangle_main: bool,
+    mangle_root: bool,
     keep: Option<Vec<String>>,
-    keep_main: bool,
+    keep_root: bool,
     features: Features<'py>,
 }
 
@@ -82,20 +83,19 @@ impl TryFrom<CompileOptions<'_>> for wesl::CompileOptions {
     type Error = PyErr;
 
     fn try_from(options: CompileOptions<'_>) -> PyResult<Self> {
+        let Features { default, flags } = options.features;
         Ok(Self {
             imports: options.imports,
             condcomp: options.condcomp,
             strip: options.strip,
             lower: options.lower,
             validate: options.validate,
-            mangle_root: options.mangle_main,
+            mangle_root: options.mangle_root,
             keep: options.keep,
-            keep_root: options.keep_main,
+            keep_root: options.keep_root,
             features: wesl::Features {
-                default: options.features.default.try_into()?,
-                flags: options
-                    .features
-                    .flags
+                default: default.try_into()?,
+                flags: flags
                     .items()?
                     .extract::<Vec<(String, FeatureValue)>>()?
                     .into_iter()
@@ -300,10 +300,26 @@ struct ModuleResolver {
     files: Option<FileResolver>,
     dependencies: Router,
     dependency_names: HashSet<String>,
+    dependency_aliases: Option<HashMap<String, String>>,
 }
 
 impl Resolver for ModuleResolver {
     fn canonical_path(&self, path: &ModulePath) -> ModulePath {
+        if let Some(aliases) = &self.dependency_aliases {
+            if let PathOrigin::Package(name) = &path.origin
+                && self.modules.get_module(path).is_err()
+                && let Some(canonical) = aliases
+                    .get(name)
+                    .map(String::as_str)
+                    .or_else(|| (name.ends_with("/wgsl_test")).then_some("wgsl_test"))
+            {
+                return ModulePath {
+                    origin: PathOrigin::Package(canonical.to_owned()),
+                    components: path.components.clone(),
+                };
+            }
+            return path.clone();
+        }
         if let PathOrigin::Package(name) = &path.origin
             && !self.dependency_names.contains(name)
             && self.modules.get_module(path).is_err()
@@ -355,6 +371,45 @@ impl Resolver for ModuleResolver {
         } else {
             self.files.as_ref()?.display_name(path)
         }
+    }
+}
+
+struct ProjectResolver<R> {
+    inner: R,
+    active: bool,
+}
+
+impl<R: Resolver> Resolver for ProjectResolver<R> {
+    fn canonical_path(&self, path: &ModulePath) -> ModulePath {
+        self.inner.canonical_path(path)
+    }
+
+    fn resolve_source<'a>(&'a self, path: &ModulePath) -> Result<Cow<'a, str>, ResolveError> {
+        self.inner.resolve_source(path)
+    }
+
+    fn display_name(&self, path: &ModulePath) -> Option<String> {
+        self.inner.display_name(path)
+    }
+
+    fn resolve_module(&self, path: &ModulePath) -> Result<TranslationUnit, ResolveError> {
+        let mut syntax = self.inner.resolve_module(path)?;
+        if self.active
+            && let PathOrigin::Package(namespace) = &path.origin
+        {
+            for import in &mut syntax.imports {
+                if import.path.is_none()
+                    && let ImportContent::Collection(collection) = &mut import.content
+                {
+                    for item in collection {
+                        if let Some(name) = item.path.first_mut() {
+                            *name = format!("{namespace}/{name}");
+                        }
+                    }
+                }
+            }
+        }
+        Ok(syntax)
     }
 }
 
@@ -461,6 +516,7 @@ fn module_path(path: &str) -> Result<ModulePath, Failure> {
 }
 
 #[pyfunction]
+#[pyo3(signature = (modules, root, options, filenames, root_directory, dependencies, dependency_aliases=None))]
 #[expect(
     clippy::too_many_arguments,
     reason = "The binding accepts compiler settings and Python source inputs."
@@ -477,6 +533,7 @@ fn compile(
     filenames: HashMap<String, String>,
     root_directory: Option<PathBuf>,
     dependencies: HashMap<String, PathBuf>,
+    dependency_aliases: Option<HashMap<String, String>>,
 ) -> PyResult<CompileResult> {
     let modules = modules.items()?.extract::<Vec<(String, String)>>()?;
     let sourcemap = options.as_ref().is_none_or(|options| options.sourcemap);
@@ -513,18 +570,54 @@ fn compile(
             files: root_directory.map(FileResolver::new),
             dependencies: dependency_resolver,
             dependency_names: dependencies.into_keys().collect(),
+            dependency_aliases,
         };
         for (path, source) in modules {
             resolver
                 .modules
                 .add_module(module_path(&path)?, source.into());
         }
-        let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
-        compiler.set_options(options);
-        compiler.set_mangler(mangler);
-        compiler.use_sourcemap(sourcemap);
-        compiler
-            .compile(&root)
+        let project = resolver.dependency_aliases.is_some();
+        let result = if sourcemap && project {
+            let mangler: Box<dyn wesl::Mangler> = match mangler {
+                wesl::ManglerKind::Escape => Box::new(wesl::EscapeMangler),
+                wesl::ManglerKind::Hash => Box::new(wesl::HashMangler),
+                wesl::ManglerKind::Unicode => Box::new(wesl::UnicodeMangler),
+                wesl::ManglerKind::None => Box::new(wesl::NoMangler),
+            };
+            let mapper = SourceMapper::new(&root, &resolver, &mangler);
+            let result = wesl::compile(
+                &root,
+                &ProjectResolver {
+                    inner: &mapper,
+                    active: true,
+                },
+                &mapper,
+                &options,
+            );
+            let sourcemap = mapper.finish();
+            match result {
+                Ok(mut result) => {
+                    result.sourcemap = Some(sourcemap);
+                    Ok(result)
+                }
+                Err(error) => Err(error
+                    .diagnostic()
+                    .with_sourcemap(&sourcemap)
+                    .unmangle(Some(&sourcemap), Some(&mangler))
+                    .into()),
+            }
+        } else {
+            let mut compiler = Wesl::new_barebones().set_custom_resolver(ProjectResolver {
+                inner: resolver,
+                active: project,
+            });
+            compiler.set_options(options);
+            compiler.set_mangler(mangler);
+            compiler.use_sourcemap(sourcemap);
+            compiler.compile(&root)
+        };
+        result
             .map(|result| CompileResult {
                 wgsl: result.to_string(),
                 modules: result.modules.iter().map(ToString::to_string).collect(),

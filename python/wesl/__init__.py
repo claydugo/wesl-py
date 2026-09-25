@@ -1,8 +1,9 @@
 import os
 from collections.abc import Mapping, MutableMapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
+from typing import Self
 
 from . import _native
 from ._native import (
@@ -12,6 +13,7 @@ from ._native import (
     Source,
     __version__,
 )
+from ._project import ProjectDependencies, absolute_path, load_project
 from ._resources import LoadedModules, load_modules
 
 __all__ = [
@@ -49,6 +51,10 @@ class ManglerKind(Enum):
     None_ = "None"
 
 
+class _Unset(Enum):
+    Value = "unset"
+
+
 @dataclass(kw_only=True)
 class Features:
     default: Feature = Feature.Disable
@@ -64,9 +70,9 @@ class CompileOptions:
     validate: bool = True
     sourcemap: bool = True
     mangler: ManglerKind = ManglerKind.Escape
-    mangle_main: bool = False
+    mangle_root: bool = False
     keep: Sequence[str] | None = None
-    keep_main: bool = False
+    keep_root: bool = False
     features: Features = field(default_factory=Features)
 
 
@@ -85,6 +91,10 @@ def compile(
     *,
     root: str = "package::main",
     options: CompileOptions | None = None,
+    features: Features | Mapping[str, bool | Feature] | None = None,
+    keep: Sequence[str] | _Unset | None = _Unset.Value,
+    keep_root: bool | None = None,
+    strip: bool | None = None,
     filenames: Mapping[str, str | os.PathLike[str]] | None = None,
     root_directory: str | os.PathLike[str] | None = None,
     dependencies: Mapping[str, str | os.PathLike[str]] | None = None,
@@ -99,6 +109,18 @@ def compile(
         raise TypeError("options must be CompileOptions or None")
     if options is not None and not isinstance(options.mangler, ManglerKind):
         raise TypeError("mangler must be ManglerKind")
+    options = CompileOptions() if options is None else options
+    options = replace(
+        options,
+        features=options.features
+        if features is None
+        else Features(flags=dict(features))
+        if isinstance(features, Mapping)
+        else features,
+        keep=options.keep if keep is _Unset.Value else keep,
+        keep_root=options.keep_root if keep_root is None else keep_root,
+        strip=options.strip if strip is None else strip,
+    )
     return _native.compile(
         modules,
         root,
@@ -115,6 +137,7 @@ def compile(
                 else {name: os.fspath(path) for name, path in dependencies.items()}
             ),
         },
+        dependencies.aliases if isinstance(dependencies, ProjectDependencies) else None,
     )
 
 
@@ -125,6 +148,10 @@ def compile_source(
     root: str = "package::main",
     filename: str | os.PathLike[str] = "<string>",
     options: CompileOptions | None = None,
+    features: Features | Mapping[str, bool | Feature] | None = None,
+    keep: Sequence[str] | _Unset | None = _Unset.Value,
+    keep_root: bool | None = None,
+    strip: bool | None = None,
     filenames: Mapping[str, str | os.PathLike[str]] | None = None,
     root_directory: str | os.PathLike[str] | None = None,
     dependencies: Mapping[str, str | os.PathLike[str]] | None = None,
@@ -143,6 +170,10 @@ def compile_source(
         copied_modules,
         root=root,
         options=options,
+        features=features,
+        keep=keep,
+        keep_root=keep_root,
+        strip=strip,
         filenames=copied_filenames,
         root_directory=root_directory,
         dependencies=dependencies,
@@ -155,16 +186,21 @@ def compile_file(
     modules: Mapping[str, str] | None = None,
     root_directory: str | os.PathLike[str] | None = None,
     options: CompileOptions | None = None,
+    features: Features | Mapping[str, bool | Feature] | None = None,
+    keep: Sequence[str] | _Unset | None = _Unset.Value,
+    keep_root: bool | None = None,
+    strip: bool | None = None,
     filenames: Mapping[str, str | os.PathLike[str]] | None = None,
     dependencies: Mapping[str, str | os.PathLike[str]] | None = None,
 ) -> CompileResult:
-    path = Path(filename).absolute()
+    path = absolute_path(Path(filename))
+    project = load_project(path.parent)
     directory = (
-        path.parent if root_directory is None else Path(root_directory).absolute()
+        (path.parent if project is None else project.root_directory)
+        if root_directory is None
+        else absolute_path(Path(root_directory))
     )
-    relative_path = Path(os.path.normpath(path)).relative_to(
-        os.path.normpath(directory)
-    )
+    relative_path = path.relative_to(directory)
     root = "package::" + "::".join(relative_path.with_suffix("").parts)
     return compile_source(
         path.read_bytes().decode("utf-8"),
@@ -172,19 +208,61 @@ def compile_file(
         root=root,
         filename=path,
         options=options,
+        features=features,
+        keep=keep,
+        keep_root=keep_root,
+        strip=strip,
         filenames=filenames,
         root_directory=directory,
-        dependencies=dependencies,
+        dependencies=dependencies
+        if project is None
+        else project.load_dependencies(dependencies),
     )
 
 
 @dataclass(kw_only=True)
 class Compiler:
     options: CompileOptions = field(default_factory=CompileOptions)
+    features: Features | Mapping[str, bool | Feature] | None = None
+    keep: Sequence[str] | _Unset | None = _Unset.Value
+    keep_root: bool | None = None
+    strip: bool | None = None
     modules: Mapping[str, str] = field(default_factory=dict)
     filenames: Mapping[str, str | os.PathLike[str]] = field(default_factory=dict)
     root_directory: str | os.PathLike[str] | None = None
     dependencies: Mapping[str, str | os.PathLike[str]] = field(default_factory=dict)
+
+    @classmethod
+    def from_project(  # noqa: D102
+        cls,
+        directory: str | os.PathLike[str],
+        *,
+        options: CompileOptions | None = None,
+        features: Features | Mapping[str, bool | Feature] | None = None,
+        keep: Sequence[str] | _Unset | None = _Unset.Value,
+        keep_root: bool | None = None,
+        strip: bool | None = None,
+        modules: Mapping[str, str] | None = None,
+        filenames: Mapping[str, str | os.PathLike[str]] | None = None,
+        root_directory: str | os.PathLike[str] | None = None,
+        dependencies: Mapping[str, str | os.PathLike[str]] | None = None,
+    ) -> Self:
+        project = load_project(Path(directory))
+        if project is None:
+            raise FileNotFoundError("no wesl.toml found")
+        return cls(
+            options=CompileOptions() if options is None else options,
+            features=features,
+            keep=keep,
+            keep_root=keep_root,
+            strip=strip,
+            modules={} if modules is None else modules,
+            filenames={} if filenames is None else filenames,
+            root_directory=project.root_directory
+            if root_directory is None
+            else root_directory,
+            dependencies=project.load_dependencies(dependencies),
+        )
 
     def compile_source(  # noqa: D102
         self,
@@ -192,6 +270,10 @@ class Compiler:
         *,
         root: str = "package::main",
         filename: str | os.PathLike[str] = "<string>",
+        features: Features | Mapping[str, bool | Feature] | None = None,
+        keep: Sequence[str] | _Unset | None = _Unset.Value,
+        keep_root: bool | None = None,
+        strip: bool | None = None,
     ) -> CompileResult:
         return compile_source(
             source,
@@ -199,6 +281,10 @@ class Compiler:
             root=root,
             filename=filename,
             options=self.options,
+            features=self.features if features is None else features,
+            keep=self.keep if keep is _Unset.Value else keep,
+            keep_root=self.keep_root if keep_root is None else keep_root,
+            strip=self.strip if strip is None else strip,
             filenames=self.filenames,
             root_directory=self.root_directory,
             dependencies=self.dependencies,
@@ -207,17 +293,36 @@ class Compiler:
     def compile_file(  # noqa: D102
         self,
         filename: str | os.PathLike[str],
+        *,
+        features: Features | Mapping[str, bool | Feature] | None = None,
+        keep: Sequence[str] | _Unset | None = _Unset.Value,
+        keep_root: bool | None = None,
+        strip: bool | None = None,
     ) -> CompileResult:
         path = (
             Path(filename)
             if self.root_directory is None
             else Path(self.root_directory) / filename
         )
-        return compile_file(
-            path,
+        path = absolute_path(path)
+        directory = (
+            path.parent
+            if self.root_directory is None
+            else absolute_path(Path(self.root_directory))
+        )
+        relative_path = path.relative_to(directory)
+        root = "package::" + "::".join(relative_path.with_suffix("").parts)
+        return compile_source(
+            path.read_bytes().decode("utf-8"),
+            root=root,
+            filename=path,
             modules=self.modules,
-            root_directory=self.root_directory,
+            root_directory=directory,
             options=self.options,
+            features=self.features if features is None else features,
+            keep=self.keep if keep is _Unset.Value else keep,
+            keep_root=self.keep_root if keep_root is None else keep_root,
+            strip=self.strip if strip is None else strip,
             filenames=self.filenames,
             dependencies=self.dependencies,
         )
