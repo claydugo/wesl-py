@@ -52,3 +52,7 @@ compute and rendering, stored baselines, and an explicit failure demo.
 ```bash
 pixi run -e testing python -m pytest tests/examples/testing -v
 ```
+
+[FP16 convolution and pooling](convolution/README.md) demonstrates reusable
+compute operators and parameterized native WESL tests. It uses synthetic inputs
+and requires an adapter with `shader-f16`.

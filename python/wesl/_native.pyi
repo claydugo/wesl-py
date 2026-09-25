@@ -14,7 +14,9 @@ __all__ = [
     "check_syntax",
     "compile",
     "compile_test",
+    "constant_module",
     "discover_tests",
+    "render_diagnostic",
 ]
 
 @final
@@ -87,6 +89,10 @@ def compile(
     dependency_aliases: dict[str, str] | None = None,
 ) -> CompileResult: ...
 def check_syntax(source: str, filename: str) -> None: ...
+def constant_module(
+    module: str, constants: Mapping[str, bool | int | float]
+) -> str: ...
+def render_diagnostic(diagnostic: Diagnostic) -> str: ...
 def discover_tests(
     source: str, filename: str, features: _Features | None = None
 ) -> list[tuple[str, int, int]]: ...

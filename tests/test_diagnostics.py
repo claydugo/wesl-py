@@ -268,6 +268,81 @@ def test_shader_tests_reject_assertions_with_missing_parameters(
     assert diagnostic.span == (0, len(source.encode()))
 
 
+@pytest.mark.parametrize("value_type", ["i32", "vec2<u32>"])
+def test_shader_assertion_types_preserve_source_context(
+    wgsl_test: Path, value_type: str
+) -> None:
+    source = (
+        f"alias Value = {value_type}; "
+        "fn expectCustom(actual: Value, expected: Value) {}"
+    )
+    with pytest.raises(wesl.CompileError, match="shader assertion values") as caught:
+        _native.compile_test(
+            {
+                "package::main": (
+                    "@test fn selected() { wgsl_test::expectCustom(1, 2); }"
+                ),
+                "wgsl_test": source,
+            },
+            "package::main",
+            "selected",
+            wesl.TestOptions(),
+            {"wgsl_test": "assertions.wesl"},
+            None,
+            0,
+            {"wgsl_test": str(wgsl_test)},
+        )
+    [diagnostic] = caught.value.diagnostics
+    assert diagnostic.module == "wgsl_test"
+    assert diagnostic.filename == "assertions.wesl"
+    assert diagnostic.source == source
+    assert diagnostic.span == (source.index("fn expectCustom"), len(source))
+
+
+@pytest.mark.parametrize("lower", [False, True])
+@pytest.mark.parametrize(
+    "declarations",
+    [
+        "alias Value = Value;",
+        "alias Value = Other; alias Other = Value;",
+        "alias Value = array<Value, 2>;",
+        "struct Value { child: Value }",
+    ],
+)
+def test_shader_assertion_type_cycles_without_validation(
+    pytester: pytest.Pytester, wgsl_test: Path, declarations: str, *, lower: bool
+) -> None:
+    source = f"{declarations} fn expectCustom(actual: Value, expected: Value) {{}}"
+    completed = pytester.run(
+        sys.executable,
+        "-c",
+        (
+            "import wesl\n"
+            "from wesl import _native\n"
+            "try:\n"
+            "    _native.compile_test(\n"
+            "        {'package::main': '@test fn selected() { "
+            "wgsl_test::expectCustom(1, 2); }',\n"
+            f"         'wgsl_test': {source!r}}},\n"
+            "        'package::main', 'selected',\n"
+            f"        wesl.TestOptions(validate=False, lower={lower!r}),\n"
+            "        {'wgsl_test': 'assertions.wesl'}, None, 0,\n"
+            f"        {{'wgsl_test': {str(wgsl_test)!r}}},\n"
+            "    )\n"
+            "except wesl.CompileError as error:\n"
+            "    [diagnostic] = error.diagnostics\n"
+            "    assert 'cyclic' in diagnostic.message\n"
+            "    assert diagnostic.module == 'wgsl_test'\n"
+            "    assert diagnostic.filename == 'assertions.wesl'\n"
+            f"    assert diagnostic.source == {source!r}\n"
+            "else:\n"
+            "    raise AssertionError('cyclic assertion type compiles')\n"
+        ),
+        timeout=10,
+    )
+    assert completed.ret == 0, completed.stdout.str() + completed.stderr.str()
+
+
 def test_linked_argument_error_preserves_missing_metadata() -> None:
     source = "import package::helper::consume; fn main() -> u32 { return consume(); }"
     with pytest.raises(wesl.CompileError, match="number of arguments") as caught:

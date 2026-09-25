@@ -19,7 +19,7 @@ result = wesl.compile(modules, features={"enabled": True}, keep=["answer"])
 print(result.wgsl)
 ```
 
-`compile(modules, *, root="package::main", options=None, features=None,
+`compile(modules, *, root="package::main", options=None, features=None, constant_modules=None,
 keep=..., keep_root=None, strip=None, filenames=None, root_directory=None,
 dependencies=None)` returns a `CompileResult`.
 
@@ -106,20 +106,18 @@ The remaining `CompileOptions` fields also use upstream names and defaults:
 
 - `imports=True`: Resolve imports.
 - `condcomp=True`: Evaluate conditional translation attributes.
-- `lower=False`: Enable upstream lowering when set to `True`. This build inlines
-  aliases and constants.
+- `lower=False`: Enable upstream lowering when set to `True`. This build evaluates
+  constant expressions, inlines aliases, and removes unreachable code.
 - `validate=True`: Run upstream compiler checks.
 - `sourcemap=True`: Record source text and declaration names.
 - `mangler=ManglerKind.Escape`: Select the declaration naming scheme.
 
-The build does not enable upstream generics or evaluation.
+The build enables upstream evaluation. It does not enable generics.
 `CompileOptions` does not expose the inactive generics option.
 
 The pinned wesl-rs 0.4.4 compiler has these known limitations:
 
 - `imports=False` can strip root entry points. Use `strip=False` with this option.
-- `lower=True` can lose explicit constant types or leave unresolved constant references.
-  Keep `lower=False` for runtime shaders until upstream fixes these cases.
 - Large expressions can exhaust a small caller stack on Windows.
   See the [10,000-term expression failure](https://github.com/claydugo/wesl-py/actions/runs/35526430139/job/106119676932).
 
@@ -289,6 +287,79 @@ These keys identify virtual modules. Virtual module mappings do not define a
 package dependency graph or deduplicate package instances.
 Use `dependencies` to register directories for named libraries.
 
+## Supply constants
+
+Pass `constant_modules` to supply scalar constants for one compilation:
+
+```python
+compiler = wesl.Compiler(root_directory="shaders")
+result = compiler.compile_file(
+    "main.wesl",
+    constant_modules={
+        "package::config": {"width": 64, "scale": 0.5, "enabled": True},
+    },
+)
+```
+
+The shader imports these constants from a virtual module:
+
+```wesl
+import package::config::{width, scale, enabled};
+
+@compute @workgroup_size(width)
+fn main() {
+    let amount: f32 = select(0.0, scale, enabled);
+}
+```
+
+`compile`, `compile_source`, `compile_file`, and both `Compiler` methods accept
+`constant_modules`. The outer mapping uses the same module paths as `modules`,
+including scoped dependencies. Each inner mapping pairs constant names with values.
+Compilation preserves the supplied mappings and the stored compiler settings.
+Omit the argument, or pass `None` or `{}`, to generate no modules.
+
+The compiler emits one `const` declaration for each value:
+
+| Python value | Generated declaration |
+| --- | --- |
+| `64` | `const width = 64;` |
+| `0.5` | `const scale = 0.5;` |
+| `True` | `const enabled = true;` |
+
+Numeric declarations retain WGSL's abstract numeric types. The shader determines
+the concrete type where it uses a constant. For example, the same integer constant
+can initialize an `i32` or a `u32` when its value fits both types.
+Float values retain a decimal point or exponent, including `1.0` and `-0.0`.
+
+Values accept Python `bool`, `int`, and finite `float` instances.
+They also accept `numbers.Integral` and `numbers.Real` instances.
+Integers must fit the signed 64-bit range. Real values must convert to a finite
+Python `float` without loss of precision. Common NumPy integer and floating scalars
+meet these requirements. Their dtype does not determine the WGSL type.
+Compilation does not import or require NumPy.
+
+WESL generates the declarations and formats the literals. Declaration order is
+unspecified. WESL 0.4.4 cannot parse its generated literal for `-2**63`.
+Using that value raises `CompileError` when the compiler loads its module.
+
+Strings, complex values, arrays, and other unsupported types raise `TypeError`.
+Invalid identifiers, NaN, infinity, integers outside the supported range, and
+lossy conversions raise `ValueError`. Errors identify the module and constant.
+Normalization and identifier checks also apply to unused modules.
+The GPU runtime still validates the concrete types and shader constraints.
+
+Each generated module replaces the whole file at its path. Constants do not merge
+with declarations from that file. A path present in both `modules` and
+`constant_modules` raises `ValueError`. This includes the root source supplied to
+`compile_source` or `compile_file`. Generated source appears in `CompileResult.sources`
+when the module is used and source maps are enabled. `filenames` can label it.
+
+These constants can supply constant expressions, such as `@binding` arguments.
+Use WGSL `override` declarations for values supplied during pipeline creation.
+Use `features` for `@if` conditions. Constant modules do not add numeric conditions
+to `@if`. Use source modules for explicit types, vectors, arrays, or expressions.
+Upstream lowering also applies to generated constants when `lower=True`.
+
 ## Reuse compilation settings
 
 `Compiler` stores `options`, `features`, `keep`, `keep_root`, `strip`, `modules`,
@@ -319,7 +390,7 @@ It stores the project settings for subsequent compilation.
 
 `compile_source(source, *, root="package::main", filename="<string>", ...)`
 uses the stored settings. Both methods accept `features`, `keep`, `keep_root`, and
-`strip` overrides for one call.
+`strip` overrides for one call. They also accept `constant_modules` for that call.
 `compile_file(filename, ...)` resolves relative paths from `root_directory`,
 or the working directory when `root_directory` is `None`.
 Each call compiles again. The object does not cache results.
@@ -464,6 +535,6 @@ Report parser defects to the [upstream issue tracker](https://github.com/webgpu-
 See [LICENSE](../LICENSE) for source provenance and third-party notices.
 
 The binding enables imports, conditional translation, name mangling,
-source diagnostics, and upstream validation by default. It disables evaluation
-and generics at build time. Lowering is available through `CompileOptions`.
+source diagnostics, and upstream validation by default. It enables evaluation
+and disables generics at build time. Lowering is available through `CompileOptions`.
 Upstream validation does not catch every WGSL error.

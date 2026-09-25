@@ -791,7 +791,8 @@ def test_failure_reports_and_junit(
     if style == "auto":
         result.stdout.fnmatch_lines(
             [
-                "*math.test.wesl:3:5: expectEq failed*",
+                "*error: expectEq failed*",
+                "*--> math.test.wesl:3:5",
                 "*actual:   *4294967295u*",
                 "*expected: *4294967294u*",
             ]
@@ -817,7 +818,7 @@ def test_failure_reports_and_junit(
     assert failure.text is not None
     assert "\x1b" not in failure.text
     assert str(pytester.path) not in failure.text
-    assert "math.test.wesl:3:5: expectEq failed" in failure.text
+    assert "math.test.wesl:3:5" in failure.text
     if style == "auto":
         assert "4294967295" in failure.text
         assert "3 |     expectEq(4294967295u, 4294967294u);" in failure.text
@@ -890,7 +891,7 @@ def test_vector_failure_color_and_project_root(pytester: pytest.Pytester) -> Non
     failure = report.find(".//failure")
     assert failure is not None
     assert failure.text is not None
-    assert f"{filename.relative_to(pytester.path)}:1:22:" in failure.text
+    assert f"{filename.relative_to(pytester.path)}:1:22\n" in failure.text
     assert "\x1b" not in failure.text
 
 
@@ -1069,7 +1070,7 @@ def test_xdist(pytester: pytest.Pytester, style: str) -> None:
     assert failure.attrib["message"] == "expectEq failed"
     assert failure.text is not None
     assert "\x1b" not in failure.text
-    assert "parallel.test.wesl:5:22: expectEq failed" in failure.text
+    assert "parallel.test.wesl:5:22" in failure.text
     if style == "auto":
         assert "actual:" in failure.text
         assert "\x1b[31m1u\x1b[0m" in result.stdout.str()

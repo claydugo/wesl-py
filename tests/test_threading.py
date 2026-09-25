@@ -51,6 +51,7 @@ def test_concurrent_shader_instrumentation(wgsl_test: Path) -> None:
         assert entry_point in shader
         assert overrides == {}
         [diagnostic] = diagnostics
+        assert filename in _native.render_diagnostic(diagnostic)
         return shader, diagnostic
 
     with ThreadPoolExecutor(max_workers=8) as executor:

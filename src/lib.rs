@@ -12,7 +12,7 @@ use pyo3::{
 };
 use wesl::{
     FileResolver, ModulePath, ResolveError, Resolver, Router, SourceMap, SourceMapper,
-    VirtualResolver, Wesl,
+    StandardResolver, SyntaxUtil, VirtualResolver, Wesl,
 };
 use wgsl_parse::{
     error::ErrorKind,
@@ -660,24 +660,113 @@ fn compile(
                     .collect(),
                 entry_points: result
                     .syntax
-                    .global_declarations
-                    .iter()
-                    .filter_map(|declaration| match &**declaration {
-                        GlobalDeclaration::Function(function)
-                            if function
-                                .attributes
-                                .iter()
-                                .any(|attribute| attribute.is_entry_point()) =>
-                        {
-                            Some(function.ident.to_string())
-                        }
-                        _ => None,
-                    })
+                    .entry_points()
+                    .map(ToString::to_string)
                     .collect(),
             })
             .map_err(|error| Failure::from_diagnostic(error.diagnostic()))
     })
     .map_err(|failure| failure.into_pyerr(py))
+}
+
+#[pyfunction]
+fn constant_module(
+    py: Python<'_>,
+    module: String,
+    constants: &Bound<'_, PyMapping>,
+) -> PyResult<String> {
+    #[derive(FromPyObject)]
+    enum ConstantValue {
+        Boolean(bool),
+        Integer(i64),
+        Float(f64),
+    }
+
+    let constants = constants
+        .items()?
+        .extract::<Vec<(String, ConstantValue)>>()?;
+    py.detach(move || {
+        let mut resolver = StandardResolver::new("");
+        for (name, value) in constants {
+            if name.starts_with("__")
+                || !format!("const {name} = 0;")
+                    .parse::<GlobalDeclaration>()
+                    .is_ok_and(|declaration| {
+                        matches!(declaration, GlobalDeclaration::Declaration(declaration)
+                            if declaration.ident.name().as_str() == name)
+                    })
+            {
+                return Err(Failure::Message(format!(
+                    "{module}::{name}: invalid WGSL identifier"
+                )));
+            }
+            resolver.add_constant(
+                name,
+                match value {
+                    ConstantValue::Boolean(value) => value.into(),
+                    ConstantValue::Integer(value) => value.into(),
+                    ConstantValue::Float(value) => value.into(),
+                },
+            );
+        }
+        resolver
+            .resolve_source(&ModulePath::new(
+                PathOrigin::Package("constants".to_owned()),
+                Vec::new(),
+            ))
+            .map(Cow::into_owned)
+            .map_err(|error| Failure::from_diagnostic(wesl::Diagnostic::from(error)))
+    })
+    .map_err(|failure| failure.into_pyerr(py))
+}
+
+#[pyfunction]
+fn render_diagnostic(py: Python<'_>, diagnostic: &Diagnostic) -> String {
+    py.detach(move || {
+        let mut rendered = wesl::Error::Custom(diagnostic.message.clone()).diagnostic();
+        rendered.detail.module_path = diagnostic
+            .module
+            .as_ref()
+            .and_then(|path| path.parse().ok());
+        rendered
+            .detail
+            .display_name
+            .clone_from(&diagnostic.filename);
+        if let Some(source) = &diagnostic.source
+            && let Some((start, end)) = diagnostic.span
+            && source.get(start..end).is_some()
+        {
+            let mut normalized = String::with_capacity(source.len());
+            let mut normalized_start = 0;
+            let mut normalized_end = 0;
+            let mut previous = None;
+            for (offset, character) in source.char_indices() {
+                if offset == start {
+                    normalized_start = normalized.len();
+                }
+                if offset == end {
+                    normalized_end = normalized.len();
+                }
+                match character {
+                    '\n' if previous == Some('\r') => {}
+                    '\r' | '\u{000B}' | '\u{000C}' | '\u{0085}' | '\u{2028}' | '\u{2029}' => {
+                        normalized.push('\n');
+                    }
+                    _ => normalized.push(character),
+                }
+                previous = Some(character);
+            }
+            if start == source.len() {
+                normalized_start = normalized.len();
+            }
+            if end == source.len() {
+                normalized_end = normalized.len();
+            }
+            rendered.detail.source = Some(normalized);
+            rendered.detail.span = Some((normalized_start..normalized_end).into());
+        }
+        rendered.render_plain()
+    })
 }
 
 #[pyfunction]
@@ -706,6 +795,8 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
     module.add_function(wrap_pyfunction!(compile, module)?)?;
     module.add_function(wrap_pyfunction!(check_syntax, module)?)?;
+    module.add_function(wrap_pyfunction!(constant_module, module)?)?;
+    module.add_function(wrap_pyfunction!(render_diagnostic, module)?)?;
     module.add_function(wrap_pyfunction!(testing::discover_tests, module)?)?;
     module.add_function(wrap_pyfunction!(testing::compile_test, module)?)?;
     Ok(())

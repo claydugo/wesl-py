@@ -33,20 +33,7 @@ def test_compute(modules: dict[str, str], *, enabled: bool, expected: int) -> No
         ("const result = base + 1u; const base = 2u;", 3),
     ],
 )
-@pytest.mark.parametrize(
-    "lower",
-    [
-        False,
-        pytest.param(
-            True,
-            marks=pytest.mark.xfail(
-                strict=True,
-                raises=(AssertionError, wgpu.GPUValidationError),
-                reason="constant lowering does not preserve these expressions",
-            ),
-        ),
-    ],
-)
+@pytest.mark.parametrize("lower", [False, True])
 def test_constant_semantics(constants: str, expected: int, *, lower: bool) -> None:
     try:
         wgpu.gpu.request_adapter_sync()
@@ -64,3 +51,39 @@ def test_constant_semantics(constants: str, expected: int, *, lower: bool) -> No
     )
     output = compute_with_buffers({}, {0: (1, "I")}, result.wgsl, n=1)
     assert output[0][0] == expected
+
+
+@pytest.mark.gpu
+def test_injected_constant_semantics() -> None:
+    try:
+        wgpu.gpu.request_adapter_sync()
+    except RuntimeError as error:
+        if os.environ.get("CI"):
+            raise
+        pytest.skip(str(error))
+    result = wesl.compile_source(
+        """
+        import package::config::{binding_number, width, scale, enabled, maximum};
+        @group(0) @binding(binding_number)
+        var<storage, read_write> output: array<u32>;
+        @compute @workgroup_size(width) fn main() {
+            let signed_width: i32 = width;
+            let unsigned_width: u32 = width;
+            let amount: f32 = scale;
+            output[0] = u32(signed_width) + unsigned_width;
+            output[1] = bitcast<u32>(amount);
+            output[2] = select(0u, maximum, enabled);
+        }
+        """,
+        constant_modules={
+            "package::config": {
+                "binding_number": 0,
+                "width": 1,
+                "scale": 1.0,
+                "enabled": True,
+                "maximum": 2**32 - 1,
+            },
+        },
+    )
+    output = compute_with_buffers({}, {0: (3, "I")}, result.wgsl, n=1)
+    assert list(output[0]) == [2, 1065353216, 2**32 - 1]

@@ -297,7 +297,13 @@ class WeslTest:
         entry = representation.reprtraceback.reprentries[-1]
         entry.lines = str(error).splitlines()
         if style == "line":
-            entry.lines = entry.lines[:1]
+            diagnostic = error.diagnostic
+            entry.lines = [
+                (
+                    f"{error.filename}:{diagnostic.line or 1}:"
+                    f"{diagnostic.column or 1}: {diagnostic.message} failed"
+                ),
+            ]
         elif notes := getattr(excinfo.value, "__notes__", ()):
             representation.reprtraceback.reprentries = [
                 *representation.reprtraceback.reprentries,

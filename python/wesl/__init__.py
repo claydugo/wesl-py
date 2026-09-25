@@ -3,9 +3,10 @@ from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
-from typing import Self
+from typing import Self, SupportsFloat
 
 from . import _native
+from ._constants import add_constant_modules
 from ._native import (
     CompileError,
     CompileResult,
@@ -35,6 +36,9 @@ __all__ = [
     "compile_source",
     "load_modules",
 ]
+
+
+type _ConstantModules = Mapping[str, Mapping[str, SupportsFloat]]
 
 
 class Feature(Enum):
@@ -92,6 +96,7 @@ def compile(
     root: str = "package::main",
     options: CompileOptions | None = None,
     features: Features | Mapping[str, bool | Feature] | None = None,
+    constant_modules: _ConstantModules | None = None,
     keep: Sequence[str] | _Unset | None = _Unset.Value,
     keep_root: bool | None = None,
     strip: bool | None = None,
@@ -109,6 +114,8 @@ def compile(
         raise TypeError("options must be CompileOptions or None")
     if options is not None and not isinstance(options.mangler, ManglerKind):
         raise TypeError("mangler must be ManglerKind")
+    if constant_modules is not None:
+        modules = add_constant_modules(modules, constant_modules)
     options = CompileOptions() if options is None else options
     options = replace(
         options,
@@ -149,6 +156,7 @@ def compile_source(
     filename: str | os.PathLike[str] = "<string>",
     options: CompileOptions | None = None,
     features: Features | Mapping[str, bool | Feature] | None = None,
+    constant_modules: _ConstantModules | None = None,
     keep: Sequence[str] | _Unset | None = _Unset.Value,
     keep_root: bool | None = None,
     strip: bool | None = None,
@@ -171,6 +179,7 @@ def compile_source(
         root=root,
         options=options,
         features=features,
+        constant_modules=constant_modules,
         keep=keep,
         keep_root=keep_root,
         strip=strip,
@@ -187,6 +196,7 @@ def compile_file(
     root_directory: str | os.PathLike[str] | None = None,
     options: CompileOptions | None = None,
     features: Features | Mapping[str, bool | Feature] | None = None,
+    constant_modules: _ConstantModules | None = None,
     keep: Sequence[str] | _Unset | None = _Unset.Value,
     keep_root: bool | None = None,
     strip: bool | None = None,
@@ -209,6 +219,7 @@ def compile_file(
         filename=path,
         options=options,
         features=features,
+        constant_modules=constant_modules,
         keep=keep,
         keep_root=keep_root,
         strip=strip,
@@ -271,6 +282,7 @@ class Compiler:
         root: str = "package::main",
         filename: str | os.PathLike[str] = "<string>",
         features: Features | Mapping[str, bool | Feature] | None = None,
+        constant_modules: _ConstantModules | None = None,
         keep: Sequence[str] | _Unset | None = _Unset.Value,
         keep_root: bool | None = None,
         strip: bool | None = None,
@@ -282,6 +294,7 @@ class Compiler:
             filename=filename,
             options=self.options,
             features=self.features if features is None else features,
+            constant_modules=constant_modules,
             keep=self.keep if keep is _Unset.Value else keep,
             keep_root=self.keep_root if keep_root is None else keep_root,
             strip=self.strip if strip is None else strip,
@@ -295,6 +308,7 @@ class Compiler:
         filename: str | os.PathLike[str],
         *,
         features: Features | Mapping[str, bool | Feature] | None = None,
+        constant_modules: _ConstantModules | None = None,
         keep: Sequence[str] | _Unset | None = _Unset.Value,
         keep_root: bool | None = None,
         strip: bool | None = None,
@@ -320,6 +334,7 @@ class Compiler:
             root_directory=directory,
             options=self.options,
             features=self.features if features is None else features,
+            constant_modules=constant_modules,
             keep=self.keep if keep is _Unset.Value else keep,
             keep_root=self.keep_root if keep_root is None else keep_root,
             strip=self.strip if strip is None else strip,

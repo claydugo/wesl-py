@@ -46,37 +46,18 @@ class ShaderAssertionError(AssertionError):
             with suppress(ValueError):
                 filename = relpath(filename, root_directory)
         self.filename = filename
-        location = ":".join(
-            str(part)
-            for part in (filename, diagnostic.line, diagnostic.column)
-            if part is not None
-        )
-        lines = [f"{location}: {diagnostic.message} failed"]
+        message = f"{diagnostic.message} failed"
         if failures > 1:
-            lines[0] += " (first failure)"
-        if diagnostic.source is not None and diagnostic.line is not None:
-            source = diagnostic.source.splitlines()
-            end_line = diagnostic.end_line or diagnostic.line
-            if end_line > diagnostic.line and diagnostic.end_column == 1:
-                end_line -= 1
-            width = len(str(end_line))
-            lines.append(f"{'':>{width}} |")
-            for line_number in range(diagnostic.line, end_line + 1):
-                source_line = source[line_number - 1]
-                start = (
-                    (diagnostic.column or 1) - 1
-                    if line_number == diagnostic.line
-                    else len(source_line) - len(source_line.lstrip())
-                )
-                end = (
-                    (diagnostic.end_column or start + 2) - 1
-                    if line_number == diagnostic.end_line
-                    else len(source_line)
-                )
-                offset = len(source_line[:start].expandtabs(4))
-                length = max(1, len(source_line[:end].expandtabs(4)) - offset)
-                lines.append(f"{line_number:>{width}} | {source_line.expandtabs(4)}")
-                lines.append(f"{'':>{width}} | {' ' * offset}{'^' * length}")
+            message += " (first failure)"
+        lines = _native.render_diagnostic(
+            Diagnostic(
+                message,
+                module=diagnostic.module,
+                filename=filename if diagnostic.filename is not None else None,
+                source=diagnostic.source,
+                span=diagnostic.span,
+            )
+        ).splitlines()
         lines.append("")
         for label, value in (("actual:", actual), ("expected:", expected)):
             if isinstance(value, tuple):

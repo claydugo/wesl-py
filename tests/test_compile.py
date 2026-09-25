@@ -465,7 +465,7 @@ def test_lowering_inlines_aliases_and_constants() -> None:
     assert "alias " not in result.wgsl
     assert "const " not in result.wgsl
     assert "-> u32" in result.wgsl
-    assert "return (3u);" in result.wgsl
+    assert "return 3u;" in result.wgsl
 
 
 @pytest.mark.parametrize(
