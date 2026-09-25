@@ -13,9 +13,7 @@ use wgsl_parse::{
     },
 };
 
-use crate::{
-    Diagnostic, Failure, FeatureValue, Features, ModuleResolver, ProjectResolver, module_path,
-};
+use crate::{Diagnostic, Failure, Features, ModuleResolver, ProjectResolver, module_path};
 
 #[derive(FromPyObject)]
 pub(super) struct TestOptions<'py> {
@@ -72,14 +70,40 @@ impl Resolver for TestResolver {
 }
 
 #[pyfunction]
+#[pyo3(signature = (source, filename, features=None))]
 pub(super) fn discover_tests(
     py: Python<'_>,
     source: String,
     filename: String,
+    features: Option<Features<'_>>,
 ) -> PyResult<Vec<(String, usize, usize)>> {
+    let features = features.map(wesl::Features::try_from).transpose()?;
     py.detach(move || {
-        let syntax: TranslationUnit = source.parse().map_err(|error| {
-            let mut diagnostic = wesl::Diagnostic::from(error).with_source(source);
+        let conditional = features.is_some();
+        let syntax: TranslationUnit = if let Some(features) = features {
+            let root = module_path("package::main")?;
+            let mut resolver = VirtualResolver::new();
+            resolver.add_module(root.clone(), source.as_str().into());
+            wesl::compile(
+                &root,
+                &resolver,
+                &wesl::NoMangler,
+                &wesl::CompileOptions {
+                    imports: false,
+                    strip: false,
+                    lower: false,
+                    validate: false,
+                    features,
+                    ..Default::default()
+                },
+            )
+            .map(|compiled| compiled.syntax)
+            .map_err(|error| error.diagnostic())
+        } else {
+            source.parse().map_err(wesl::Diagnostic::from)
+        }
+        .map_err(|mut diagnostic| {
+            diagnostic.detail.source = Some(source);
             diagnostic.detail.display_name = Some(filename);
             Failure::from_diagnostic(diagnostic)
         })?;
@@ -95,7 +119,9 @@ pub(super) fn discover_tests(
                         tests.push((function.ident.name().to_string(), range.start, range.end));
                     }
                 }
-                GlobalDeclaration::Compound(compound) => pending.extend(&compound.body),
+                GlobalDeclaration::Compound(compound) if !conditional => {
+                    pending.extend(&compound.body);
+                }
                 _ => {}
             }
         }
@@ -134,24 +160,7 @@ pub(super) fn compile_test(
         validate,
         features,
     } = options;
-    let Features { default, flags } = features;
-    let features = wesl::Features {
-        default: default.try_into()?,
-        flags: flags
-            .items()?
-            .extract::<Vec<(String, FeatureValue)>>()?
-            .into_iter()
-            .map(|(name, feature)| {
-                Ok((
-                    name,
-                    match feature {
-                        FeatureValue::Flag(enabled) => enabled.into(),
-                        FeatureValue::Policy(feature) => feature.try_into()?,
-                    },
-                ))
-            })
-            .collect::<PyResult<_>>()?,
-    };
+    let features: wesl::Features = features.try_into()?;
     py.detach(move || {
         let root = module_path(&root)?;
         let mut dependency_resolver = Router::new();

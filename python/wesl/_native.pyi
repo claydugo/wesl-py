@@ -2,6 +2,7 @@ from collections.abc import Mapping
 from typing import Self, final
 
 from . import CompileOptions as _CompileOptions
+from . import Features as _Features
 from . import TestOptions as _TestOptions
 
 __all__ = [
@@ -86,7 +87,9 @@ def compile(
     dependency_aliases: dict[str, str] | None = None,
 ) -> CompileResult: ...
 def check_syntax(source: str, filename: str) -> None: ...
-def discover_tests(source: str, filename: str) -> list[tuple[str, int, int]]: ...
+def discover_tests(
+    source: str, filename: str, features: _Features | None = None
+) -> list[tuple[str, int, int]]: ...
 def compile_test(
     modules: Mapping[str, str],
     root: str,

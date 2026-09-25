@@ -71,9 +71,12 @@ Keep collected files inside this directory. Their paths determine their
 Pytest also collects any `.wesl` file that you select explicitly.
 
 `@if`, `@elif`, and `@else` select implementations with `wesl_features`.
-Collection includes conditional tests. A disabled test reports a skip at execution.
-Pytest sets up fixtures before the runner checks conditions.
-Session GPU fixtures can initialize for disabled tests.
+Collection includes conditional tests. A disabled test reports a skip during setup.
+The plugin checks conditions before it requests `wesl_device`, `wesl_resources`,
+or `wesl_constants`. These fixtures still contribute their parameter variants.
+Autouse fixtures and fixtures requested with `usefixtures` run before the check.
+Fixtures that supply test options or sources also run before the check.
+If these fixtures require a GPU, they can initialize it for disabled tests.
 Multiple conditional definitions of one name produce one item.
 
 ### Assertions

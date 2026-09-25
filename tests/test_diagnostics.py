@@ -2,6 +2,7 @@ import os
 import pickle
 import subprocess
 import sys
+from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from importlib.metadata import version
 from multiprocessing import get_context
@@ -10,6 +11,38 @@ from pathlib import Path
 import pytest
 import wesl
 from wesl import _native
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "const café = 1u;\nimport package::helper::value;",
+        "enable f16;\n@if(enabled) import package::helper::value;",
+    ],
+)
+@pytest.mark.parametrize(
+    "operation", [wesl.check_syntax, wesl.compile_source, _native.discover_tests]
+)
+def test_misplaced_import_explains_ordering(
+    source: str, operation: Callable[..., object]
+) -> None:
+    with pytest.raises(
+        wesl.CompileError, match="imports must precede directives and declarations"
+    ) as caught:
+        operation(source, filename="generated.wesl")
+    (diagnostic,) = caught.value.diagnostics
+    assert diagnostic.message == "imports must precede directives and declarations"
+    assert diagnostic.filename == "generated.wesl"
+    assert diagnostic.source == source
+    start = source.encode().index(b"import")
+    assert diagnostic.span == (start, start + len(b"import"))
+
+
+def test_malformed_import_keeps_parser_diagnostic() -> None:
+    with pytest.raises(wesl.CompileError) as caught:
+        wesl.check_syntax("import package::{import};")
+    assert "unexpected token" in caught.value.diagnostics[0].message
+    assert "imports must precede" not in str(caught.value)
 
 
 def test_imported_syntax_error_has_owned_diagnostics(modules: dict[str, str]) -> None:

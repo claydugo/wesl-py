@@ -165,6 +165,10 @@ provides imported sources. It must not contain the root module.
 `filename` labels the root source and defaults to `<string>`.
 The compiler does not open this label.
 
+Imports must precede directives and declarations in the assembled source.
+When a template contains imports, place them before generated bindings.
+Keep directives such as `enable f16;` between imports and declarations.
+
 `compile_file(filename, ...)` reads the root file as UTF-8.
 It searches the file's directory and its ancestors for the nearest `wesl.toml`.
 The manifest supplies the default `root_directory` and path dependencies.
@@ -260,6 +264,18 @@ result = wesl.compile_source(
 ```
 
 Imports across package boundaries work without visibility modifiers in WESL 0.4.4.
+This applies to declarations. To re-export an imported name, mark the import
+with `@publish`. Each conditional import needs the annotation:
+
+```wesl
+@if(packed_rgb)
+@publish import package::packed::sample_im;
+@else
+@publish import package::standard::sample_im;
+```
+
+If this code is in `sampling.wesl` in the `image` library, consumers can use
+`import image::sampling::sample_im;`.
 
 Within a library, `package::` and relative imports refer to that library.
 Virtual modules use the exact package paths that upstream's resolver receives.

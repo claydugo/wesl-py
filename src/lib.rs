@@ -59,6 +59,31 @@ struct Features<'py> {
     flags: Bound<'py, PyMapping>,
 }
 
+impl TryFrom<Features<'_>> for wesl::Features {
+    type Error = PyErr;
+
+    fn try_from(features: Features<'_>) -> PyResult<Self> {
+        Ok(Self {
+            default: features.default.try_into()?,
+            flags: features
+                .flags
+                .items()?
+                .extract::<Vec<(String, FeatureValue)>>()?
+                .into_iter()
+                .map(|(name, feature)| {
+                    Ok((
+                        name,
+                        match feature {
+                            FeatureValue::Flag(enabled) => enabled.into(),
+                            FeatureValue::Policy(feature) => feature.try_into()?,
+                        },
+                    ))
+                })
+                .collect::<PyResult<_>>()?,
+        })
+    }
+}
+
 #[derive(FromPyObject)]
 struct ManglerKind {
     value: String,
@@ -83,7 +108,6 @@ impl TryFrom<CompileOptions<'_>> for wesl::CompileOptions {
     type Error = PyErr;
 
     fn try_from(options: CompileOptions<'_>) -> PyResult<Self> {
-        let Features { default, flags } = options.features;
         Ok(Self {
             imports: options.imports,
             condcomp: options.condcomp,
@@ -93,23 +117,7 @@ impl TryFrom<CompileOptions<'_>> for wesl::CompileOptions {
             mangle_root: options.mangle_root,
             keep: options.keep,
             keep_root: options.keep_root,
-            features: wesl::Features {
-                default: default.try_into()?,
-                flags: flags
-                    .items()?
-                    .extract::<Vec<(String, FeatureValue)>>()?
-                    .into_iter()
-                    .map(|(name, feature)| {
-                        Ok((
-                            name,
-                            match feature {
-                                FeatureValue::Flag(enabled) => enabled.into(),
-                                FeatureValue::Policy(feature) => feature.try_into()?,
-                            },
-                        ))
-                    })
-                    .collect::<PyResult<_>>()?,
-            },
+            features: options.features.try_into()?,
             ..Self::default()
         })
     }
@@ -451,6 +459,18 @@ impl Failure {
         {
             error.span = (source.len()..source.len()).into();
             diagnostic.detail.span = Some(error.span);
+        }
+        if let wesl::Error::ParseError(error) = &*diagnostic.error
+            && let ErrorKind::UnexpectedToken { token, .. } = &error.error
+            && token == "import"
+            && let Some(source) = &diagnostic.detail.source
+            && let Some(prefix) = source.get(..error.span.range().start)
+            && let Ok(prefix) =
+                format!("{prefix}fn wesl_import_order() {{}}").parse::<TranslationUnit>()
+            && (!prefix.global_directives.is_empty() || prefix.global_declarations.len() > 1)
+        {
+            *diagnostic.error =
+                wesl::Error::Custom("imports must precede directives and declarations".to_owned());
         }
         let rendered = diagnostic.render_plain();
         let span = diagnostic.detail.span.map(|span| {

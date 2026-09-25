@@ -417,6 +417,134 @@ def test_test_options_control_native_skips(pytester: pytest.Pytester) -> None:
     result.assert_outcomes(skipped=1)
 
 
+def test_setup_plan_does_not_execute_fixtures(pytester: pytest.Pytester) -> None:
+    pytester.makeconftest("""
+        import pytest
+
+        @pytest.fixture(scope="session")
+        def wesl_device():
+            pytest.fail("setup planning must not create a device")
+
+        @pytest.fixture
+        def wesl_test_options():
+            pytest.fail("setup planning must not evaluate test options")
+
+        @pytest.fixture(params=[1, 2])
+        def wesl_resources(request):
+            pytest.fail("setup planning must not allocate resources")
+    """)
+    pytester.makefile(
+        ".test.wesl",
+        plan="@test fn enabled() {} @if(false) @test fn disabled() {}",
+    )
+    result = pytester.runpytest_subprocess("--setup-plan", "-q")
+    assert result.ret == 0
+    result.stdout.fnmatch_lines(
+        [
+            "*SETUP*S wesl_device*",
+            "*SETUP*F wesl_resources[[]1]*",
+            "*plan.test.wesl::enabled[[]1]*",
+            "*plan.test.wesl::enabled[[]2]*",
+            "*plan.test.wesl::disabled[[]1]*",
+            "*plan.test.wesl::disabled[[]2]*",
+        ],
+    )
+
+
+def test_disabled_tests_defer_resource_fixtures(pytester: pytest.Pytester) -> None:
+    pytester.makeconftest("""
+        import pytest
+
+        @pytest.fixture(params=[False, True], ids=["off", "on"])
+        def wesl_features(request):
+            return {"enabled": request.param}
+
+        @pytest.fixture(scope="session", params=[1, 2])
+        def device_configuration(request):
+            pytest.fail("disabled tests must not initialize device dependencies")
+
+        @pytest.fixture(scope="session")
+        def wesl_device(device_configuration):
+            pytest.fail("disabled tests must not initialize the device")
+
+        @pytest.fixture(params=[3, 7])
+        def wesl_resources(request, wesl_device):
+            pytest.fail("disabled tests must not allocate resources")
+
+        @pytest.fixture
+        def wesl_constants():
+            pytest.fail("disabled tests must not request constants")
+    """)
+    pytester.makefile(
+        ".test.wesl",
+        disabled="""
+            import missing::value;
+            @if(enabled) { @test fn selected() {} }
+            @elif(false) @test fn selected() {}
+            @else @test fn fallback() {}
+        """,
+    )
+    result = pytester.runpytest_subprocess("-q", "-k", "selected and off")
+    result.assert_outcomes(skipped=4, deselected=12)
+    result = pytester.runpytest_subprocess("-q", "-k", "fallback and on")
+    result.assert_outcomes(skipped=4, deselected=12)
+
+
+@pytest.mark.gpu
+def test_fixture_names_remain_visible_during_setup(pytester: pytest.Pytester) -> None:
+    pytester.makeconftest("""
+        import pytest
+
+        @pytest.fixture
+        def wesl_features(request):
+            return {"enabled": "wesl_resources" in request.fixturenames}
+    """)
+    pytester.makefile(
+        ".test.wesl",
+        names="@if(enabled) @test fn selected() { wgsl_test::expect(true); }",
+    )
+    result = pytester.runpytest_subprocess("-q")
+    result.assert_outcomes(passed=1)
+
+
+def test_disabled_tests_preserve_explicit_fixtures(pytester: pytest.Pytester) -> None:
+    pytester.makeconftest("""
+        import pytest
+        import wesl
+
+        events = []
+
+        @pytest.fixture(scope="session", autouse=True)
+        def wesl_device():
+            events.append("device")
+            yield object()
+            assert set(events) == {"device", "resources", "constants", "released"}
+
+        @pytest.fixture
+        def wesl_resources():
+            events.append("resources")
+            yield {}
+            events.append("released")
+
+        @pytest.fixture
+        def wesl_test_options(wesl_resources):
+            assert "resources" in events
+            return wesl.TestOptions()
+
+        @pytest.fixture
+        def wesl_constants():
+            events.append("constants")
+            return {}
+
+        def pytest_collection_modifyitems(items):
+            for item in items:
+                item.add_marker(pytest.mark.usefixtures("wesl_constants"))
+    """)
+    pytester.makefile(".test.wesl", disabled="@if(false) @test fn disabled() {}")
+    result = pytester.runpytest_subprocess("-q")
+    result.assert_outcomes(skipped=1)
+
+
 @pytest.mark.skipif(
     not hasattr(pytest, "HIDDEN_PARAM"), reason="requires pytest.HIDDEN_PARAM"
 )
@@ -541,6 +669,7 @@ def test_custom_function_setup(pytester: pytest.Pytester) -> None:
             def setup(self):
                 self.user_properties.append(("custom_setup", "ran"))
                 super().setup()
+                assert self.funcargs["wesl_resources"] == {}
 
         @pytest.hookimpl(wrapper=True)
         def pytest_pycollect_makeitem(collector):
@@ -553,6 +682,10 @@ def test_custom_function_setup(pytester: pytest.Pytester) -> None:
                     for item in items
                 ]
             return items
+
+        @pytest.fixture(autouse=True)
+        def configure(request):
+            assert ("custom_setup", "ran") in request.node.user_properties
 
         @pytest.fixture
         def wesl_resources(request):
