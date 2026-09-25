@@ -472,6 +472,10 @@ def test_disabled_tests_defer_resource_fixtures(pytester: pytest.Pytester) -> No
             pytest.fail("disabled tests must not allocate resources")
 
         @pytest.fixture
+        def wesl_layouts(wesl_device):
+            pytest.fail("disabled tests must not request layouts")
+
+        @pytest.fixture
         def wesl_constants():
             pytest.fail("disabled tests must not request constants")
     """)
@@ -727,6 +731,20 @@ def test_fixtures_parametrization_and_selection(pytester: pytest.Pytester) -> No
             finally:
                 buffer.destroy()
 
+        @pytest.fixture(
+            params=[
+                None,
+                {1: [{
+                    "binding": 2,
+                    "visibility": wgpu.ShaderStage.COMPUTE,
+                    "buffer": {"type": "storage"},
+                }]},
+            ],
+            ids=["auto", "explicit"],
+        )
+        def wesl_layouts(request):
+            return request.param
+
         @pytest.fixture
         def wesl_modules():
             return {
@@ -746,9 +764,9 @@ def test_fixtures_parametrization_and_selection(pytester: pytest.Pytester) -> No
     result = pytester.runpytest_subprocess(
         "-q", "math.test.wesl::doubling", "-k", "seven"
     )
-    result.assert_outcomes(passed=1, deselected=1)
+    result.assert_outcomes(passed=2, deselected=2)
     result = pytester.runpytest_subprocess("-q", "-m", "wesl")
-    result.assert_outcomes(passed=4)
+    result.assert_outcomes(passed=8)
 
 
 @pytest.mark.gpu

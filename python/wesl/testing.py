@@ -92,7 +92,7 @@ class ShaderAssertionError(AssertionError):
         super().__init__("\n".join(lines))
 
 
-def run_test(
+def run_test(  # noqa: C901, PLR0912, PLR0915
     device: wgpu.GPUDevice,
     modules: Mapping[str, str],
     test_name: str,
@@ -103,6 +103,7 @@ def run_test(
     root_directory: str | PathLike[str] | None = None,
     dependencies: Mapping[str, str | PathLike[str]] | None = None,
     resources: Mapping[int, Sequence[dict[str, Any]]] | None = None,
+    layouts: Mapping[int, Sequence[dict[str, Any]]] | None = None,
     constants: Mapping[str, float] | None = None,
 ) -> None:
     __tracebackhide__ = True
@@ -115,6 +116,12 @@ def run_test(
     )
     entries = groups.setdefault(0, [])
     bindings = {entry["binding"] for entry in entries}
+    if layouts is not None:
+        if any(
+            group < 0 or group >= device.limits["max-bind-groups"] for group in layouts
+        ):
+            raise ValueError("layout group index is outside the device's limits")
+        bindings.update(entry["binding"] for entry in layouts.get(0, []))
     result_binding = 0
     while result_binding in bindings:
         result_binding += 1
@@ -147,8 +154,26 @@ def run_test(
     )
     try:
         module = device.create_shader_module(code=shader)
+        layout: wgpu.GPUPipelineLayout | str = "auto"
+        if layouts is not None:
+            layout_groups = {group: list(entries) for group, entries in layouts.items()}
+            layout_groups.setdefault(0, []).append(
+                {
+                    "binding": result_binding,
+                    "visibility": wgpu.ShaderStage.COMPUTE,
+                    "buffer": {"type": "storage", "min_binding_size": 64},
+                }
+            )
+            layout = device.create_pipeline_layout(
+                bind_group_layouts=[
+                    device.create_bind_group_layout(
+                        entries=layout_groups.get(group, [])
+                    )
+                    for group in range(max(layout_groups) + 1)
+                ]
+            )
         pipeline = device.create_compute_pipeline(
-            layout="auto",
+            layout=layout,
             compute={
                 "module": module,
                 "entry_point": entry_point,

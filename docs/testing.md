@@ -74,6 +74,7 @@ Pytest also collects any `.wesl` file that you select explicitly.
 Collection includes conditional tests. A disabled test reports a skip during setup.
 The plugin checks conditions before it requests `wesl_device`, `wesl_resources`,
 or `wesl_constants`. These fixtures still contribute their parameter variants.
+The `wesl_layouts` fixture follows the same rules.
 Autouse fixtures and fixtures requested with `usefixtures` run before the check.
 Fixtures that supply test options or sources also run before the check.
 If these fixtures require a GPU, they can initialize it for disabled tests.
@@ -243,11 +244,48 @@ fn middle_value() {
 }
 ```
 
+The runner uses automatic layouts by default.
 Supply the bindings used by the selected test, including imported functions.
 Unused extra bindings and missing resources produce WebGPU validation errors.
 The runner selects the first unused binding in group 0 from the supplied entries.
 It adds its result buffer there and supplies empty groups between occupied groups.
 It copies the group lists before adding its binding.
+
+To set explicit layouts, override `wesl_layouts` or pass `layouts` to `run_test()`.
+Map each group number to a list of wgpu-py layout entries.
+Supply a layout entry for every application binding.
+The runner adds its result buffer to group 0. It avoids bindings from both mappings
+and copies the layout lists before adding its entry.
+
+The runner does not support dynamic buffer offsets.
+Buffer layouts must use `has_dynamic_offset=False`, which is the default.
+Set a fixed `offset` in the resource's buffer binding when needed.
+
+For example, use these entries for a float32 texture and a nearest sampler in
+group 2:
+
+```python
+@pytest.fixture
+def wesl_layouts():
+    return {
+        2: [
+            {
+                "binding": 0,
+                "visibility": wgpu.ShaderStage.COMPUTE,
+                "texture": {"sample_type": "unfilterable-float"},
+            },
+            {
+                "binding": 1,
+                "visibility": wgpu.ShaderStage.COMPUTE,
+                "sampler": {"type": "non-filtering"},
+            },
+        ]
+    }
+```
+
+These layouts allow nearest sampling of `r32float`, `rg32float`, and `rgba32float`
+without the `float32-filterable` device feature. Automatic layouts require that
+feature when a shader uses these textures with a sampler.
 
 Fixtures own application resources. The runner leaves those resources and the
 device open, and it reads only its result buffer. It destroys that buffer on
@@ -312,6 +350,8 @@ The plugin provides these fixtures:
 - `wesl_device`: One device per pytest session or xdist worker
 - `wesl_compiler`: A `Compiler` using the shared compilation fixtures
 - `wesl_resources`: Empty mapping of groups to bind-group entries
+- `wesl_layouts`: `None` for automatic layouts, or a mapping of groups to layout
+  entries
 - `wesl_modules`: Empty mapping of additional WESL modules
 - `wesl_dependencies`: Package names and directories from the nearest manifest
 - `wesl_filenames`: Empty mapping of module names to source filenames
@@ -374,6 +414,7 @@ def run_test(
     root_directory: str | PathLike[str] | None = None,
     dependencies: Mapping[str, str | PathLike[str]] | None = None,
     resources: Mapping[int, Sequence[dict[str, Any]]] | None = None,
+    layouts: Mapping[int, Sequence[dict[str, Any]]] | None = None,
     constants: Mapping[str, float] | None = None,
 ) -> None: ...
 ```
@@ -387,6 +428,8 @@ def run_test(
 
 `resources` maps bind-group numbers to entry lists, as described
 in [Resources for WESL tests](#resources-for-wesl-tests).
+`layouts` supplies explicit layout entries for those groups. `None` uses automatic
+layouts. An empty mapping specifies a layout with only the runner's result buffer.
 `constants` maps override names or numeric ID strings to pipeline values.
 
 The function does not read pytest fixtures.

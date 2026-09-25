@@ -152,6 +152,7 @@ class WeslModule(pytest.Module):
                 wesl_root_directory: Path,
                 wesl_dependencies: Mapping[str, str | Path],
                 wesl_resources: Mapping[int, Sequence[dict[str, Any]]],
+                wesl_layouts: Mapping[int, Sequence[dict[str, Any]]] | None,
                 wesl_constants: Mapping[str, float],
                 shader_path: Path = self.path,
                 shader_source: str = source,
@@ -179,6 +180,7 @@ class WeslModule(pytest.Module):
                         root_directory=root_directory,
                         dependencies=wesl_dependencies,
                         resources=wesl_resources,
+                        layouts=wesl_layouts,
                         constants=wesl_constants,
                     )
                 except ShaderTestDisabledError as error:
@@ -231,6 +233,7 @@ class WeslTest:
             initialnames = set(information.initialnames) - {
                 "wesl_device",
                 "wesl_resources",
+                "wesl_layouts",
                 "wesl_constants",
             }
             manager = self.item.session._fixturemanager  # noqa: SLF001
@@ -353,6 +356,11 @@ def wesl_dependencies(request: pytest.FixtureRequest) -> Mapping[str, str | Path
 @pytest.fixture
 def wesl_resources() -> Mapping[int, Sequence[dict[str, Any]]]:
     return {}
+
+
+@pytest.fixture
+def wesl_layouts() -> Mapping[int, Sequence[dict[str, Any]]] | None:
+    return None
 
 
 @pytest.fixture

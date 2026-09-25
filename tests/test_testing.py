@@ -485,6 +485,17 @@ def test_invalid_bind_groups(
         tracemalloc.stop()
 
 
+@pytest.mark.parametrize("group", [-1, 100_000])
+def test_invalid_layout_groups(wesl_device: wgpu.GPUDevice, group: int) -> None:
+    with pytest.raises(ValueError, match="layout group index"):
+        run_test(
+            wesl_device,
+            {"package::main": "@test fn selected() { wgsl_test::expect(true); }"},
+            "selected",
+            layouts={group: []},
+        )
+
+
 def test_native_bindings_and_ownership(wesl_device: wgpu.GPUDevice) -> None:
     uniform = wesl_device.create_buffer_with_data(
         data=pack("<4I", 3, 0, 0, 0),
@@ -566,6 +577,79 @@ def test_texture_bindings(wesl_device: wgpu.GPUDevice) -> None:
             },
         )
         assert texture.create_view() is not None
+    finally:
+        texture.destroy()
+
+
+@pytest.mark.parametrize("group", [0, 2])
+@pytest.mark.parametrize(
+    ("texture_format", "channel_count"), [("r32float", 1), ("rgba32float", 4)]
+)
+def test_float32_texture_bindings(
+    wesl_device: wgpu.GPUDevice, group: int, texture_format: str, channel_count: int
+) -> None:
+    assert "float32-filterable" not in wesl_device.features
+    texture = wesl_device.create_texture(
+        size=(1, 1, 1),
+        format=texture_format,
+        usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
+    )
+    try:
+        wesl_device.queue.write_texture(
+            {"texture": texture},
+            pack("<f", 1.0000009536743164) * channel_count,
+            {"bytes_per_row": 4 * channel_count},
+            (1, 1, 1),
+        )
+        resources = {
+            group: [
+                {"binding": 0, "resource": texture.create_view()},
+                {
+                    "binding": 1,
+                    "resource": wesl_device.create_sampler(
+                        mag_filter="nearest",
+                        min_filter="nearest",
+                        mipmap_filter="nearest",
+                    ),
+                },
+            ]
+        }
+        layouts = {
+            group: [
+                {
+                    "binding": 0,
+                    "visibility": wgpu.ShaderStage.COMPUTE,
+                    "texture": {"sample_type": "unfilterable-float"},
+                },
+                {
+                    "binding": 1,
+                    "visibility": wgpu.ShaderStage.COMPUTE,
+                    "sampler": {"type": "non-filtering"},
+                },
+            ]
+        }
+        run_test(
+            wesl_device,
+            {
+                "package::main": f"""
+                    @group({group}) @binding(0) var image: texture_2d<f32>;
+                    @group({group}) @binding(1) var nearest: sampler;
+                    @test fn sample() {{
+                        wgsl_test::expectUlp(
+                            textureSampleLevel(image, nearest, vec2f(0.5), 0.0).x,
+                            1.0000009536743164,
+                            0u,
+                        );
+                    }}
+                """
+            },
+            "sample",
+            resources=resources,
+            layouts=layouts,
+        )
+        assert len(resources[group]) == 2
+        assert len(layouts[group]) == 2
+        assert set(layouts) == {group}
     finally:
         texture.destroy()
 
