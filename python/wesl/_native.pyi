@@ -76,10 +76,13 @@ class Source:
     def text(self, /) -> str: ...
 
 @final
-class TestResult:
-    buffer_size: Final[int]
+class TestLayout:
+    @property
+    def buffer_size(self, /) -> int: ...
+    def decode(self, /, data: collections.abc.Buffer) -> TestResult: ...
 
-    def __new__(cls, /, data: collections.abc.Buffer) -> TestResult: ...
+@final
+class TestResult:
     @property
     def checks(self, /) -> int: ...
     @property
@@ -117,7 +120,7 @@ def compile_test(
     result_binding: int,
     dependencies: dict[str, str | PathLike[str]],
     dependency_aliases: dict[str, str] | None = None,
-) -> tuple[str, str, list[Diagnostic], dict[str, str]] | None: ...
+) -> tuple[str, str, list[Diagnostic], dict[str, str], TestLayout] | None: ...
 def constant_module(
     module: str, constants: collections.abc.Mapping[str, bool | int | float]
 ) -> str: ...
@@ -134,6 +137,7 @@ __all__ = [
     "CompileResult",
     "Diagnostic",
     "Source",
+    "TestLayout",
     "TestResult",
     "__version__",
     "check_syntax",

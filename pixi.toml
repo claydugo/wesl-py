@@ -14,6 +14,7 @@ no-build-isolation = ["wesl-py"]
 
 [feature.build.dependencies]
 rust = ">=1.97.1"
+rust-src = ">=1.97.1"
 maturin = ">=1.15,<2"
 
 [feature.artifacts.dependencies]

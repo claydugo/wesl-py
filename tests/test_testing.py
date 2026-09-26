@@ -100,14 +100,21 @@ def test_failure_in_imported_helper(
         ("@if(false) {} @else { @if(true) {", "}}"),
     ],
 )
+@pytest.mark.parametrize("lower", [False, True])
 def test_result_instrumentation(
-    wesl_device: wgpu.GPUDevice, wgsl_test: Path, prefix: str, suffix: str
+    wesl_device: wgpu.GPUDevice,
+    wgsl_test: Path,
+    prefix: str,
+    suffix: str,
+    *,
+    lower: bool,
 ) -> None:
     result_source = (wgsl_test / "TestResult.wesl").read_text(encoding="utf-8")
     result_source = (
         result_source.replace("@binding(0)", "@binding(\n0\n)")
+        .replace("passed: u32,\n  failCount: u32,", "failCount: u32,\n  passed: u32,")
         .replace("failCount: u32,", "failCount :\n u32 ,")
-        .replace("expected: vec4f,", "expected : vec4<f32> ,")
+        .replace("expected: vec4f,", "@align(64) @size(64) expected : vec4<f32> ,")
     )
     result_source = prefix + "\n" + result_source + "\n" + suffix
     buffer = wesl_device.create_buffer_with_data(
@@ -127,6 +134,7 @@ def test_result_instrumentation(
                     "wgsl_test::TestResult": result_source,
                 },
                 "failure",
+                options=wesl.TestOptions(lower=lower),
                 resources={0: [{"binding": 0, "resource": {"buffer": buffer}}]},
             )
         assert captured.value.actual == 7
@@ -135,6 +143,63 @@ def test_result_instrumentation(
         assert captured.value.checks == 1
     finally:
         buffer.destroy()
+
+
+@pytest.mark.parametrize("lower", [False, True])
+@pytest.mark.parametrize(
+    "body",
+    [
+        """
+        {
+            if (testResult.failCount == 0u) {
+                testResult.actual = actual;
+                testResult.expected = expected;
+            }
+        }
+        testResult.failCount += 1u;
+        """,
+        """
+        if (testResult.failCount == 0u) {
+            testResult.actual = actual;
+            testResult.expected = expected;
+        }
+        if (true) { testResult.failCount += 1u; }
+        """,
+    ],
+)
+def test_failure_recording_preserves_control_flow(
+    wesl_device: wgpu.GPUDevice, body: str, *, lower: bool
+) -> None:
+    with pytest.raises(ShaderAssertionError) as captured:
+        run_test(
+            wesl_device,
+            {
+                "package::main": """
+                    @test fn failure() {
+                        wgsl_test::expectEq(4294967295u, 4294967294u);
+                        wgsl_test::expectEq(3u, 4u);
+                    }
+                """,
+                "wgsl_test": (
+                    "import package::TestResult::testResult;\n"
+                    "fn recordFailure(actual: vec4f, expected: vec4f) {\n"
+                    "    testResult.passed = 0u;\n"
+                    f"{body}\n"
+                    "}\n"
+                    "fn expectEq(actual: u32, expected: u32) {\n"
+                    "    if (actual != expected) {\n"
+                    "        recordFailure(vec4f(f32(actual)), vec4f(f32(expected)));\n"
+                    "    }\n"
+                    "}\n"
+                ),
+            },
+            "failure",
+            options=wesl.TestOptions(lower=lower),
+        )
+    assert captured.value.actual == 4294967295
+    assert captured.value.expected == 4294967294
+    assert captured.value.failures == 2
+    assert captured.value.checks == 2
 
 
 @pytest.mark.parametrize("enabled", [False, True])

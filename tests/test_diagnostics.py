@@ -114,7 +114,7 @@ def test_shader_test_options_control_translation(
         {"wgsl_test": str(wgsl_test)},
     )
     assert compiled is not None
-    shader, entry_point, diagnostics, _ = compiled
+    shader, entry_point, diagnostics, _, _ = compiled
     assert ("unused" in shader) is not strip
     assert ("alias " in shader) is not lower
     assert entry_point in shader
@@ -150,7 +150,9 @@ def test_shader_test_options_control_validation(wgsl_test: Path) -> None:
     assert compiled[0].count("same(") == 2  # noqa: PLR2004
 
 
-@pytest.mark.parametrize("module", ["package::main", "package::helper"])
+@pytest.mark.parametrize(
+    "module", ["package::main", "package::helper", "wgsl_test::TestResult"]
+)
 def test_shader_test_error_preserves_source_context(
     module: str, wgsl_test: Path
 ) -> None:
@@ -160,6 +162,13 @@ def test_shader_test_error_preserves_source_context(
     }
     if module == "package::main":
         source += "@test fn selected() { fail(); }"
+    elif module == "wgsl_test::TestResult":
+        modules["package::main"] = "@test fn selected() {}"
+        source += (
+            (wgsl_test / "TestResult.wesl")
+            .read_text(encoding="utf-8")
+            .replace("fn initTestResult() {", "fn initTestResult() { fail();")
+        )
     modules[module] = source
     with pytest.raises(wesl.CompileError) as caught:
         _native.compile_test(

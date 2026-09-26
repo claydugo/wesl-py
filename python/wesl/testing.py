@@ -127,9 +127,9 @@ def run_test(
     )
     if compiled is None:
         raise ShaderTestDisabledError("WESL conditions disable this test")
-    shader, entry_point, sites, overrides = compiled
+    shader, entry_point, sites, overrides, result_layout = compiled
     result_buffer = device.create_buffer(
-        size=_native.TestResult.buffer_size,
+        size=result_layout.buffer_size,
         usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_SRC,
     )
     try:
@@ -143,7 +143,7 @@ def run_test(
                     "visibility": wgpu.ShaderStage.COMPUTE,
                     "buffer": {
                         "type": "storage",
-                        "min_binding_size": _native.TestResult.buffer_size,
+                        "min_binding_size": result_layout.buffer_size,
                     },
                 }
             )
@@ -184,7 +184,7 @@ def run_test(
         compute_pass.end()
         device.queue.submit([encoder.finish()])
         data = cast("memoryview", device.queue.read_buffer(result_buffer))
-        result = _native.TestResult(data)
+        result = result_layout.decode(data)
         if result.completed != 1:
             raise RuntimeError("shader test did not complete")
         if result.passed == 0:

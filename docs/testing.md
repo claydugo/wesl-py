@@ -92,6 +92,11 @@ The runner instruments them to capture typed values, source locations, assertion
 counts, and completion status.
 It does not modify the packaged files.
 
+WESL derives the result buffer layout from the compiled result type and decodes
+the buffer. Custom result modules must retain the upstream field names and types.
+Arbitrary custom layouts are unsupported. The evaluator has limits for named
+layout constants and invalid attributes. See [upstream limits](upstream.md).
+
 Install the `testing` extra to obtain pytest and wgpu-py.
 Shader imports need no download, cache, or registration step.
 Editor configuration is optional for running tests.

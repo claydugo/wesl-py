@@ -46,7 +46,7 @@ def test_concurrent_shader_instrumentation(wgsl_test: Path) -> None:
             {"wgsl_test": str(wgsl_test)},
         )
         assert compiled is not None
-        shader, entry_point, diagnostics, overrides = compiled
+        shader, entry_point, diagnostics, overrides, _ = compiled
         wesl.check_syntax(shader)
         assert entry_point in shader
         assert overrides == {}
