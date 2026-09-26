@@ -113,6 +113,9 @@ These tasks select the `dev` environment.
 After a Rust change, run `pixi reinstall --locked -e dev wesl-py` first.
 `lint` runs Ruff, markdownlint, Clippy, ty, Pyrefly, Pyright, and native stubtest.
 The type checkers check the Python API. Stubtest checks the compiled extension.
+Run `pixi run generate-stubs` after changing a native signature.
+Maturin generates stubs from PyO3's metadata with the optional `stub-gen` feature.
+Normal builds do not include the stub generator.
 `pixi run format` applies Ruff, rustfmt, and automatic markdownlint fixes.
 Rustfmt uses the Rust 2024 style.
 Markdownlint enables all rules and respects `.gitignore`.

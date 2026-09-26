@@ -536,7 +536,7 @@ fn module_path(path: &str) -> Result<ModulePath, Failure> {
 }
 
 #[pyfunction]
-#[pyo3(signature = (modules, root, options, filenames, root_directory, dependencies, dependency_aliases=None))]
+#[pyo3(signature = (modules: "collections.abc.Mapping[str, str]", root, options: "wesl.CompileOptions | None", filenames, root_directory, dependencies, dependency_aliases=None))]
 #[expect(
     clippy::too_many_arguments,
     reason = "The binding accepts compiler settings and Python source inputs."
@@ -670,6 +670,7 @@ fn compile(
 }
 
 #[pyfunction]
+#[pyo3(signature = (module, constants: "collections.abc.Mapping[str, bool | int | float]"))]
 fn constant_module(
     py: Python<'_>,
     module: String,
@@ -785,19 +786,29 @@ fn check_syntax(py: Python<'_>, source: String, filename: String) -> PyResult<()
 }
 
 #[pymodule(gil_used = false)]
-fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
-    module.add_class::<Diagnostic>()?;
-    module.add_class::<CompileResult>()?;
-    module.add_class::<Source>()?;
-    let error = module.py().get_type::<CompileError>();
-    error.setattr("diagnostics", PyTuple::empty(module.py()))?;
-    module.add("CompileError", error)?;
-    module.add("__version__", env!("CARGO_PKG_VERSION"))?;
-    module.add_function(wrap_pyfunction!(compile, module)?)?;
-    module.add_function(wrap_pyfunction!(check_syntax, module)?)?;
-    module.add_function(wrap_pyfunction!(constant_module, module)?)?;
-    module.add_function(wrap_pyfunction!(render_diagnostic, module)?)?;
-    module.add_function(wrap_pyfunction!(testing::discover_tests, module)?)?;
-    module.add_function(wrap_pyfunction!(testing::compile_test, module)?)?;
-    Ok(())
+mod _native {
+    use pyo3::{prelude::*, types::PyTuple};
+
+    #[pymodule_export]
+    use super::testing::{TestResult, compile_test, discover_tests};
+    #[pymodule_export]
+    use super::{
+        CompileError, CompileResult, Diagnostic, Source, check_syntax, compile, constant_module,
+        render_diagnostic,
+    };
+
+    #[pymodule_export]
+    #[expect(
+        non_upper_case_globals,
+        reason = "The Python attribute is named __version__"
+    )]
+    const __version__: &str = env!("CARGO_PKG_VERSION");
+
+    #[pymodule_init]
+    fn initialize(module: &Bound<'_, PyModule>) -> PyResult<()> {
+        module
+            .py()
+            .get_type::<CompileError>()
+            .setattr("diagnostics", PyTuple::empty(module.py()))
+    }
 }

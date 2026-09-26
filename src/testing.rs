@@ -4,21 +4,88 @@ use std::{
     path::PathBuf,
 };
 
-use pyo3::{prelude::*, types::PyMapping};
+use encase::{ShaderType, StorageBuffer};
+use pyo3::{
+    buffer::PyBuffer,
+    exceptions::PyValueError,
+    prelude::*,
+    types::{PyMapping, PyTuple},
+};
 use wesl::{
     BasicSourceMap, EscapeMangler, FileResolver, Mangler, ModulePath, ResolveError, Resolver,
     Router, SourceMap, SyntaxUtil, VirtualResolver, Wesl,
     eval::{Context, SyntaxUtil as _, Type, ty_eval_ty},
 };
-use wgsl_parse::{
-    SyntaxNode,
-    syntax::{
-        Attribute, CompoundStatement, DeclarationKind, Expression, GlobalDeclaration, Ident,
-        ImportContent, LiteralExpression, PathOrigin, Spanned, Statement, TranslationUnit,
-    },
+use wesl_quote::{quote_declaration, quote_expression};
+use wgsl_parse::SyntaxNode;
+use wgsl_parse::syntax::{
+    AssignmentOperator, AssignmentStatement, Attribute, BinaryExpression, BinaryOperator,
+    CompoundStatement, DeclarationKind, Expression, FormalParameter, Function, FunctionCall,
+    FunctionCallStatement, GlobalDeclaration, Ident, IfClause, IfStatement, ImportContent,
+    LiteralExpression, NamedComponentExpression, PathOrigin, Span, Spanned, Statement, Struct,
+    StructMember, TemplateArg, TranslationUnit, TypeExpression, WorkgroupSizeAttribute,
 };
 
 use crate::{Diagnostic, Failure, Features, ModuleResolver, ProjectResolver, module_path};
+
+#[pyclass(frozen, module = "wesl._native")]
+#[derive(ShaderType)]
+pub(super) struct TestResult {
+    #[pyo3(get)]
+    passed: u32,
+    #[pyo3(get)]
+    failures: u32,
+    value_kind: u32,
+    components: u32,
+    #[shader(align(16))]
+    actual: [u32; 4],
+    #[shader(align(16))]
+    expected: [u32; 4],
+    #[pyo3(get)]
+    site: u32,
+    #[pyo3(get)]
+    completed: u32,
+    #[pyo3(get)]
+    checks: u32,
+}
+
+#[pymethods]
+impl TestResult {
+    #[new]
+    #[pyo3(signature = (data: "collections.abc.Buffer"))]
+    fn new(data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        StorageBuffer::new(PyBuffer::<u8>::get(data)?.to_vec(data.py())?)
+            .create()
+            .map_err(|error| PyValueError::new_err(error.to_string()))
+    }
+
+    #[classattr]
+    fn buffer_size() -> u64 {
+        Self::min_size().get()
+    }
+
+    #[getter]
+    fn values<'py>(&self, py: Python<'py>) -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
+        let [actual, expected] = [self.actual, self.expected].map(|value| -> PyResult<_> {
+            match self.value_kind {
+                0 => Ok((value[0] != 0).into_pyobject(py)?.to_owned().into_any()),
+                1 => Ok(value[0].into_pyobject(py)?.into_any()),
+                _ if self.components == 1 => {
+                    Ok(f32::from_bits(value[0]).into_pyobject(py)?.into_any())
+                }
+                _ => {
+                    let components = usize::try_from(self.components)
+                        .map_err(|error| PyValueError::new_err(error.to_string()))?;
+                    let values = value.get(..components).ok_or_else(|| {
+                        PyValueError::new_err("shader assertion has too many components")
+                    })?;
+                    Ok(PyTuple::new(py, values.iter().copied().map(f32::from_bits))?.into_any())
+                }
+            }
+        });
+        Ok((actual?, expected?))
+    }
+}
 
 #[derive(FromPyObject)]
 pub(super) struct TestOptions<'py> {
@@ -62,20 +129,25 @@ impl Resolver for TestResolver {
         if path != &self.root {
             return Ok(syntax);
         }
-        let wrapper: TranslationUnit = format!(
-            "@compute @workgroup_size(1) fn {}() {{ wgsl_test::TestResult::initTestResult(); {}(); wgsl_test::TestResult::testResult.completed = 1u; }}",
-            self.entry_point, self.test_name,
-        ).parse().map_err(|error| ResolveError::Error(wesl::Diagnostic::from(error)))?;
-        syntax
-            .global_declarations
-            .extend(wrapper.global_declarations);
+        let test_name = &self.test_name;
+        let mut wrapper = quote_declaration! {
+            @compute @workgroup_size(1) fn wesl_test_entry() {
+                wgsl_test::TestResult::initTestResult();
+                #test_name();
+                wgsl_test::TestResult::testResult.completed = 1u;
+            }
+        };
+        if let GlobalDeclaration::Function(function) = &mut wrapper {
+            function.ident = Ident::new(self.entry_point.clone());
+        }
+        syntax.global_declarations.push(wrapper.into());
         syntax.retarget_idents();
         Ok(syntax)
     }
 }
 
 #[pyfunction]
-#[pyo3(signature = (source, filename, features=None))]
+#[pyo3(signature = (source, filename, features: "wesl.Features | None"=None))]
 pub(super) fn discover_tests(
     py: Python<'_>,
     source: String,
@@ -139,7 +211,7 @@ pub(super) fn discover_tests(
 type CompiledTest = Option<(String, String, Vec<Diagnostic>, HashMap<String, String>)>;
 
 #[pyfunction]
-#[pyo3(signature = (modules, root, test_name, options, filenames, root_directory, result_binding, dependencies, dependency_aliases=None))]
+#[pyo3(signature = (modules: "collections.abc.Mapping[str, str]", root, test_name, options: "wesl.TestOptions", filenames, root_directory, result_binding, dependencies, dependency_aliases=None))]
 #[expect(
     clippy::too_many_arguments,
     clippy::too_many_lines,
@@ -271,12 +343,45 @@ pub(super) fn compile_test(
         }
         let assertion_module = module_path("wgsl_test")?;
         let result_module = module_path("wgsl_test::TestResult")?;
-        let result_source = resolver.resolve_source(&result_module)
-            .map_err(|error| Failure::from_diagnostic(wesl::Diagnostic::from(error)))?
-            .replace("@binding(0)", &format!("@binding({result_binding})"))
-            .replace("failCount: u32,", "failCount: u32, value_kind: u32, components: u32,")
-            .replace("expected: vec4f,", "expected: vec4f, site: u32, completed: u32, checks: u32,");
-        resolver.modules.add_module(result_module.clone(), result_source.into());
+        let mut result_syntax = resolver.resolve_module(&result_module)
+            .map_err(|error| Failure::from_diagnostic(wesl::Diagnostic::from(error)))?;
+        let mut pending: Vec<_> = result_syntax.global_declarations.iter_mut().collect();
+        while let Some(declaration) = pending.pop() {
+            match &mut **declaration {
+                GlobalDeclaration::Compound(compound) => pending.extend(&mut compound.body),
+                GlobalDeclaration::Declaration(declaration) if declaration.ident.name().as_str() == "testResult" => {
+                    for attribute in &mut declaration.attributes {
+                        if let Attribute::Binding(binding) = &mut **attribute {
+                            *binding = Expression::from(result_binding).into();
+                        }
+                    }
+                }
+                GlobalDeclaration::Struct(structure) if structure.ident.name().as_str() == "TestResult" => {
+                    let GlobalDeclaration::Struct(additions) = quote_declaration!(
+                        struct TestResult {
+                            value_kind: u32,
+                            components: u32,
+                            site: u32,
+                            completed: u32,
+                            checks: u32,
+                        }
+                    ) else {
+                        continue;
+                    };
+                    let mut additions = additions.members.into_iter();
+                    if let Some(index) = structure.members.iter().position(|member| member.ident.name().as_str() == "failCount") {
+                        let insertion_index = index + 1;
+                        structure.members.splice(insertion_index..insertion_index, additions.by_ref().take(2));
+                    }
+                    if let Some(index) = structure.members.iter().position(|member| member.ident.name().as_str() == "expected") {
+                        let insertion_index = index + 1;
+                        structure.members.splice(insertion_index..insertion_index, additions);
+                    }
+                }
+                _ => {}
+            }
+        }
+        resolver.modules.add_translation_unit(result_module.clone(), result_syntax);
         let resolver = TestResolver {
             inner: ProjectResolver {
                 active: resolver.dependency_aliases.is_some(),
@@ -406,7 +511,7 @@ pub(super) fn compile_test(
         let Some(compiled_entry) = compiled_entry else {
             return Ok(None);
         };
-        let result_name = result_name.ok_or_else(|| {
+        let result_name = result_name.map(Ident::new).ok_or_else(|| {
             Failure::Message("shader test result is missing".to_owned())
         })?;
         let mut sites = Vec::new();
@@ -455,7 +560,7 @@ pub(super) fn compile_test(
                         diagnostic.detail.source = sourcemap.get_source(module).map(str::to_owned);
                         return Err(Failure::from_diagnostic(diagnostic));
                     };
-                    let (value_kind, components) = match parameter_type {
+                    let (value_kind, components): (u32, u8) = match parameter_type {
                         Type::Bool => (0, 1),
                         Type::U32 => (1, 1),
                         Type::F32 => (2, 1),
@@ -468,36 +573,63 @@ pub(super) fn compile_test(
                                 .with_sourcemap(&sourcemap)
                         )),
                     };
-                    let name = function.ident.name();
-                    let arguments = function.parameters.iter()
-                        .map(|parameter| parameter.ident.name().to_string())
-                        .collect::<Vec<_>>().join(", ");
+                    let call = Statement::FunctionCall(FunctionCallStatement {
+                        attributes: Vec::new(),
+                        call: FunctionCall {
+                            ty: function.ident.clone().into(),
+                            arguments: function.parameters.iter()
+                                .map(|parameter| Expression::from(parameter.ident.clone()).into())
+                                .collect(),
+                        },
+                    });
+                    let actual = &parameter.ident;
                     let (actual, expected) = if value_kind == 0 {
                         (
-                            format!("vec4u(select(0u, 1u, {}), 0u, 0u, 0u)", parameter.ident),
-                            "vec4u(1u, 0u, 0u, 0u)".to_owned(),
+                            quote_expression!(vec4u(select(0u, 1u, #actual), 0u, 0u, 0u)),
+                            quote_expression!(vec4u(1u, 0u, 0u, 0u)),
                         )
                     } else {
-                        let value_type = if components == 1 {
-                            "u32".to_owned()
-                        } else {
-                            format!("vec{components}u")
-                        };
-                        let padding = ", 0u".repeat(usize::from(4 - components));
-                        (
-                            format!("vec4u(bitcast<{value_type}>({}){padding})", parameter.ident),
-                            format!("vec4u(bitcast<{value_type}>({}){padding})", function.parameters[1].ident),
-                        )
+                        let expected = &function.parameters[1].ident;
+                        match components {
+                            1 => (
+                                quote_expression!(vec4u(bitcast<u32>(#actual), 0u, 0u, 0u)),
+                                quote_expression!(vec4u(bitcast<u32>(#expected), 0u, 0u, 0u)),
+                            ),
+                            2 => (
+                                quote_expression!(vec4u(bitcast<vec2u>(#actual), 0u, 0u)),
+                                quote_expression!(vec4u(bitcast<vec2u>(#expected), 0u, 0u)),
+                            ),
+                            3 => (
+                                quote_expression!(vec4u(bitcast<vec3u>(#actual), 0u)),
+                                quote_expression!(vec4u(bitcast<vec3u>(#expected), 0u)),
+                            ),
+                            _ => (
+                                quote_expression!(bitcast<vec4u>(#actual)),
+                                quote_expression!(bitcast<vec4u>(#expected)),
+                            ),
+                        }
                     };
-                    let mut wrapper: TranslationUnit = format!(
-                        "fn {name}_wesl_test(wesl_test_location: u32) {{ {name}({arguments}); {result_name}.checks += 1u; if {result_name}.failCount > 0u && {result_name}.site == 0u {{ {result_name}.site = wesl_test_location; {result_name}.value_kind = {value_kind}u; {result_name}.components = {components}u; {result_name}.actual = {actual}; {result_name}.expected = {expected}; }} }}"
-                    ).parse().map_err(|error| Failure::from_diagnostic(wesl::Diagnostic::from(error)))?;
-                    if let GlobalDeclaration::Function(wrapper_function) =
-                        &mut *wrapper.global_declarations[0]
-                    {
+                    let components = u32::from(components);
+                    let mut wrapper = quote_declaration! {
+                        fn wesl_test_wrapper(wesl_test_location: u32) {
+                            #stmt@call
+                            #result_name.checks += 1u;
+                            if #result_name.failCount > 0u {
+                                if #result_name.site == 0u {
+                                    #result_name.site = wesl_test_location;
+                                    #result_name.value_kind = #value_kind;
+                                    #result_name.components = #components;
+                                    #result_name.actual = #actual;
+                                    #result_name.expected = #expected;
+                                }
+                            }
+                        }
+                    };
+                    if let GlobalDeclaration::Function(wrapper_function) = &mut wrapper {
+                        wrapper_function.ident = Ident::new(format!("{}_wesl_test", function.ident));
                         wrapper_function.parameters.splice(0..0, function.parameters.iter().cloned());
                     }
-                    wrappers.extend(wrapper.global_declarations);
+                    wrappers.push(wrapper.into());
                 }
                 continue;
             }

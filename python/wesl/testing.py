@@ -3,7 +3,6 @@ from contextlib import suppress
 from os import PathLike, fspath
 from os.path import relpath
 from pathlib import Path
-from struct import unpack_from
 from typing import Any, cast
 
 import wgpu
@@ -73,7 +72,7 @@ class ShaderAssertionError(AssertionError):
         super().__init__("\n".join(lines))
 
 
-def run_test(  # noqa: C901, PLR0912, PLR0915
+def run_test(
     device: wgpu.GPUDevice,
     modules: Mapping[str, str],
     test_name: str,
@@ -130,7 +129,7 @@ def run_test(  # noqa: C901, PLR0912, PLR0915
         raise ShaderTestDisabledError("WESL conditions disable this test")
     shader, entry_point, sites, overrides = compiled
     result_buffer = device.create_buffer(
-        size=64,
+        size=_native.TestResult.buffer_size,
         usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_SRC,
     )
     try:
@@ -142,7 +141,10 @@ def run_test(  # noqa: C901, PLR0912, PLR0915
                 {
                     "binding": result_binding,
                     "visibility": wgpu.ShaderStage.COMPUTE,
-                    "buffer": {"type": "storage", "min_binding_size": 64},
+                    "buffer": {
+                        "type": "storage",
+                        "min_binding_size": _native.TestResult.buffer_size,
+                    },
                 }
             )
             layout = device.create_pipeline_layout(
@@ -182,32 +184,17 @@ def run_test(  # noqa: C901, PLR0912, PLR0915
         compute_pass.end()
         device.queue.submit([encoder.finish()])
         data = cast("memoryview", device.queue.read_buffer(result_buffer))
-        passed, failures, value_kind, components, site, completed, checks = unpack_from(
-            "<IIII32xIII", data
-        )
-        if completed != 1:
+        result = _native.TestResult(data)
+        if result.completed != 1:
             raise RuntimeError("shader test did not complete")
-        if passed == 0:
-            actual: _AssertionValue
-            expected: _AssertionValue
-            if value_kind == 0:
-                actual = bool(unpack_from("<I", data, 16)[0])
-                expected = bool(unpack_from("<I", data, 32)[0])
-            elif value_kind == 1:
-                actual = unpack_from("<I", data, 16)[0]
-                expected = unpack_from("<I", data, 32)[0]
-            else:
-                actual = unpack_from(f"<{components}f", data, 16)
-                expected = unpack_from(f"<{components}f", data, 32)
-                if components == 1:
-                    actual = actual[0]
-                    expected = expected[0]
+        if result.passed == 0:
+            actual, expected = result.values
             raise ShaderAssertionError(
-                sites[site - 1],
+                sites[result.site - 1],
                 actual=actual,
                 expected=expected,
-                failures=failures,
-                checks=checks,
+                failures=result.failures,
+                checks=result.checks,
                 root_directory=root_directory,
             )
     finally:

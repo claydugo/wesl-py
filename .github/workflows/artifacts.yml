@@ -20,6 +20,8 @@ jobs:
           locked: true
       - run: pixi run --locked lint
       - run: pixi run --locked format-check
+      - run: pixi run --locked generate-stubs
+      - run: git diff --exit-code -- python/wesl/_native.pyi
       - run: pixi run --locked -e test cargo test --locked --test upstream
       - run: pixi run --locked check-dependencies
 

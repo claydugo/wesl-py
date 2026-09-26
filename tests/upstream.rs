@@ -1,3 +1,8 @@
+#![expect(
+    unused_crate_dependencies,
+    reason = "The integration test loads the extension from Python"
+)]
+
 use pyo3::{prelude::*, types::PyDict};
 use wesl::{CompileOptions, EscapeMangler, Feature, Features, VirtualResolver};
 use wgsl_parse::syntax::ModulePath;

@@ -1,8 +1,14 @@
+[advisories]
+ignore = [
+    { id = "RUSTSEC-2026-0173", reason = "wesl-quote uses this for macro diagnostics during compilation. Accept this maintenance advisory until upstream migrates." },
+]
+
 [licenses]
 allow = [
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
     "MIT",
+    "MIT-0",
     "Unicode-3.0",
     "Zlib",
 ]

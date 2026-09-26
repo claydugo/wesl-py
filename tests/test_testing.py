@@ -92,6 +92,51 @@ def test_failure_in_imported_helper(
     assert "2 of 2 assertions failed" in str(error)
 
 
+@pytest.mark.parametrize(
+    ("prefix", "suffix"),
+    [
+        ("", ""),
+        ("@if(true) {", "}"),
+        ("@if(false) {} @else { @if(true) {", "}}"),
+    ],
+)
+def test_result_instrumentation(
+    wesl_device: wgpu.GPUDevice, wgsl_test: Path, prefix: str, suffix: str
+) -> None:
+    result_source = (wgsl_test / "TestResult.wesl").read_text(encoding="utf-8")
+    result_source = (
+        result_source.replace("@binding(0)", "@binding(\n0\n)")
+        .replace("failCount: u32,", "failCount :\n u32 ,")
+        .replace("expected: vec4f,", "expected : vec4<f32> ,")
+    )
+    result_source = prefix + "\n" + result_source + "\n" + suffix
+    buffer = wesl_device.create_buffer_with_data(
+        data=pack("<I", 7), usage=wgpu.BufferUsage.STORAGE
+    )
+    try:
+        with pytest.raises(ShaderAssertionError) as captured:
+            run_test(
+                wesl_device,
+                {
+                    "package::main": """
+                        @group(0) @binding(0) var<storage, read> value: u32;
+                        @test fn failure() {
+                            wgsl_test::expectEq(value, 9u);
+                        }
+                    """,
+                    "wgsl_test::TestResult": result_source,
+                },
+                "failure",
+                resources={0: [{"binding": 0, "resource": {"buffer": buffer}}]},
+            )
+        assert captured.value.actual == 7
+        assert captured.value.expected == 9
+        assert captured.value.failures == 1
+        assert captured.value.checks == 1
+    finally:
+        buffer.destroy()
+
+
 @pytest.mark.parametrize("enabled", [False, True])
 @pytest.mark.parametrize(
     "source",
