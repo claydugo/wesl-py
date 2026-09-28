@@ -627,14 +627,9 @@ def test_compiler_call_options_preserve_stored_settings(tmp_path: Path) -> None:
     )
     (tmp_path / "main.wesl").write_text(source)
     options = wesl.CompileOptions(
-        features=wesl.Features(flags={"enabled": False}), keep=["other"]
+        features=wesl.Features(flags={"enabled": True}), keep=["selected"]
     )
-    compiler = wesl.Compiler(
-        root_directory=tmp_path,
-        options=options,
-        features={"enabled": True},
-        keep=["selected"],
-    )
+    compiler = wesl.Compiler(root_directory=tmp_path, options=options)
     assert "7u" in compiler.compile_source(source).wgsl
     assert "7u" in compiler.compile_file("main.wesl").wgsl
     assert "3u" in compiler.compile_source(source, features={}).wgsl
@@ -645,9 +640,22 @@ def test_compiler_call_options_preserve_stored_settings(tmp_path: Path) -> None:
     assert not compiler.compile_file("main.wesl", keep=[]).wgsl.strip()
     assert "fn other(" in compiler.compile_source(source, keep_root=True).wgsl
     assert "fn other(" in compiler.compile_file("main.wesl", strip=False).wgsl
-    assert compiler.keep == ["selected"]
-    assert compiler.features == {"enabled": True}
-    assert options.keep == ["other"]
+    assert compiler.options is options
+    assert options.keep == ["selected"]
+    assert options.features.flags == {"enabled": True}
+    compiler.options.features.flags["enabled"] = False
+    compiler.options.keep = ["other"]
+    assert "selected" not in compiler.compile_source(source).wgsl
+    assert "fn other(" in compiler.compile_file("main.wesl").wgsl
+    compiler.options.strip = False
+    assert "3u" in compiler.compile_source(source).wgsl
+    assert "3u" in compiler.compile_file("main.wesl").wgsl
+    compiler.options.strip = True
+    compiler.options.keep_root = True
+    assert "3u" in compiler.compile_source(source).wgsl
+    assert "3u" in compiler.compile_file("main.wesl").wgsl
+    assert "selected" not in compiler.compile_source(source, keep_root=False).wgsl
+    assert compiler.options.keep_root
     assert options.features.flags == {"enabled": False}
 
 

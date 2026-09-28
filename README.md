@@ -67,8 +67,15 @@ edition = "2026_pre"
 root = "shaders"
 ```
 
-File compilation and pytest discover this manifest and use the same import root.
-Without a manifest, both use the shader file's parent directory.
+Load the manifest with `Compiler.from_project()`:
+
+```python
+compiler = wesl.Compiler.from_project(".")
+result = compiler.compile_file("main.wesl", features={"clamp_output": True})
+```
+
+Pytest discovers this manifest and uses the same import root.
+Standalone `compile_file()` uses the shader file's parent directory by default.
 
 ## Test a shader
 

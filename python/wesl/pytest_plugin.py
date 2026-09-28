@@ -16,12 +16,14 @@ from . import (
     CompileError,
     CompileOptions,
     Compiler,
+    Dependencies,
     Diagnostic,
     Features,
     TestOptions,
     _native,
 )
 from ._project import load_project
+from ._resources import module_name
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
@@ -31,6 +33,7 @@ if TYPE_CHECKING:
     from _pytest._io import TerminalWriter
 
     from . import Feature
+    from ._project import Project
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -150,7 +153,7 @@ class WeslModule(pytest.Module):
                 wesl_modules: Mapping[str, str],
                 wesl_filenames: Mapping[str, str | Path],
                 wesl_root_directory: Path,
-                wesl_dependencies: Mapping[str, str | Path],
+                _wesl_dependencies: Dependencies | Mapping[str, str | Path],
                 wesl_resources: Mapping[int, Sequence[dict[str, Any]]],
                 wesl_layouts: Mapping[int, Sequence[dict[str, Any]]] | None,
                 wesl_constants: Mapping[str, float],
@@ -164,7 +167,7 @@ class WeslModule(pytest.Module):
                 root_directory = Path(abspath(wesl_root_directory))  # noqa: PTH100
                 relative = shader_path.relative_to(root_directory)
                 parts = (*relative.parts[:-1], relative.stem.replace(".", "_"))
-                root = "package::" + "::".join(parts)
+                root = module_name(parts, namespace="package")
                 if root in wesl_modules:
                     raise ValueError(
                         "the test module is already present in wesl_modules"
@@ -178,7 +181,7 @@ class WeslModule(pytest.Module):
                         options=wesl_test_options,
                         filenames={**wesl_filenames, root: shader_path},
                         root_directory=root_directory,
-                        dependencies=wesl_dependencies,
+                        dependencies=_wesl_dependencies,
                         resources=wesl_resources,
                         layouts=wesl_layouts,
                         constants=wesl_constants,
@@ -287,6 +290,7 @@ class WeslTest:
             expected=excinfo.value.expected,
             failures=excinfo.value.failures,
             checks=excinfo.value.checks,
+            invocation=excinfo.value.invocation,
             root_directory=self.item.config.rootpath,
         )
         representation = excinfo.getrepr(
@@ -342,21 +346,37 @@ def wesl_compiler(
     wesl_modules: Mapping[str, str],
     wesl_filenames: Mapping[str, str | Path],
     wesl_root_directory: Path,
-    wesl_dependencies: Mapping[str, str | Path],
+    _wesl_dependencies: Dependencies | Mapping[str, str | Path],
 ) -> Compiler:
     return Compiler(
         options=wesl_options,
         modules=wesl_modules,
         filenames=wesl_filenames,
         root_directory=wesl_root_directory,
-        dependencies=wesl_dependencies,
+        dependencies=_wesl_dependencies,
     )
 
 
 @pytest.fixture
-def wesl_dependencies(request: pytest.FixtureRequest) -> Mapping[str, str | Path]:
-    project = load_project(request.node.path.parent)
-    return {} if project is None else project.load_dependencies()
+def _wesl_project(request: pytest.FixtureRequest) -> Project | None:
+    return load_project(request.node.path.parent)
+
+
+@pytest.fixture
+def _wesl_dependencies(
+    _wesl_project: Project | None,
+    wesl_dependencies: Dependencies | Mapping[str, str | Path],
+) -> Dependencies | Mapping[str, str | Path]:
+    return (
+        wesl_dependencies
+        if _wesl_project is None or isinstance(wesl_dependencies, Dependencies)
+        else _wesl_project.load_dependencies(wesl_dependencies)
+    )
+
+
+@pytest.fixture
+def wesl_dependencies() -> Dependencies | Mapping[str, str | Path]:
+    return {}
 
 
 @pytest.fixture
@@ -413,9 +433,14 @@ def wesl_constants() -> Mapping[str, float]:
 
 @pytest.fixture
 def wesl_root_directory(
-    request: pytest.FixtureRequest, pytestconfig: pytest.Config
+    request: pytest.FixtureRequest,
+    pytestconfig: pytest.Config,
+    _wesl_project: Project | None,
 ) -> Path:
     if directory := pytestconfig.getini("wesl_root"):
         return Path(abspath(pytestconfig.rootpath / directory))  # noqa: PTH100
-    project = load_project(request.node.path.parent)
-    return request.node.path.parent if project is None else project.root_directory
+    return (
+        request.node.path.parent
+        if _wesl_project is None
+        else _wesl_project.root_directory
+    )

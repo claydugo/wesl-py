@@ -9,6 +9,10 @@ class LoadedModules(NamedTuple):
     filenames: dict[str, str]
 
 
+def module_name(parts: tuple[str, ...], *, namespace: str) -> str:
+    return namespace if parts == ("package",) else namespace + "::" + "::".join(parts)
+
+
 def load_modules(
     directory: str | os.PathLike[str] | Traversable, *, namespace: str
 ) -> LoadedModules:
@@ -30,10 +34,12 @@ def load_modules(
                 directories.append(((*parts, child.name), child, ancestors))
                 continue
             filename = PurePosixPath(child.name)
-            if filename.suffix not in {".wesl", ".wgsl"}:
+            if filename.suffix not in {".wesl", ".wgsl"} or child.name.endswith(
+                ".test.wesl"
+            ):
                 continue
             module_path = (*parts, filename.stem)
-            name = namespace + "::" + "::".join(module_path)
+            name = module_name(module_path, namespace=namespace)
             previous = selected.get(name)
             if previous is not None and (
                 module_path != previous[0] or filename.suffix == previous[1]

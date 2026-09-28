@@ -7,8 +7,7 @@ from typing import Any, cast
 
 import wgpu
 
-from . import Diagnostic, TestOptions, _native
-from ._project import ProjectDependencies
+from . import Dependencies, Diagnostic, TestOptions, _native
 
 __all__ = [
     "ShaderAssertionError",
@@ -33,6 +32,7 @@ class ShaderAssertionError(AssertionError):
         expected: _AssertionValue,
         failures: int,
         checks: int,
+        invocation: int | None = None,
         root_directory: str | PathLike[str] | None = None,
     ) -> None:
         self.diagnostic = diagnostic
@@ -40,6 +40,7 @@ class ShaderAssertionError(AssertionError):
         self.expected = expected
         self.failures = failures
         self.checks = checks
+        self.invocation = invocation
         filename = diagnostic.filename or diagnostic.module or "<shader>"
         if diagnostic.filename is not None and Path(filename).is_absolute():
             with suppress(ValueError):
@@ -68,6 +69,8 @@ class ShaderAssertionError(AssertionError):
             else:
                 formatted = repr(value)
             lines.append(f"  {label:<9} {formatted}")
+        if invocation is not None:
+            lines.append(f"  invocation: {invocation}")
         lines.extend(("", f"{failures} of {checks} assertions failed"))
         super().__init__("\n".join(lines))
 
@@ -81,7 +84,7 @@ def run_test(
     options: TestOptions | None = None,
     filenames: Mapping[str, str | PathLike[str]] | None = None,
     root_directory: str | PathLike[str] | None = None,
-    dependencies: Mapping[str, str | PathLike[str]] | None = None,
+    dependencies: Dependencies | Mapping[str, str | PathLike[str]] | None = None,
     resources: Mapping[int, Sequence[dict[str, Any]]] | None = None,
     layouts: Mapping[int, Sequence[dict[str, Any]]] | None = None,
     constants: Mapping[str, float] | None = None,
@@ -105,6 +108,11 @@ def run_test(
     result_binding = 0
     while result_binding in bindings:
         result_binding += 1
+    directories = (
+        dependencies.directories
+        if isinstance(dependencies, Dependencies)
+        else dependencies
+    )
     compiled = _native.compile_test(
         modules,
         root,
@@ -119,11 +127,11 @@ def run_test(
             "wgsl_test": str(Path(__file__).parent / "shaders/wgsl_test"),
             **(
                 {}
-                if dependencies is None
-                else {name: fspath(path) for name, path in dependencies.items()}
+                if directories is None
+                else {name: fspath(path) for name, path in directories.items()}
             ),
         },
-        dependencies.aliases if isinstance(dependencies, ProjectDependencies) else None,
+        dict(dependencies.aliases) if isinstance(dependencies, Dependencies) else None,
     )
     if compiled is None:
         raise ShaderTestDisabledError("WESL conditions disable this test")
@@ -185,7 +193,7 @@ def run_test(
         device.queue.submit([encoder.finish()])
         data = cast("memoryview", device.queue.read_buffer(result_buffer))
         result = result_layout.decode(data)
-        if result.completed != 1:
+        if result.invocations < 1 or result.completed != result.invocations:
             raise RuntimeError("shader test did not complete")
         if result.passed == 0:
             actual, expected = result.values
@@ -195,6 +203,7 @@ def run_test(
                 expected=expected,
                 failures=result.failures,
                 checks=result.checks,
+                invocation=result.invocation,
                 root_directory=root_directory,
             )
     finally:

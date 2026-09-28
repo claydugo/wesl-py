@@ -311,42 +311,43 @@ struct ModuleResolver {
     dependency_aliases: Option<HashMap<String, String>>,
 }
 
+impl ModuleResolver {
+    fn dependency_path(&self, path: &ModulePath) -> ModulePath {
+        let (PathOrigin::Package(name), Some(aliases)) = (&path.origin, &self.dependency_aliases)
+        else {
+            return path.clone();
+        };
+        let mut canonical = String::new();
+        for component in name.split('/') {
+            if !canonical.is_empty() {
+                canonical.push('/');
+            }
+            canonical.push_str(component);
+            if let Some(alias) = aliases.get(&canonical) {
+                canonical.clone_from(alias);
+            }
+        }
+        ModulePath {
+            origin: PathOrigin::Package(canonical),
+            components: path.components.clone(),
+        }
+    }
+}
+
 impl Resolver for ModuleResolver {
     fn canonical_path(&self, path: &ModulePath) -> ModulePath {
-        if let Some(aliases) = &self.dependency_aliases {
-            if let PathOrigin::Package(name) = &path.origin
-                && self.modules.get_module(path).is_err()
-                && let Some(canonical) = aliases
-                    .get(name)
-                    .map(String::as_str)
-                    .or_else(|| (name.ends_with("/wgsl_test")).then_some("wgsl_test"))
-            {
-                return ModulePath {
-                    origin: PathOrigin::Package(canonical.to_owned()),
-                    components: path.components.clone(),
-                };
-            }
-            return path.clone();
-        }
+        let path = self.dependency_path(path);
         if let PathOrigin::Package(name) = &path.origin
+            && name.ends_with("/wgsl_test")
             && !self.dependency_names.contains(name)
-            && self.modules.get_module(path).is_err()
-            && let Some((parent, name)) = name.rsplit_once('/')
-            && let name = if parent.rsplit('/').next() == Some(name)
-                && self.dependency_names.contains(parent)
-            {
-                parent
-            } else {
-                name
-            }
-            && self.dependency_names.contains(name)
+            && self.modules.get_module(&path).is_err()
         {
             ModulePath {
-                origin: PathOrigin::Package(name.to_owned()),
-                components: path.components.clone(),
+                origin: PathOrigin::Package("wgsl_test".to_owned()),
+                components: path.components,
             }
         } else {
-            path.clone()
+            path
         }
     }
 
@@ -384,7 +385,6 @@ impl Resolver for ModuleResolver {
 
 struct ProjectResolver<R> {
     inner: R,
-    active: bool,
 }
 
 impl<R: Resolver> Resolver for ProjectResolver<R> {
@@ -402,9 +402,7 @@ impl<R: Resolver> Resolver for ProjectResolver<R> {
 
     fn resolve_module(&self, path: &ModulePath) -> Result<TranslationUnit, ResolveError> {
         let mut syntax = self.inner.resolve_module(path)?;
-        if self.active
-            && let PathOrigin::Package(namespace) = &path.origin
-        {
+        if let PathOrigin::Package(namespace) = &path.origin {
             for import in &mut syntax.imports {
                 if import.path.is_none()
                     && let ImportContent::Collection(collection) = &mut import.content
@@ -583,22 +581,36 @@ fn compile(
         }
         let mut resolver = ModuleResolver {
             modules: VirtualResolver::new(),
-            filenames: filenames
-                .into_iter()
-                .map(|(path, filename)| Ok((module_path(&path)?, filename)))
-                .collect::<Result<_, Failure>>()?,
+            filenames: HashMap::new(),
             files: root_directory.map(FileResolver::new),
             dependencies: dependency_resolver,
             dependency_names: dependencies.into_keys().collect(),
             dependency_aliases,
         };
-        for (path, source) in modules {
-            resolver
-                .modules
-                .add_module(module_path(&path)?, source.into());
+        for (path, filename) in filenames {
+            let path = resolver.dependency_path(&module_path(&path)?);
+            if let Some(previous) = resolver.filenames.get(&path)
+                && previous != &filename
+            {
+                return Err(Failure::Message(format!(
+                    "conflicting filenames for module {path}"
+                )));
+            }
+            resolver.filenames.insert(path, filename);
         }
-        let project = resolver.dependency_aliases.is_some();
-        let result = if sourcemap && project {
+        for (path, source) in modules {
+            let path = resolver.dependency_path(&module_path(&path)?);
+            if let Ok(previous) = resolver.modules.get_module(&path)
+                && previous != source
+            {
+                return Err(Failure::Message(format!(
+                    "conflicting sources for module {path}"
+                )));
+            }
+            resolver.modules.add_module(path, source.into());
+        }
+        let root = resolver.dependency_path(&root);
+        let result = if sourcemap {
             let mangler: Box<dyn wesl::Mangler> = match mangler {
                 wesl::ManglerKind::Escape => Box::new(wesl::EscapeMangler),
                 wesl::ManglerKind::Hash => Box::new(wesl::HashMangler),
@@ -608,10 +620,7 @@ fn compile(
             let mapper = SourceMapper::new(&root, &resolver, &mangler);
             let result = wesl::compile(
                 &root,
-                &ProjectResolver {
-                    inner: &mapper,
-                    active: true,
-                },
+                &ProjectResolver { inner: &mapper },
                 &mapper,
                 &options,
             );
@@ -628,10 +637,8 @@ fn compile(
                     .into()),
             }
         } else {
-            let mut compiler = Wesl::new_barebones().set_custom_resolver(ProjectResolver {
-                inner: resolver,
-                active: project,
-            });
+            let mut compiler =
+                Wesl::new_barebones().set_custom_resolver(ProjectResolver { inner: resolver });
             compiler.set_options(options);
             compiler.set_mangler(mangler);
             compiler.use_sourcemap(sourcemap);

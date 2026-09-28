@@ -14,14 +14,15 @@ from ._native import (
     Source,
     __version__,
 )
-from ._project import ProjectDependencies, absolute_path, load_project
-from ._resources import LoadedModules, load_modules
+from ._project import Dependencies, absolute_path, load_project
+from ._resources import LoadedModules, load_modules, module_name
 
 __all__ = [
     "CompileError",
     "CompileOptions",
     "CompileResult",
     "Compiler",
+    "Dependencies",
     "Diagnostic",
     "Feature",
     "Features",
@@ -102,14 +103,16 @@ def compile(
     strip: bool | None = None,
     filenames: Mapping[str, str | os.PathLike[str]] | None = None,
     root_directory: str | os.PathLike[str] | None = None,
-    dependencies: Mapping[str, str | os.PathLike[str]] | None = None,
+    dependencies: Dependencies | Mapping[str, str | os.PathLike[str]] | None = None,
 ) -> CompileResult:
     if not isinstance(modules, Mapping):
         raise TypeError("modules must be a mapping")
     if filenames is not None and not isinstance(filenames, Mapping):
         raise TypeError("filenames must be a mapping or None")
-    if dependencies is not None and not isinstance(dependencies, Mapping):
-        raise TypeError("dependencies must be a mapping or None")
+    if dependencies is not None and not isinstance(
+        dependencies, (Dependencies, Mapping)
+    ):
+        raise TypeError("dependencies must be Dependencies, a mapping, or None")
     if options is not None and not isinstance(options, CompileOptions):
         raise TypeError("options must be CompileOptions or None")
     if options is not None and not isinstance(options.mangler, ManglerKind):
@@ -128,6 +131,11 @@ def compile(
         keep_root=options.keep_root if keep_root is None else keep_root,
         strip=options.strip if strip is None else strip,
     )
+    directories = (
+        dependencies.directories
+        if isinstance(dependencies, Dependencies)
+        else dependencies
+    )
     return _native.compile(
         modules,
         root,
@@ -140,11 +148,11 @@ def compile(
             "wgsl_test": str(Path(__file__).parent / "shaders/wgsl_test"),
             **(
                 {}
-                if dependencies is None
-                else {name: os.fspath(path) for name, path in dependencies.items()}
+                if directories is None
+                else {name: os.fspath(path) for name, path in directories.items()}
             ),
         },
-        dependencies.aliases if isinstance(dependencies, ProjectDependencies) else None,
+        dict(dependencies.aliases) if isinstance(dependencies, Dependencies) else None,
     )
 
 
@@ -162,7 +170,7 @@ def compile_source(
     strip: bool | None = None,
     filenames: Mapping[str, str | os.PathLike[str]] | None = None,
     root_directory: str | os.PathLike[str] | None = None,
-    dependencies: Mapping[str, str | os.PathLike[str]] | None = None,
+    dependencies: Dependencies | Mapping[str, str | os.PathLike[str]] | None = None,
 ) -> CompileResult:
     if modules is not None and not isinstance(modules, Mapping):
         raise TypeError("modules must be a mapping or None")
@@ -201,17 +209,14 @@ def compile_file(
     keep_root: bool | None = None,
     strip: bool | None = None,
     filenames: Mapping[str, str | os.PathLike[str]] | None = None,
-    dependencies: Mapping[str, str | os.PathLike[str]] | None = None,
+    dependencies: Dependencies | Mapping[str, str | os.PathLike[str]] | None = None,
 ) -> CompileResult:
     path = absolute_path(Path(filename))
-    project = load_project(path.parent)
     directory = (
-        (path.parent if project is None else project.root_directory)
-        if root_directory is None
-        else absolute_path(Path(root_directory))
+        path.parent if root_directory is None else absolute_path(Path(root_directory))
     )
     relative_path = path.relative_to(directory)
-    root = "package::" + "::".join(relative_path.with_suffix("").parts)
+    root = module_name(relative_path.with_suffix("").parts, namespace="package")
     return compile_source(
         path.read_bytes().decode("utf-8"),
         modules=modules,
@@ -225,23 +230,19 @@ def compile_file(
         strip=strip,
         filenames=filenames,
         root_directory=directory,
-        dependencies=dependencies
-        if project is None
-        else project.load_dependencies(dependencies),
+        dependencies=dependencies,
     )
 
 
 @dataclass(kw_only=True)
 class Compiler:
     options: CompileOptions = field(default_factory=CompileOptions)
-    features: Features | Mapping[str, bool | Feature] | None = None
-    keep: Sequence[str] | _Unset | None = _Unset.Value
-    keep_root: bool | None = None
-    strip: bool | None = None
     modules: Mapping[str, str] = field(default_factory=dict)
     filenames: Mapping[str, str | os.PathLike[str]] = field(default_factory=dict)
     root_directory: str | os.PathLike[str] | None = None
-    dependencies: Mapping[str, str | os.PathLike[str]] = field(default_factory=dict)
+    dependencies: Dependencies | Mapping[str, str | os.PathLike[str]] = field(
+        default_factory=dict
+    )
 
     @classmethod
     def from_project(  # noqa: D102
@@ -249,10 +250,6 @@ class Compiler:
         directory: str | os.PathLike[str],
         *,
         options: CompileOptions | None = None,
-        features: Features | Mapping[str, bool | Feature] | None = None,
-        keep: Sequence[str] | _Unset | None = _Unset.Value,
-        keep_root: bool | None = None,
-        strip: bool | None = None,
         modules: Mapping[str, str] | None = None,
         filenames: Mapping[str, str | os.PathLike[str]] | None = None,
         root_directory: str | os.PathLike[str] | None = None,
@@ -263,15 +260,11 @@ class Compiler:
             raise FileNotFoundError("no wesl.toml found")
         return cls(
             options=CompileOptions() if options is None else options,
-            features=features,
-            keep=keep,
-            keep_root=keep_root,
-            strip=strip,
             modules={} if modules is None else modules,
             filenames={} if filenames is None else filenames,
             root_directory=project.root_directory
             if root_directory is None
-            else root_directory,
+            else absolute_path(Path(root_directory)),
             dependencies=project.load_dependencies(dependencies),
         )
 
@@ -293,11 +286,11 @@ class Compiler:
             root=root,
             filename=filename,
             options=self.options,
-            features=self.features if features is None else features,
+            features=features,
             constant_modules=constant_modules,
-            keep=self.keep if keep is _Unset.Value else keep,
-            keep_root=self.keep_root if keep_root is None else keep_root,
-            strip=self.strip if strip is None else strip,
+            keep=keep,
+            keep_root=keep_root,
+            strip=strip,
             filenames=self.filenames,
             root_directory=self.root_directory,
             dependencies=self.dependencies,
@@ -318,26 +311,16 @@ class Compiler:
             if self.root_directory is None
             else Path(self.root_directory) / filename
         )
-        path = absolute_path(path)
-        directory = (
-            path.parent
-            if self.root_directory is None
-            else absolute_path(Path(self.root_directory))
-        )
-        relative_path = path.relative_to(directory)
-        root = "package::" + "::".join(relative_path.with_suffix("").parts)
-        return compile_source(
-            path.read_bytes().decode("utf-8"),
-            root=root,
-            filename=path,
+        return compile_file(
+            path,
             modules=self.modules,
-            root_directory=directory,
+            root_directory=self.root_directory,
             options=self.options,
-            features=self.features if features is None else features,
+            features=features,
             constant_modules=constant_modules,
-            keep=self.keep if keep is _Unset.Value else keep,
-            keep_root=self.keep_root if keep_root is None else keep_root,
-            strip=self.strip if strip is None else strip,
+            keep=keep,
+            keep_root=keep_root,
+            strip=strip,
             filenames=self.filenames,
             dependencies=self.dependencies,
         )

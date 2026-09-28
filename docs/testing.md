@@ -42,14 +42,40 @@ pixi run python -m pytest shaders --collect-only
 pixi run python -m pytest shaders -k addition --junitxml=results.xml
 ```
 
-A test function has no parameters, return value, or shader stage attribute.
-The runner calls it from one compute invocation. A function with no assertions
-passes when execution completes. Use Python tests for parallel dispatch and
-fragment shaders.
+A test function has no return value or shader stage attribute.
+Without `@workgroup_size`, the runner uses one compute invocation.
+A function with no assertions passes when execution completes.
+
+Add `@workgroup_size` and builtin parameters to test cooperative code:
+
+```wesl
+import wgsl_test::expectEq;
+
+var<workgroup> values: array<u32, 32>;
+
+@test @workgroup_size(32)
+fn neighbors(@builtin(local_invocation_index) lane: u32) {
+    values[lane] = lane + 1u;
+    workgroupBarrier();
+    expectEq(values[(lane + 1u) % 32u], (lane + 1u) % 32u + 1u);
+}
+```
+
+The runner dispatches one workgroup. All parameters must have a `@builtin` attribute.
+Workgroup dimensions can use constants or overrides from `wesl_constants`.
+The test can use shared memory, barriers, and enabled subgroup operations.
+The `wesl_device` fixture must enable any device features that the shader requires.
+Use Python tests for multiple workgroups or fragment shaders.
+
+Each invocation records assertions privately. Atomic counters combine the check,
+failure, and completion counts. The report identifies one failing invocation and
+its first failed assertion. The selected invocation can vary with GPU scheduling.
+Passing invocations cannot overwrite a failure. Returning from the test still
+records that invocation's results.
 
 Imports resolve through the existing WESL compiler.
 Each test uses the nearest ancestor `wesl.toml` for its root and path dependencies.
-File compilation uses the same discovery rule.
+Use `Compiler.from_project()` to load these settings outside pytest.
 Without a manifest, the default package root is the test file's parent directory.
 Configure a project root in `wesl.toml`:
 
@@ -358,7 +384,9 @@ The plugin provides these fixtures:
 - `wesl_layouts`: `None` for automatic layouts, or a mapping of groups to layout
   entries
 - `wesl_modules`: Empty mapping of additional WESL modules
-- `wesl_dependencies`: Package names and directories from the nearest manifest
+- `wesl_dependencies`: Directory overrides for the nearest manifest, or a
+  `Dependencies` snapshot that supplies the complete graph. Defaults to an empty
+  mapping
 - `wesl_filenames`: Empty mapping of module names to source filenames
 - `wesl_features`: Default `Features`, shared by both options fixtures
 - `wesl_options`: `CompileOptions` for `wesl_compiler`, using `wesl_features`
@@ -370,6 +398,11 @@ The plugin provides these fixtures:
 Override fixtures in `conftest.py`. Parametrized fixtures produce separate shader
 test cases with normal pytest IDs. Use `pytest_collection_modifyitems` to attach
 skip, xfail, or project markers. Collected WESL tests carry `wesl` and `gpu` markers.
+
+The plugin resolves directory overrides once per test. Python compilation and
+native shader tests use the same dependency snapshot. Return
+`Compiler.from_project(...).dependencies` from `wesl_dependencies` to reuse an
+existing snapshot.
 
 The `gpu` marker includes hardware and software adapters.
 A software adapter runs shaders on the CPU.
@@ -417,7 +450,9 @@ def run_test(
     options: wesl.TestOptions | None = None,
     filenames: Mapping[str, str | PathLike[str]] | None = None,
     root_directory: str | PathLike[str] | None = None,
-    dependencies: Mapping[str, str | PathLike[str]] | None = None,
+    dependencies: (
+        wesl.Dependencies | Mapping[str, str | PathLike[str]] | None
+    ) = None,
     resources: Mapping[int, Sequence[dict[str, Any]]] | None = None,
     layouts: Mapping[int, Sequence[dict[str, Any]]] | None = None,
     constants: Mapping[str, float] | None = None,
@@ -430,6 +465,8 @@ def run_test(
 `test_name` names a test function in the `root` module.
 `root`, `filenames`, `root_directory`, and `dependencies` use the
 [compilation conventions](api.md#compile-strings-and-files).
+Pass `compiler.dependencies` to reuse a project compiler's package graph.
+Pass `compiler.root_directory` separately when the test imports project files.
 
 `resources` maps bind-group numbers to entry lists, as described
 in [Resources for WESL tests](#resources-for-wesl-tests).
@@ -456,6 +493,8 @@ The function raises `ShaderAssertionError` on assertion failure and
 - `checks`: The total number of assertions executed, including passing
   assertions.
 - `failures`: The total number of failed assertions.
+- `invocation`: The local invocation index for a cooperative failure. Scalar tests
+  report `None`.
 
 Vectors contain two, three, or four components.
 Integer reports preserve exact values. Boolean failures expose `False` and `True`.

@@ -18,11 +18,13 @@ use wesl::{
 use wesl_quote::{quote_declaration, quote_expression};
 use wgsl_parse::SyntaxNode;
 use wgsl_parse::syntax::{
-    AssignmentOperator, AssignmentStatement, Attribute, BinaryExpression, BinaryOperator,
-    CompoundStatement, DeclarationKind, Expression, FormalParameter, Function, FunctionCall,
-    FunctionCallStatement, GlobalDeclaration, Ident, IfClause, IfStatement, ImportContent,
-    LiteralExpression, NamedComponentExpression, PathOrigin, Span, Spanned, Statement, Struct,
-    StructMember, TemplateArg, TranslationUnit, TypeExpression, WorkgroupSizeAttribute,
+    AddressSpace, AssignmentOperator, AssignmentStatement, Attribute, BinaryExpression,
+    BinaryOperator, BuiltinValue, CompoundStatement, Declaration, DeclarationKind, Expression,
+    FormalParameter, Function, FunctionCall, FunctionCallStatement, GlobalDeclaration, Ident,
+    IfClause, IfStatement, ImportContent, LiteralExpression, NamedComponentExpression,
+    ParenthesizedExpression, PathOrigin, Span, Spanned, Statement, Struct, StructMember,
+    TemplateArg, TranslationUnit, TypeExpression, UnaryExpression, UnaryOperator,
+    WorkgroupSizeAttribute,
 };
 
 use crate::{Diagnostic, Failure, Features, ModuleResolver, ProjectResolver, module_path};
@@ -32,6 +34,7 @@ pub(super) struct TestLayout {
     result_type: Type,
     #[pyo3(get)]
     buffer_size: u32,
+    cooperative: bool,
 }
 
 #[pymethods]
@@ -66,7 +69,11 @@ impl TestLayout {
                 .collect::<PyResult<Vec<_>>>()
         });
         Ok(TestResult {
-            passed: scalar("passed")?,
+            passed: if self.cooperative {
+                u32::from(scalar("passed")? == scalar("invocations")?)
+            } else {
+                scalar("passed")?
+            },
             failures: scalar("failCount")?,
             value_kind: scalar("value_kind")?,
             components: scalar("components")?,
@@ -75,6 +82,16 @@ impl TestLayout {
             site: scalar("site")?,
             completed: scalar("completed")?,
             checks: scalar("checks")?,
+            invocations: if self.cooperative {
+                scalar("invocations")?
+            } else {
+                1
+            },
+            invocation: if self.cooperative {
+                Some(scalar("invocation")?)
+            } else {
+                None
+            },
         })
     }
 }
@@ -95,6 +112,10 @@ pub(super) struct TestResult {
     completed: u32,
     #[pyo3(get)]
     checks: u32,
+    #[pyo3(get)]
+    invocations: u32,
+    #[pyo3(get)]
+    invocation: Option<u32>,
 }
 
 #[pymethods]
@@ -137,6 +158,11 @@ struct TestResolver<R> {
     entry_point: String,
     result_module: ModulePath,
     result_binding: u32,
+    parameters: Vec<FormalParameter>,
+    workgroup_size: Option<WorkgroupSizeAttribute>,
+    cooperative: bool,
+    collector: Ident,
+    names: Vec<String>,
 }
 
 impl<R: Resolver> Resolver for TestResolver<R> {
@@ -154,6 +180,7 @@ impl<R: Resolver> Resolver for TestResolver<R> {
 
     #[expect(
         clippy::too_many_lines,
+        clippy::cognitive_complexity,
         reason = "Apply test transformations after source mapping in one resolver."
     )]
     fn resolve_module(&self, path: &ModulePath) -> Result<TranslationUnit, ResolveError> {
@@ -168,6 +195,8 @@ impl<R: Resolver> Resolver for TestResolver<R> {
         }
         let mut syntax = self.inner.resolve_module(path)?;
         if path == &self.result_module {
+            let mut structure = None;
+            let mut binding = None;
             let mut pending: Vec<_> = syntax.global_declarations.iter_mut().collect();
             while let Some(declaration) = pending.pop() {
                 match &mut **declaration {
@@ -180,9 +209,15 @@ impl<R: Resolver> Resolver for TestResolver<R> {
                                 *binding = Expression::from(self.result_binding).into();
                             }
                         }
+                        if self.cooperative {
+                            binding = Some(declaration.clone());
+                            declaration.attributes.clear();
+                            declaration.kind =
+                                DeclarationKind::Var(Some((AddressSpace::Private, None)));
+                        }
                     }
-                    GlobalDeclaration::Struct(structure)
-                        if structure.ident.name().as_str() == "TestResult" =>
+                    GlobalDeclaration::Struct(result_structure)
+                        if result_structure.ident.name().as_str() == "TestResult" =>
                     {
                         if let GlobalDeclaration::Struct(additions) = quote_declaration!(
                             struct TestResult {
@@ -195,11 +230,64 @@ impl<R: Resolver> Resolver for TestResolver<R> {
                                 checks: u32,
                             }
                         ) {
-                            structure.members.extend(additions.members);
+                            result_structure.members.extend(additions.members);
+                        }
+                        if self.cooperative {
+                            if let GlobalDeclaration::Struct(additions) = quote_declaration!(
+                                struct TestResult {
+                                    invocations: u32,
+                                    invocation: u32,
+                                }
+                            ) {
+                                result_structure.members.extend(additions.members);
+                            }
+                            structure = Some(result_structure.clone());
                         }
                     }
                     _ => {}
                 }
+            }
+            if let (Some(mut structure), Some(mut binding)) = (structure, binding) {
+                let output = Ident::new(format!("{}_output", self.collector));
+                structure.ident = Ident::new(format!("{}_result", self.collector));
+                for member in &mut structure.members {
+                    if matches!(
+                        member.ident.name().as_str(),
+                        "passed" | "failCount" | "checks" | "completed"
+                    ) && let Expression::TypeOrIdentifier(member_type) =
+                        quote_expression!(atomic<u32>)
+                    {
+                        member.ty = member_type;
+                    }
+                }
+                binding.ident = output.clone();
+                binding.ty = Some(structure.ident.clone().into());
+                let mut collector = quote_declaration! {
+                    fn collectTestResult(invocation: u32, invocations: u32) {
+                        atomicAdd(&#output.passed, testResult.passed);
+                        atomicAdd(&#output.checks, testResult.checks);
+                        let previous = atomicAdd(&#output.failCount, testResult.failCount);
+                        if (testResult.failCount > 0u) && (previous == 0u) {
+                            #output.value_kind = testResult.value_kind;
+                            #output.components = testResult.components;
+                            #output.actual_bits = testResult.actual_bits;
+                            #output.expected_bits = testResult.expected_bits;
+                            #output.site = testResult.site;
+                            #output.invocation = invocation;
+                        }
+                        if invocation == 0u { #output.invocations = invocations; }
+                        atomicAdd(&#output.completed, 1u);
+                    }
+                };
+                if let GlobalDeclaration::Function(function) = &mut collector {
+                    function.ident = self.collector.clone();
+                }
+                syntax.global_declarations.extend([
+                    GlobalDeclaration::Struct(structure).into(),
+                    GlobalDeclaration::Declaration(binding).into(),
+                    collector.into(),
+                ]);
+                syntax.retarget_idents();
             }
         }
         if path != &self.root {
@@ -215,6 +303,93 @@ impl<R: Resolver> Resolver for TestResolver<R> {
         };
         if let GlobalDeclaration::Function(function) = &mut wrapper {
             function.ident = Ident::new(self.entry_point.clone());
+            function.parameters.clone_from(&self.parameters);
+            if let Some(workgroup_size) = &self.workgroup_size {
+                function
+                    .attributes
+                    .retain(|attribute| !matches!(&**attribute, Attribute::WorkgroupSize(_)));
+                function
+                    .attributes
+                    .push(Attribute::WorkgroupSize(workgroup_size.clone()).into());
+            }
+            if let Statement::FunctionCall(call) = &mut *function.body.statements[1] {
+                call.call.arguments = self
+                    .parameters
+                    .iter()
+                    .map(|parameter| Expression::from(parameter.ident.clone()).into())
+                    .collect();
+            }
+            if self.cooperative {
+                let invocation = if let Some(parameter) =
+                    function.parameters.iter().find(|parameter| {
+                        parameter.attributes.iter().any(|attribute| {
+                            matches!(
+                                &**attribute,
+                                Attribute::Builtin(BuiltinValue::LocalInvocationIndex)
+                            )
+                        })
+                    }) {
+                    parameter.ident.clone()
+                } else {
+                    let mut name = format!("{}_invocation", self.entry_point);
+                    while self.names.contains(&name)
+                        || function
+                            .parameters
+                            .iter()
+                            .any(|parameter| *parameter.ident.name() == name)
+                    {
+                        name.push('_');
+                    }
+                    let identifier = Ident::new(name);
+                    function.parameters.push(FormalParameter {
+                        attributes: vec![
+                            Attribute::Builtin(BuiltinValue::LocalInvocationIndex).into(),
+                        ],
+                        ident: identifier.clone(),
+                        ty: Ident::new("u32".to_owned()).into(),
+                    });
+                    identifier
+                };
+                let size = self
+                    .workgroup_size
+                    .clone()
+                    .unwrap_or(WorkgroupSizeAttribute {
+                        x: Expression::from(1u32).into(),
+                        y: None,
+                        z: None,
+                    });
+                let horizontal = (*size.x).clone();
+                let vertical = (*size.y.unwrap_or(Expression::from(1u32).into())).clone();
+                let depth = (*size.z.unwrap_or(Expression::from(1u32).into())).clone();
+                let collector = &self.collector;
+                let collected = quote_declaration! {
+                    fn collect() { wgsl_test::TestResult::#collector(#invocation, u32(#horizontal) * u32(#vertical) * u32(#depth)); }
+                };
+                if let GlobalDeclaration::Function(collected) = collected {
+                    function.body.statements.extend(collected.body.statements);
+                }
+            }
+        }
+        let mut pending: Vec<_> = syntax.global_declarations.iter_mut().collect();
+        while let Some(declaration) = pending.pop() {
+            match &mut **declaration {
+                GlobalDeclaration::Compound(compound) => pending.extend(&mut compound.body),
+                GlobalDeclaration::Function(function)
+                    if function.attributes.iter().any(|attribute| {
+                        matches!(&**attribute, Attribute::Custom(custom) if custom.name == "test")
+                    }) =>
+                {
+                    function.attributes.retain(|attribute| {
+                        !matches!(&**attribute, Attribute::WorkgroupSize(_))
+                    });
+                    for parameter in &mut function.parameters {
+                        parameter.attributes.retain(|attribute| {
+                            !matches!(&**attribute, Attribute::Builtin(_))
+                        });
+                    }
+                }
+                _ => {}
+            }
         }
         syntax.global_declarations.push(wrapper.into());
         syntax.retarget_idents();
@@ -332,19 +507,35 @@ pub(super) fn compile_test(
         }
         let mut resolver = ModuleResolver {
             modules: VirtualResolver::new(),
-            filenames: filenames
-                .into_iter()
-                .map(|(path, filename)| module_path(&path).map(|path| (path, filename)))
-                .collect::<Result<_, _>>()?,
+            filenames: HashMap::new(),
             files: root_directory.map(FileResolver::new),
             dependencies: dependency_resolver,
             dependency_names: dependencies.into_keys().collect(),
             dependency_aliases,
         };
+        for (path, filename) in filenames {
+            let path = resolver.dependency_path(&module_path(&path)?);
+            if let Some(previous) = resolver.filenames.get(&path)
+                && previous != &filename
+            {
+                return Err(Failure::Message(format!(
+                    "conflicting filenames for module {path}"
+                )));
+            }
+            resolver.filenames.insert(path, filename);
+        }
         for (path, source) in modules {
-            let path = module_path(&path)?;
+            let path = resolver.dependency_path(&module_path(&path)?);
+            if let Ok(previous) = resolver.modules.get_module(&path)
+                && previous != source
+            {
+                return Err(Failure::Message(format!(
+                    "conflicting sources for module {path}"
+                )));
+            }
             resolver.modules.add_module(path, source.into());
         }
+        let root = resolver.dependency_path(&root);
         let syntax = resolver
             .resolve_module(&root)
             .map_err(|error| Failure::from_diagnostic(wesl::Diagnostic::from(error)))?;
@@ -410,12 +601,12 @@ pub(super) fn compile_test(
             return Ok(None);
         };
         if let GlobalDeclaration::Function(function) = &**declaration
-            && (!function.parameters.is_empty()
+            && (function.parameters.iter().any(|parameter| !parameter.attributes.iter().any(|attribute| matches!(&**attribute, Attribute::Builtin(_))))
                 || function.return_type.is_some()
                 || function.attributes.iter().any(|attribute| attribute.is_entry_point()))
         {
             return Err(Failure::from_diagnostic(wesl::Error::Custom(
-                "@test requires a function without parameters, a return value, or a shader stage".to_owned(),
+                "@test requires a function with only builtin parameters, no return value, and no shader stage".to_owned(),
             ).diagnostic().with_source(
                 resolver.resolve_source(&root)
                     .map_err(|error| Failure::from_diagnostic(wesl::Diagnostic::from(error)))?
@@ -425,10 +616,30 @@ pub(super) fn compile_test(
         }
         let assertion_module = module_path("wgsl_test")?;
         let result_module = module_path("wgsl_test::TestResult")?;
+        let (parameters, workgroup_size) = match &**declaration {
+            GlobalDeclaration::Function(function) => (function.parameters.clone(), function.attributes.iter().find_map(|attribute| {
+                if let Attribute::WorkgroupSize(size) = &**attribute { Some(size.clone()) } else { None }
+            })),
+            _ => return Err(Failure::Message("shader test is not a function".to_owned())),
+        };
+        let cooperative = !parameters.is_empty() || workgroup_size.is_some();
+        let result_syntax = resolver.resolve_module(&result_module).map_err(|error| Failure::from_diagnostic(wesl::Diagnostic::from(error)))?;
+        let mut pending: Vec<_> = result_syntax.global_declarations.iter().collect();
+        while let Some(declaration) = pending.pop() {
+            if let Some(ident) = declaration.ident() {
+                names.push(ident.name().to_string());
+            }
+            if let GlobalDeclaration::Compound(compound) = &**declaration {
+                pending.extend(&compound.body);
+            }
+        }
+        let mut collector = "wesl_test_collect".to_owned();
+        while [collector.clone(), format!("{collector}_output"), format!("{collector}_result")]
+            .iter().any(|name| names.contains(name))
+        { collector.push('_'); }
         let mapper = SourceMapper::new(&root, &resolver, &EscapeMangler);
         let transformed = TestResolver {
             inner: ProjectResolver {
-                active: resolver.dependency_aliases.is_some(),
                 inner: &mapper,
             },
             root: root.clone(),
@@ -436,6 +647,11 @@ pub(super) fn compile_test(
             entry_point: entry_point.clone(),
             result_module: result_module.clone(),
             result_binding,
+            parameters,
+            workgroup_size,
+            cooperative,
+            collector: Ident::new(collector),
+            names,
         };
         let result = wesl::compile(&root, &transformed, &mapper, &wesl::CompileOptions {
             imports: true,
@@ -511,7 +727,25 @@ pub(super) fn compile_test(
                                 }
                             }
                         }
-                        ty_eval_ty(value_type, &mut context).map_err(wesl::Error::from)
+                        let resolved_type = ty_eval_ty(value_type, &mut context)?;
+                        let mut pending = vec![&resolved_type];
+                        while let Some(current_type) = pending.pop() {
+                            match current_type {
+                                Type::Struct(structure) => {
+                                    for member in &structure.members {
+                                        if member.align == Some(0) {
+                                            return Err(wesl::Error::Custom(
+                                                "structure members require nonzero alignment".to_owned(),
+                                            ));
+                                        }
+                                        pending.push(&member.ty);
+                                    }
+                                }
+                                Type::Array(element, _) => pending.push(element),
+                                _ => {}
+                            }
+                        }
+                        Ok(resolved_type)
                     })
                     .transpose()
                     .map_err(|error| Failure::from_diagnostic(
@@ -623,13 +857,18 @@ pub(super) fn compile_test(
                         }
                     };
                     let components = u32::from(components);
+                    let mut location = "wesl_test_location".to_owned();
+                    while function.parameters.iter().any(|parameter| *parameter.ident.name() == location) {
+                        location.push('_');
+                    }
+                    let location = Ident::new(location);
                     let mut wrapper = quote_declaration! {
                         fn wesl_test_wrapper(wesl_test_location: u32) {
                             #stmt@call
                             #result_name.checks += 1u;
                             if #result_name.failCount > 0u {
                                 if #result_name.site == 0u {
-                                    #result_name.site = wesl_test_location;
+                                    #result_name.site = #location;
                                     #result_name.value_kind = #value_kind;
                                     #result_name.components = #components;
                                     #result_name.actual_bits = #actual;
@@ -640,6 +879,7 @@ pub(super) fn compile_test(
                     };
                     if let GlobalDeclaration::Function(wrapper_function) = &mut wrapper {
                         wrapper_function.ident = Ident::new(format!("{}_wesl_test", function.ident));
+                        wrapper_function.parameters[0].ident = location;
                         wrapper_function.parameters.splice(0..0, function.parameters.iter().cloned());
                     }
                     wrappers.push(wrapper.into());
@@ -721,7 +961,7 @@ pub(super) fn compile_test(
         }
         let result_type = result_type.ok_or_else(|| Failure::Message("shader test result type is missing".to_owned()))?;
         let buffer_size = result_type.size_of().ok_or_else(|| Failure::Message("shader test result requires a fixed buffer size".to_owned()))?;
-        Ok(Some((result.to_string(), compiled_entry, sites, overrides, TestLayout { result_type, buffer_size })))
+        Ok(Some((result.to_string(), compiled_entry, sites, overrides, TestLayout { result_type, buffer_size, cooperative })))
     })
     .map_err(|failure: Failure| failure.into_pyerr(py))
 }

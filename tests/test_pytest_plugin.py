@@ -94,6 +94,18 @@ def test_options_import_does_not_collect_class(pytester: pytest.Pytester) -> Non
 
 
 @pytest.mark.gpu
+def test_explicit_package_root(pytester: pytest.Pytester) -> None:
+    pytester.makefile(
+        ".wesl",
+        package="import package::helper::value; "
+        "@test fn imported() { wgsl_test::expectEq(value(), 7u); }",
+        helper="fn value() -> u32 { return 7u; }",
+    )
+    result = pytester.runpytest_subprocess("package.wesl", "-q")
+    result.assert_outcomes(passed=1)
+
+
+@pytest.mark.gpu
 def test_shader_tests_load_manifest_dependencies(pytester: pytest.Pytester) -> None:
     pytester.makefile(
         ".toml",
@@ -114,21 +126,31 @@ def test_shader_tests_load_manifest_dependencies(pytester: pytest.Pytester) -> N
 
 
 @pytest.mark.gpu
+@pytest.mark.parametrize("resolved", [False, True])
 def test_dependency_fixture_overrides_missing_manifest_paths(
     pytester: pytest.Pytester,
+    *,
+    resolved: bool,
 ) -> None:
     pytester.makefile(
         ".toml",
         wesl='edition = "2026_pre"\nroot = "shaders"\n'
         '[dependencies]\nlibrary = { path = "unavailable" }\n',
     )
-    pytester.makeconftest("""
+    pytester.makeconftest(f"""
         from pathlib import Path
         import pytest
+        import wesl
 
         @pytest.fixture
         def wesl_dependencies():
-            return {"library": Path(__file__).parent / "replacement"}
+            directory = Path(__file__).parent
+            dependencies = {{"library": directory / "replacement"}}
+            if {resolved!r}:
+                return wesl.Compiler.from_project(
+                    directory, dependencies=dependencies
+                ).dependencies
+            return dependencies
     """)
     shaders = pytester.path / "shaders"
     shaders.mkdir()
@@ -154,6 +176,17 @@ def test_compile(wesl_compiler):
 def test_shader_tests_share_transitive_dependency_state(
     pytester: pytest.Pytester,
 ) -> None:
+    pytester.makeconftest("""
+        from pathlib import Path
+        from types import MappingProxyType
+        import pytest
+
+        @pytest.fixture
+        def wesl_dependencies(wesl_dependencies):
+            return MappingProxyType({
+                **wesl_dependencies, "extra": Path(__file__).parent / "common"
+            })
+    """)
     pytester.makefile(
         ".toml",
         wesl='edition = "2026_pre"\nroot = "."\n'
@@ -180,7 +213,8 @@ def test_shader_tests_share_transitive_dependency_state(
         ".test.wesl",
         shared_state="@test fn shared_state() { "
         "wgsl_test::expectEq(alpha::value(), 1u); "
-        "wgsl_test::expectEq(beta::value(), 2u); }",
+        "wgsl_test::expectEq(beta::value(), 2u); "
+        "wgsl_test::expectEq(extra::next(), 1u); }",
     )
     result = pytester.runpytest_subprocess("shared_state.test.wesl", "-q")
     result.assert_outcomes(passed=1)
@@ -1132,3 +1166,28 @@ def test_autouse_fixtures_run_before_test_options(pytester: pytest.Pytester) -> 
     )
     result = pytester.runpytest_subprocess("-q")
     result.assert_outcomes(passed=1)
+
+
+@pytest.mark.gpu
+def test_cooperative_failure_reports_invocation(pytester: pytest.Pytester) -> None:
+    pytester.makefile(
+        ".test.wesl",
+        cooperative="""
+        import wgsl_test::expectEq;
+        @test @workgroup_size(32)
+        fn failure(@builtin(local_invocation_index) lane: u32) {
+            if lane == 31u { expectEq(lane, 0u); }
+        }
+        """,
+    )
+    result = pytester.runpytest_subprocess("-q")
+    result.assert_outcomes(failed=1)
+    result.stdout.fnmatch_lines(
+        [
+            "*cooperative.test.wesl:4:*",
+            "*actual:   31u*",
+            "*expected: 0u*",
+            "*invocation: 31*",
+            "*1 of 1 assertions failed*",
+        ]
+    )

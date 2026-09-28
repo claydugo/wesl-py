@@ -352,6 +352,38 @@ def test_shader_assertion_type_cycles_without_validation(
     assert completed.ret == 0, completed.stdout.str() + completed.stderr.str()
 
 
+@pytest.mark.parametrize("lower", [False, True])
+@pytest.mark.parametrize(
+    "member",
+    ["@align(0) extra: u32,", "extra: Nested,", "extra: array<Nested, 2>,"],
+)
+def test_shader_result_rejects_zero_alignment(
+    wgsl_test: Path, member: str, *, lower: bool
+) -> None:
+    source = (wgsl_test / "TestResult.wesl").read_text(encoding="utf-8")
+    source = "struct Nested { @align(0) value: u32 }\n" + source.replace(
+        "struct TestResult {", f"struct TestResult {{ {member}"
+    )
+    with pytest.raises(wesl.CompileError, match="nonzero alignment") as caught:
+        _native.compile_test(
+            {
+                "package::main": "@test fn selected() { wgsl_test::expect(true); }",
+                "wgsl_test::TestResult": source,
+            },
+            "package::main",
+            "selected",
+            wesl.TestOptions(lower=lower),
+            {"wgsl_test::TestResult": "results.wesl"},
+            None,
+            0,
+            {"wgsl_test": str(wgsl_test)},
+        )
+    (diagnostic,) = caught.value.diagnostics
+    assert diagnostic.module == "wgsl_test::TestResult"
+    assert diagnostic.filename == "results.wesl"
+    assert diagnostic.source == source
+
+
 def test_linked_argument_error_preserves_missing_metadata() -> None:
     source = "import package::helper::consume; fn main() -> u32 { return consume(); }"
     with pytest.raises(wesl.CompileError, match="number of arguments") as caught:

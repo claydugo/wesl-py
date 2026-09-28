@@ -25,6 +25,52 @@ def test_run_test_rejects_compile_options(wesl_device: wgpu.GPUDevice) -> None:
         )
 
 
+@pytest.mark.parametrize("override", [False, True])
+def test_run_test_reuses_project_dependencies(
+    wesl_device: wgpu.GPUDevice, tmp_path: Path, *, override: bool
+) -> None:
+    (tmp_path / "wesl.toml").write_text(
+        'edition = "2026_pre"\nroot = "."\n[dependencies]\n'
+        'alpha = { path = "common" }\nbeta = { path = "common" }\n'
+    )
+    common = tmp_path / "common"
+    common.mkdir()
+    (common / "wesl.toml").write_text('edition = "2026_pre"\nroot = "."\n')
+    (common / "package.wesl").write_text(
+        "var<private> counter: u32 = 0u; "
+        "fn next() -> u32 { counter += 1u; return counter; }"
+    )
+    compiler = wesl.Compiler.from_project(tmp_path)
+    (tmp_path / "wesl.toml").unlink()
+    (common / "wesl.toml").unlink()
+    modules = {
+        "package::main": "@test fn selected() { "
+        "wgsl_test::expectEq(alpha::next(), 1u); "
+        "wgsl_test::expectEq(beta::next(), 2u); }"
+    }
+    if override:
+        modules["beta"] = (common / "package.wesl").read_text()
+    run_test(
+        wesl_device,
+        modules,
+        "selected",
+        dependencies=compiler.dependencies,
+    )
+    if override:
+        run_test(
+            wesl_device,
+            {
+                "beta::tests": "@test fn selected() { "
+                "wgsl_test::expectEq(package::next(), 1u); "
+                "wgsl_test::expectEq(package::next(), 2u); }",
+                "beta": modules["beta"],
+            },
+            "selected",
+            root="beta::tests",
+            dependencies=compiler.dependencies,
+        )
+
+
 def test_assertions_and_imports(wesl_device: wgpu.GPUDevice) -> None:
     run_test(
         wesl_device,
@@ -92,6 +138,36 @@ def test_failure_in_imported_helper(
     assert "2 of 2 assertions failed" in str(error)
 
 
+@pytest.mark.parametrize("lower", [False, True])
+def test_assertion_wrapper_avoids_parameter_collisions(
+    wesl_device: wgpu.GPUDevice, *, lower: bool
+) -> None:
+    source = "@test fn failure() { wgsl_test::expectEq(7u, 9u); }"
+    with pytest.raises(ShaderAssertionError) as captured:
+        run_test(
+            wesl_device,
+            {
+                "package::main": source,
+                "wgsl_test": """
+                    import package::TestResult::testResult;
+                    fn expectEq(wesl_test_location: u32, wesl_test_location_: u32) {
+                        if (wesl_test_location != wesl_test_location_) {
+                            testResult.passed = 0u;
+                            testResult.failCount += 1u;
+                        }
+                    }
+                """,
+            },
+            "failure",
+            options=wesl.TestOptions(lower=lower),
+        )
+    assert captured.value.actual == 7
+    assert captured.value.expected == 9
+    assert captured.value.failures == 1
+    assert captured.value.checks == 1
+    assert captured.value.diagnostic.source == source
+
+
 @pytest.mark.parametrize(
     ("prefix", "suffix"),
     [
@@ -101,13 +177,15 @@ def test_failure_in_imported_helper(
     ],
 )
 @pytest.mark.parametrize("lower", [False, True])
-def test_result_instrumentation(
+@pytest.mark.parametrize("cooperative", [False, True])
+def test_result_instrumentation(  # noqa: PLR0913
     wesl_device: wgpu.GPUDevice,
     wgsl_test: Path,
     prefix: str,
     suffix: str,
     *,
     lower: bool,
+    cooperative: bool,
 ) -> None:
     result_source = (wgsl_test / "TestResult.wesl").read_text(encoding="utf-8")
     result_source = (
@@ -130,7 +208,10 @@ def test_result_instrumentation(
                         @test fn failure() {
                             wgsl_test::expectEq(value, 9u);
                         }
-                    """,
+                    """.replace(
+                        "@test fn",
+                        "@test @workgroup_size(8) fn" if cooperative else "@test fn",
+                    ),
                     "wgsl_test::TestResult": result_source,
                 },
                 "failure",
@@ -139,8 +220,8 @@ def test_result_instrumentation(
             )
         assert captured.value.actual == 7
         assert captured.value.expected == 9
-        assert captured.value.failures == 1
-        assert captured.value.checks == 1
+        assert captured.value.failures == (8 if cooperative else 1)
+        assert captured.value.checks == (8 if cooperative else 1)
     finally:
         buffer.destroy()
 
@@ -848,4 +929,164 @@ def test_gpu_validation_errors(wesl_device: wgpu.GPUDevice, source: str) -> None
         wesl_device,
         {"package::main": "@test fn selected() { wgsl_test::expectEq(3u + 4u, 7u); }"},
         "selected",
+    )
+
+
+@pytest.mark.parametrize("workgroup_size", [1, 8, 32])
+def test_cooperative_barriers_and_builtin_parameters(
+    wesl_device: wgpu.GPUDevice, workgroup_size: int
+) -> None:
+    run_test(
+        wesl_device,
+        {
+            "package::main": """
+                import wgsl_test::expectEq;
+                override width: u32 = 1u;
+                var<workgroup> values: array<u32, 32>;
+                @test @workgroup_size(width)
+                fn cooperative(@builtin(local_invocation_index) lane: u32) {
+                    values[lane] = lane + 1u;
+                    workgroupBarrier();
+                    expectEq(values[(lane + 1u) % width], (lane + 1u) % width + 1u);
+                    if lane != 0u { return; }
+                    var total = 0u;
+                    for (var index = 0u; index < width; index++) {
+                        total += values[index];
+                    }
+                    expectEq(total, width * (width + 1u) / 2u);
+                }
+            """
+        },
+        "cooperative",
+        constants={"width": workgroup_size},
+    )
+
+
+def test_cooperative_three_dimensional_builtins(wesl_device: wgpu.GPUDevice) -> None:
+    run_test(
+        wesl_device,
+        {
+            "package::main": """
+                import wgsl_test::{expect, expectEq};
+                @test @workgroup_size(2, 3, 4)
+                fn coordinates(
+                    @builtin(local_invocation_id) position: vec3u,
+                    @builtin(global_invocation_id) global_position: vec3u,
+                    @builtin(num_workgroups) workgroups: vec3u,
+                ) {
+                    expect(all(position == global_position));
+                    expect(all(workgroups == vec3u(1u)));
+                    expectEq(position.x + 2u * position.y + 6u * position.z,
+                             global_position.x + 2u * global_position.y
+                             + 6u * global_position.z);
+                }
+            """
+        },
+        "coordinates",
+    )
+
+
+@pytest.mark.parametrize("failed_lanes", [1, 16, 32])
+def test_cooperative_failures_retain_counts_and_source(
+    wesl_device: wgpu.GPUDevice, failed_lanes: int
+) -> None:
+    source = (
+        "import wgsl_test::expectEq;\n"
+        "fn verify(lane: u32) {\n"
+        "    expectEq(lane, lane + 1u);\n"
+        "    expectEq(lane, lane + 2u);\n}"
+    )
+    with pytest.raises(ShaderAssertionError) as captured:
+        run_test(
+            wesl_device,
+            {
+                "package::main": """
+                    import wgsl_test::expect;
+                    import package::helper::verify;
+                    override failed_lanes: u32 = 1u;
+                    @test @workgroup_size(32)
+                    fn failures(@builtin(local_invocation_index) lane: u32) {
+                        expect(true);
+                        if lane >= 32u - failed_lanes { verify(lane); }
+                        workgroupBarrier();
+                        expect(true);
+                    }
+                """,
+                "package::helper": source,
+            },
+            "failures",
+            filenames={"package::helper": "cooperative/helper.wesl"},
+            constants={"failed_lanes": failed_lanes},
+        )
+    error = captured.value
+    assert error.failures == failed_lanes * 2
+    assert error.checks == 64 + failed_lanes * 2
+    assert error.invocation in range(32 - failed_lanes, 32)
+    assert error.actual == error.invocation
+    assert error.expected == error.invocation + 1
+    assert error.diagnostic.filename == "cooperative/helper.wesl"
+    assert error.diagnostic.source == source
+    assert "expectEq(lane, lane + 1u)" in str(error)
+    assert f"invocation: {error.invocation}" in str(error)
+
+
+def test_cooperative_test_without_parameters_or_assertions(
+    wesl_device: wgpu.GPUDevice,
+) -> None:
+    run_test(
+        wesl_device,
+        {"package::main": "@test @workgroup_size(32) fn empty() {}"},
+        "empty",
+    )
+
+
+def test_cooperative_wrapper_preserves_other_entry_points(
+    wesl_device: wgpu.GPUDevice,
+) -> None:
+    run_test(
+        wesl_device,
+        {
+            "package::main": """
+                import wgsl_test::expectEq;
+                @compute @workgroup_size(8)
+                fn unrelated(@builtin(local_invocation_index) lane: u32) {
+                    let unused = lane;
+                }
+                @if(enabled) {
+                    @test
+                    fn selected(@builtin(local_invocation_index) lane: u32) {
+                        expectEq(lane, 0u);
+                    }
+                }
+            """
+        },
+        "selected",
+        options=wesl.TestOptions(
+            strip=False, features=wesl.Features(flags={"enabled": True})
+        ),
+    )
+
+
+def test_cooperative_generated_names_avoid_user_declarations(
+    wesl_device: wgpu.GPUDevice, wgsl_test: Path
+) -> None:
+    result_source = (wgsl_test / "TestResult.wesl").read_text(encoding="utf-8")
+    result_source += """
+        @if(true) {
+            fn wesl_test_collect() {}
+            fn wesl_test_collect__output() {}
+            fn wesl_test_collect___result() {}
+        }
+    """
+    run_test(
+        wesl_device,
+        {
+            "package::main": """
+                @test @workgroup_size(8) fn wesl_test_entry_invocation() {
+                    wgsl_test::expect(true);
+                }
+            """,
+            "wgsl_test::TestResult": result_source,
+        },
+        "wesl_test_entry_invocation",
     )
