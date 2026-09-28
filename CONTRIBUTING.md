@@ -34,19 +34,24 @@ pixi run -e test python -m pytest tests/test_check_syntax.py -q
 This test needs no GPU.
 Run the commands below from the repository root.
 
-Install the pre-commit hook:
+Install the pre-commit and pre-push hooks:
 
 ```bash
 pixi run --locked -e lint prek install
 ```
 
-The hook checks staged files before each Git commit.
+The pre-commit hook checks staged files before each Git commit.
 File formatters receive only the selected filenames. Rustfmt checks the crate.
 Changes to shared configuration trigger a read-only repository check.
 It applies formatting fixes. Review and stage these fixes before trying again.
-Install the hook once per checkout. Git does not copy installed hooks when cloning.
+The pre-push hook runs Rust and Python type checks for relevant changes.
+It includes deleted files when selecting checks. Documentation changes skip them.
+The type check rebuilds the native extension before checking its stubs.
+Install the hooks once per checkout. Run the command again to add the pre-push hook
+to an existing setup. Git does not copy installed hooks when cloning.
 Pixi must be on `PATH` when Git runs the hook.
-For Jujutsu changes, run `pixi run lint` explicitly.
+For Jujutsu changes, run `pixi run lint`, `pixi run check-rust`, and
+`pixi run check-types` explicitly.
 
 Use the `artifacts` environment to build a wheel on any supported platform:
 
@@ -143,7 +148,8 @@ Rust checks do not install the Python package or GPU dependencies.
 `check-types` runs ty, Pyrefly, Pyright, and native stubtest in `dev`.
 This environment includes wgpu so the type checkers can inspect its API.
 Type checks do not request a GPU adapter.
-After a Rust change, run `pixi reinstall --locked -e dev wesl-py` before stubtest.
+The task rebuilds the native extension with
+`pixi reinstall --locked -e dev wesl-py` before running the checks.
 The type checkers check the Python API. Stubtest checks the compiled extension.
 Run `pixi run generate-stubs` after changing a native signature.
 Maturin generates stubs from PyO3's metadata with the optional `stub-gen` feature.
@@ -151,6 +157,7 @@ Normal builds do not include the stub generator.
 `pixi run format` applies Ruff, rustfmt, Tombi, and automatic rumdl fixes.
 It succeeds after applying fixes unless a tool reports an unresolved issue.
 Use `pixi run -e lint prek run --all-files` to exercise the commit hooks explicitly.
+Use `pixi run -e lint prek run --stage pre-push --all-files` for the push hooks.
 Rustfmt uses the Rust 2024 style.
 rumdl enables all rules, including opt-in rules, and respects `.gitignore`.
 Its configuration lives in `pyproject.toml`. Headings use sentence case.

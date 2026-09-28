@@ -1,5 +1,6 @@
 minimum_prek_version = "0.5.4"
 default_stages = ["pre-commit"]
+default_install_hook_types = ["pre-commit", "pre-push"]
 
 [[repos]]
 repo = "local"
@@ -65,8 +66,28 @@ pass_filenames = false
 
 [[repos.hooks]]
 id = "configuration"
-name = "Check shared configuration"
+name = "Check repository lint configuration"
 language = "system"
 entry = "pixi run --locked -e lint lint"
 files = { glob = ["pyproject.toml", "pixi.toml", "pixi.lock", "prek.toml"] }
+pass_filenames = false
+
+[[repos.hooks]]
+id = "check-rust"
+name = "Rust checks"
+language = "system"
+entry = "pixi run --locked -e rust check-rust"
+stages = ["pre-push"]
+files = { glob = ["**/*.rs", "**/Cargo.toml", "**/Cargo.lock", "clippy.toml", "rustfmt.toml", "pyproject.toml", "pixi.toml", "pixi.lock", "prek.toml"] }
+include_deleted = true
+pass_filenames = false
+
+[[repos.hooks]]
+id = "check-types"
+name = "Python type checks"
+language = "system"
+entry = "pixi run --locked -e dev check-types"
+stages = ["pre-push"]
+files = { glob = ["python/wesl/**", "**/*.rs", "**/Cargo.toml", "**/Cargo.lock", "pyproject.toml", "pixi.toml", "pixi.lock", "prek.toml"] }
+include_deleted = true
 pass_filenames = false

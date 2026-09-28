@@ -140,6 +140,7 @@ generate-stubs = { cmd = "python scripts/generate_stubs.py && ruff check --fix -
 [tasks.check-types]
 default-environment = "dev"
 cmd = """
+pixi reinstall --locked -e dev wesl-py &&
 ty check python/wesl &&
 pyrefly check python/wesl &&
 pyright python/wesl &&
