@@ -57,6 +57,13 @@ convention = "numpy"
 "tests/examples/testing/*.py" = ["ICN001"]
 "examples/*.py" = ["D100", "D103", "ICN001", "INP001", "S101"]
 
+[tool.rumdl]
+enable = ["ALL"]
+
+[tool.rumdl.MD063]
+style = "sentence-case"
+ignore-words = ["Python", "wesl-py"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["--import-mode=importlib"]

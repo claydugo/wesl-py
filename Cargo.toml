@@ -11,7 +11,7 @@ include = [
     "src/**", "/Cargo.toml", "/Cargo.lock", "python/**",
     "/pyproject.toml", "/README.md", "/CONTRIBUTING.md", "/LICENSE", "docs/**", "tests/**",
     "examples/**", "scripts/**", "/pixi.toml", "/pixi.lock", "/clippy.toml", "/deny.toml",
-    "/wesl.toml", "/rustfmt.toml", "/.markdownlint-cli2.jsonc",
+    "/wesl.toml", "/rustfmt.toml",
 ]
 
 [lib]

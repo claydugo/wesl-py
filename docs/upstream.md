@@ -364,6 +364,9 @@ does not promise fresh names against the insertion scope.
 
 ## Dependency constraints
 
+The binding pins WESL to retain required fixes. Recheck these constraints before
+changing the dependency revision.
+
 ### Compiler driver integration
 
 The pin uses upstream 0.5.0 at `0303eccfafd534cc76c91eddd4b4f5c4413a1733`.

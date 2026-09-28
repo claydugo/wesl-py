@@ -1,5 +1,7 @@
 # API reference
 
+Import `wesl` to compile shaders, configure projects, and inspect diagnostics.
+
 ## Compile modules
 
 ```python

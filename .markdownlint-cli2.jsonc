@@ -1,7 +1,0 @@
-{
-  "config": {
-    "default": true
-  },
-  "gitignore": true,
-  "globs": ["**/*.md"]
-}
