@@ -17,12 +17,14 @@ def test_gradient(
     wesl_device: wgpu.GPUDevice,
     ndarrays_regression: "NDArraysRegressionFixture",
 ) -> None:
-    shader = wesl_compiler.compile_file("gradient.wesl")
+    shader = wesl_compiler.compile_file("tests/examples/testing/shaders/gradient.wesl")
     pipeline = wesl_device.create_render_pipeline(
         layout="auto",
         vertex={
             "module": wesl_device.create_shader_module(
-                code=wesl_compiler.compile_file("fullscreen.wesl").wgsl,
+                code=wesl_compiler.compile_file(
+                    "tests/examples/testing/shaders/fullscreen.wesl"
+                ).wgsl,
             ),
             "entry_point": "main",
         },

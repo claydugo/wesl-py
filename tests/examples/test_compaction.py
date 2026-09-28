@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from importlib import import_module
-from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -16,11 +15,6 @@ numpy = pytest.importorskip("numpy")
 pytest.importorskip("wgpu")
 compute_with_buffers = import_module("wgpu.utils.compute").compute_with_buffers
 compact = import_module("examples.compaction.compute").compact
-
-
-@pytest.fixture
-def wesl_root_directory() -> Path:
-    return Path(__file__).parents[2] / "examples"
 
 
 @pytest.mark.gpu
@@ -37,7 +31,7 @@ def test_scan(wesl_compiler: wesl.Compiler, element_count: int) -> None:
             2: numpy.full((element_count + 127) // 128, 0xFFFFFFFF, dtype=numpy.uint32),
         },
         {1: (element_count, "I"), 2: ((element_count + 127) // 128, "I")},
-        wesl_compiler.compile_file("compaction/shaders/scan.wesl").wgsl,
+        wesl_compiler.compile_file("examples/compaction/shaders/scan.wesl").wgsl,
         n=(element_count + 127) // 128,
     )
     expected = numpy.empty_like(values)

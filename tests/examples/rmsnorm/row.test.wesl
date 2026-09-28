@@ -1,5 +1,5 @@
-import examples::rmsnorm::input::load;
-import examples::rmsnorm::normalization::scale;
+import package::examples::rmsnorm::input::load;
+import package::examples::rmsnorm::normalization::scale;
 import wgsl_test::expectNear;
 
 @test

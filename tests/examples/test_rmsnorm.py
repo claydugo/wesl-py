@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from importlib import import_module
-from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -21,11 +20,6 @@ def wesl_options(request: pytest.FixtureRequest) -> wesl.CompileOptions:
     return wesl.CompileOptions(
         visibility=True, features=wesl.Features(flags={"residual": request.param})
     )
-
-
-@pytest.fixture
-def wesl_root_directory() -> Path:
-    return Path(__file__).parents[2] / "examples"
 
 
 @pytest.mark.gpu
@@ -60,7 +54,7 @@ def test_normalize(
     output = compute_with_buffers(
         resources,
         {3: (3, width, "f")},
-        wesl_compiler.compile_file("rmsnorm/shaders/normalize.wesl").wgsl,
+        wesl_compiler.compile_file("examples/rmsnorm/shaders/normalize.wesl").wgsl,
         n=3,
         constants={"0": width, "1": epsilon},
     )

@@ -1,4 +1,4 @@
-import package::levels::adjust;
+import super::super::levels::adjust;
 import wgsl_test::expectNear;
 
 @group(0) @binding(0) var<storage, read> values: array<f32>;

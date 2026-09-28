@@ -1,5 +1,5 @@
-import examples::imaging::statistics::correlation;
-import examples::imaging::coordinates::polar_position;
+import package::examples::imaging::statistics::correlation;
+import package::examples::imaging::coordinates::polar_position;
 import wgsl_test::expectNear;
 
 @test

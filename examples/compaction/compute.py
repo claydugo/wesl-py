@@ -28,7 +28,7 @@ def compact(  # noqa: C901
     ):
         shader = wesl.compile_file(
             directory / filename,
-            root_directory=directory.parent,
+            root_directory=directory.parent.parent,
             options=wesl.CompileOptions(
                 visibility=True,
                 features=wesl.Features(

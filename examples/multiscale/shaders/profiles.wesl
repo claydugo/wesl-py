@@ -1,5 +1,5 @@
-import package::imaging::coordinates::polar_position;
-import package::imaging::reduction::sum_workgroup;
+import package::examples::imaging::coordinates::polar_position;
+import package::examples::imaging::reduction::sum_workgroup;
 
 override width: u32;
 override height: u32;

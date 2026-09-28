@@ -1,4 +1,4 @@
-import package::compaction::predicate::selected;
+import package::examples::compaction::predicate::selected;
 
 @group(0) @binding(0) var<storage, read> values: array<u32>;
 @group(0) @binding(1) var<storage, read_write> prefixes: array<u32>;

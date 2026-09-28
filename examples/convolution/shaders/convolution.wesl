@@ -1,5 +1,5 @@
-import package::activation::activate;
-import package::convolution_input::{load, load_pixel, input_height, input_width, input_channels,
+import super::activation::activate;
+import super::convolution_input::{load, load_pixel, input_height, input_width, input_channels,
     output_channels, kernel_size, stride, padding, activation};
 enable f16;
 

@@ -1,4 +1,4 @@
-import package::imaging::sampling::sample_channel;
+import package::examples::imaging::sampling::sample_channel;
 
 override width: u32;
 override height: u32;

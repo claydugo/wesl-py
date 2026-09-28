@@ -35,10 +35,10 @@ The compiler removes the residual binding for the plain variant.
 Width and epsilon are pipeline overrides with numeric IDs.
 Those IDs let Python specialize imported declarations after WESL renames them.
 [compute.py](compute.py) passes the feature and constants to the compiler and pipeline.
-It uses the same `examples/` package root as the other examples.
+It uses the repository as the package root, as do the other examples.
 
 The entry point lives in [shaders](shaders).
-It imports the input and normalization operations through `package::rmsnorm`.
+It imports the input and normalization operations through `package::examples::rmsnorm`.
 
 The example uses core f32 operations without optional GPU features.
 

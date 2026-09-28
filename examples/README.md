@@ -36,8 +36,9 @@ RMSNorm and compaction generate their own inputs and run without a window.
 Start with RMSNorm for compute. Compaction adds a hierarchy of GPU passes.
 
 The Pixi `examples` environment provides the graphics and image dependencies.
-The repository's `wesl.toml` sets `examples/` as the shader root for editor tooling.
-The examples pass that root to `compile_file()` for the same `package::` namespace.
+The repository's `wesl.toml` sets the repository root as the shader root.
+The examples and tests share that root and import modules through
+`package::examples`. The examples pass the same root to `compile_file()`.
 
 Each example's README includes its verification command.
 

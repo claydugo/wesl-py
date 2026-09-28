@@ -1,5 +1,14 @@
 # Allow one project description to define multiple local WESL packages
 
+Status: Do not file. The investigation below assumes that our examples and tests
+need separate package roots. They do not. A temporary copy uses one repository
+root with `root = "."`, plus the existing `wgsl_test` library manifest.
+After updating imports, 50 entry-point shader compilations and 27 native shader
+test compilations pass across two feature configurations. One conditional test
+is disabled. These checks verify compilation, not GPU execution or editor behavior.
+Consolidating the repository configuration addresses our manifest duplication
+without upstream changes. The original draft follows for reference.
+
 Draft for [wgsl-analyzer](https://github.com/wgsl-analyzer/wgsl-analyzer/issues/new).
 
 ## What problem does this solve or what need does it fill?

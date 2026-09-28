@@ -1,7 +1,7 @@
-import package::sdf::camera::project;
-import package::sdf::parameters::parameters;
-import package::sdf::scene::distance_to_scene;
-import package::sdf::surface::normal;
+import package::examples::sdf::camera::project;
+import package::examples::sdf::parameters::parameters;
+import package::examples::sdf::scene::distance_to_scene;
+import package::examples::sdf::surface::normal;
 
 struct FragmentOutput {
     @location(0) color: vec4<f32>,

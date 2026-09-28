@@ -160,7 +160,8 @@ Pytest skips these tests without a display or when GLFW uses Wayland.
 
 Configure your editor to use the nearest `wesl.toml` as the wgsl-analyzer
 project root.
-The manifests point to shader sources in the checkout.
+The repository manifest covers all examples and tests.
+The bundled `wgsl_test` library has its own manifest.
 See [shader editing](docs/testing.md#shader-editing) for setup in other projects.
 
 ## Open a pull request
@@ -198,7 +199,8 @@ The free-threaded wheel runs on Linux with Python 3.15 and 3.15t.
 
 ### Pytest plugin
 
-Directory fixtures select shader roots and keep example parameters local.
+The repository manifest sets the shared shader root.
+Directory fixtures keep example parameters local.
 The root configuration uses importlib mode so test filenames can repeat.
 
 The pytest plugin delegates parametrization to pytest's collection hook.

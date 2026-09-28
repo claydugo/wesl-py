@@ -542,9 +542,10 @@ Use `-p no:wesl` to disable automatic registration.
 
 ## Shader editing
 
-The checked-in `wesl.toml` files configure wgsl-analyzer for this repository.
-Their relative dependency paths point to the shader sources in the checkout.
-The `wgsl_test` imports need no editor setup beyond loading the correct manifest.
+The repository's `wesl.toml` configures wgsl-analyzer for the examples and tests.
+It sets `root = "."` and declares the bundled `wgsl_test` library as a dependency.
+The library retains its own manifest for use by other projects.
+The `wgsl_test` imports need no editor setup beyond loading the repository manifest.
 Configure your editor to use the nearest `wesl.toml` as the project root.
 
 For another development project with a sibling wesl-py checkout, use:

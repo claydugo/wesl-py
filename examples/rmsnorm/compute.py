@@ -32,7 +32,7 @@ def normalize(
     directory = Path(__file__).parent
     shader = wesl.compile_file(
         directory / "shaders/normalize.wesl",
-        root_directory=directory.parent,
+        root_directory=directory.parent.parent,
         options=wesl.CompileOptions(
             visibility=True,
             features=wesl.Features(flags={"residual": residual is not None}),

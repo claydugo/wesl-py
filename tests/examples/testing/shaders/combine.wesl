@@ -1,4 +1,4 @@
-import package::levels::adjust;
+import super::levels::adjust;
 
 @group(0) @binding(0) var<storage, read> values: array<f32>;
 @group(0) @binding(1) var<storage, read> weights: array<f32>;

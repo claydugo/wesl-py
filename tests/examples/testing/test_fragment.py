@@ -19,7 +19,7 @@ def test_tinted_image(
     horizontal_scale: int,
     vertical_scale: int,
 ) -> None:
-    shader = wesl_compiler.compile_file("tint.wesl")
+    shader = wesl_compiler.compile_file("tests/examples/testing/shaders/tint.wesl")
     pixels = np.array(
         [
             [[255, 0, 0, 255], [0, 255, 0, 255]],
@@ -57,7 +57,9 @@ def test_tinted_image(
             layout="auto",
             vertex={
                 "module": wesl_device.create_shader_module(
-                    code=wesl_compiler.compile_file("fullscreen.wesl").wgsl,
+                    code=wesl_compiler.compile_file(
+                        "tests/examples/testing/shaders/fullscreen.wesl"
+                    ).wgsl,
                 ),
                 "entry_point": "main",
             },

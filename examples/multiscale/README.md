@@ -158,8 +158,8 @@ in two passes.
 Both kernels import Gaussian weights and boundary handling.
 The `horizontal` feature specializes both kernels.
 
-Kernels import reusable modules through `package::imaging`.
-Python sets the compiler root to the `examples` directory.
+Kernels import reusable modules through `package::examples::imaging`.
+Python sets the compiler root to the repository directory.
 Modules within the image library use `super::` to import their siblings.
 
 [profiles.wesl](shaders/profiles.wesl) defines three named entry points.

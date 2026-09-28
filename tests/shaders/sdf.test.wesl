@@ -1,4 +1,4 @@
-import examples::sdf::primitives::{sphere, smooth_union};
+import package::examples::sdf::primitives::{sphere, smooth_union};
 import wgsl_test::expectNear;
 
 @test

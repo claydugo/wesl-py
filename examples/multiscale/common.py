@@ -32,7 +32,7 @@ def composite(
     shader = ComputeShader(
         wesl.compile_file(
             directory / "imaging/composite.wesl",
-            root_directory=directory,
+            root_directory=directory.parent,
             options=wesl.CompileOptions(visibility=True),
         ).wgsl,
         entry_point="main",

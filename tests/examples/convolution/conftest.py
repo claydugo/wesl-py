@@ -9,11 +9,6 @@ if TYPE_CHECKING:
     import wgpu
 
 
-@pytest.fixture
-def wesl_dependencies() -> dict[str, Path]:
-    return {"operators": Path(__file__).parents[3] / "examples/convolution/shaders"}
-
-
 @pytest.fixture(
     params=[
         pytest.param(
@@ -209,6 +204,7 @@ def wesl_resources(  # noqa: C901, PLR0915
         Path(__file__).parents[3]
         / "examples/convolution/shaders"
         / f"{operation}.wesl",
+        root_directory=Path(__file__).parents[3],
         options=wesl.CompileOptions(visibility=True),
     ).wgsl
     pipeline = wesl_device.create_compute_pipeline(

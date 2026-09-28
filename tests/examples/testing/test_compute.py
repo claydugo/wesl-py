@@ -15,7 +15,7 @@ compute_with_buffers = pytest.importorskip("wgpu.utils.compute").compute_with_bu
     ],
 )
 def test_weighted_levels(wesl_compiler: wesl.Compiler, element_count: int) -> None:
-    shader = wesl_compiler.compile_file("combine.wesl")
+    shader = wesl_compiler.compile_file("tests/examples/testing/shaders/combine.wesl")
     values = np.arange(element_count, dtype=np.float32) / 4 - 0.25
     weights = np.linspace(0.5, 2, element_count, dtype=np.float32)
     output = compute_with_buffers(

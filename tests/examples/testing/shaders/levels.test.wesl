@@ -1,4 +1,4 @@
-import package::levels::adjust;
+import super::levels::adjust;
 import wgsl_test::expectNear;
 
 @test

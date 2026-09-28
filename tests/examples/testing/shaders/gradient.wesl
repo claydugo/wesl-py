@@ -1,4 +1,4 @@
-import package::levels::adjust;
+import super::levels::adjust;
 
 @fragment
 fn main(@builtin(position) position: vec4f) -> @location(0) vec4f {

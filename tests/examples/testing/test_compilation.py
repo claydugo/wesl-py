@@ -4,11 +4,11 @@ import wesl
 
 def test_imported_feature(wesl_compiler: wesl.Compiler) -> None:
     shader = wesl_compiler.compile_source("""
-        import package::levels::adjust;
+        import package::tests::examples::testing::shaders::levels::adjust;
         @compute @workgroup_size(1)
         fn main() { let value = adjust(0.75); }
     """)
-    assert "package::levels" in shader.modules
+    assert "package::tests::examples::testing::shaders::levels" in shader.modules
     assert ("clamp(" in shader.wgsl) == wesl_compiler.options.features.flags["clamped"]
 
 

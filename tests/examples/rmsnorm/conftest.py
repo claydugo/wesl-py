@@ -1,6 +1,5 @@
 from collections.abc import Iterator
 from contextlib import ExitStack
-from pathlib import Path
 from struct import pack
 from typing import TYPE_CHECKING, Any
 
@@ -14,11 +13,6 @@ if TYPE_CHECKING:
 @pytest.fixture(params=[False, True], ids=["plain", "residual"])
 def wesl_features(request: pytest.FixtureRequest) -> wesl.Features:
     return wesl.Features(flags={"residual": request.param})
-
-
-@pytest.fixture
-def wesl_root_directory() -> Path:
-    return Path(__file__).parents[3]
 
 
 @pytest.fixture

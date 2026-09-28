@@ -34,7 +34,7 @@ def test_particle_collisions(*, cutout: bool) -> None:
     module = device.create_shader_module(
         code=wesl.compile_file(
             directory / "sdf/shaders/simulate.wesl",
-            root_directory=directory,
+            root_directory=directory.parent,
             options=wesl.CompileOptions(
                 visibility=True, features=wesl.Features(flags={"cutout": cutout})
             ),

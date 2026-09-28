@@ -41,7 +41,7 @@ Threshold uses numeric override ID zero, which survives import renaming.
 The internal scans compile without the predicate or threshold.
 
 Entry points live in [shaders](shaders).
-They import the predicate through `package::compaction::predicate`.
+They import the predicate through `package::examples::compaction::predicate`.
 
 Call `compact(device, values, threshold=500, keep_below=False)` to use other inputs.
 Values use a one-dimensional NumPy array with dtype `uint32`.

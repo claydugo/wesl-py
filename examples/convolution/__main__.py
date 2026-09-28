@@ -70,6 +70,7 @@ def main() -> None:
     ]:
         source = wesl.compile_file(
             Path(__file__).parent / "shaders" / f"{module}.wesl",
+            root_directory=Path(__file__).parents[2],
             options=wesl.CompileOptions(visibility=True),
         ).wgsl
         pipeline = device.create_compute_pipeline(

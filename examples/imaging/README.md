@@ -43,17 +43,17 @@ Gaussian convolution imports indexing and clamping from sampling.
 The filter uses `convolve`:
 
 ```wesl
-import package::imaging::gaussian::convolve;
+import package::examples::imaging::gaussian::convolve;
 ```
 
 The correlation kernel imports the same Gaussian parameters:
 
 ```wesl
-import package::imaging::gaussian::{radius, weights};
+import package::examples::imaging::gaussian::{radius, weights};
 ```
 
-Compile these kernels with `examples` as the root directory.
-WESL resolves `package::imaging` relative to that root.
+Compile these kernels with the repository as the root directory.
+WESL resolves `package::examples::imaging` relative to that root.
 The compiler removes unused declarations, including resource bindings.
 Correlation uses its own accumulation without importing the convolution buffer.
 

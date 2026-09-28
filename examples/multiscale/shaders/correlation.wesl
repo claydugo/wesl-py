@@ -1,6 +1,6 @@
-import package::imaging::statistics::{Moments, correlation};
-import package::imaging::sampling::clamp_position;
-import package::imaging::gaussian::{radius, weights};
+import package::examples::imaging::statistics::{Moments, correlation};
+import package::examples::imaging::sampling::clamp_position;
+import package::examples::imaging::gaussian::{radius, weights};
 
 override width: u32;
 override height: u32;

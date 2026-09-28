@@ -30,13 +30,6 @@ def wesl_test_options(wesl_test_options: wesl.TestOptions) -> wesl.TestOptions:
     return replace(wesl_test_options, visibility=True)
 
 
-@pytest.fixture
-def wesl_dependencies() -> dict[str, Path]:
-    return {
-        "examples": Path(__file__).parents[1] / "examples",
-    }
-
-
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption("--image", action="store_true", help="Also verify the full TIFF.")
 

@@ -1,5 +1,5 @@
-import package::imaging::indexing::linear_index;
-import package::imaging::gaussian::convolve;
+import package::examples::imaging::indexing::linear_index;
+import package::examples::imaging::gaussian::convolve;
 
 override width: u32;
 override height: u32;

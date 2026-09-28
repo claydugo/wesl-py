@@ -1,5 +1,5 @@
-import package::imaging::sampling::sample_channel;
-import package::imaging::coordinates::polar_position;
+import package::examples::imaging::sampling::sample_channel;
+import package::examples::imaging::coordinates::polar_position;
 
 override width: u32;
 override height: u32;

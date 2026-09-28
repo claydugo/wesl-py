@@ -1,5 +1,5 @@
 import wgsl_test::{expectEq, expectWithin};
-import operators::activation::activate;
+import package::examples::convolution::shaders::activation::activate;
 enable f16;
 
 @group(0) @binding(0) var<storage, read> actual: array<f16>;

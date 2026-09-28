@@ -11,8 +11,12 @@ wgpu = pytest.importorskip("wgpu")
 def test_compute_to_fragment(
     wesl_compiler: wesl.Compiler, wesl_device: wgpu.GPUDevice
 ) -> None:
-    compute_shader = wesl_compiler.compile_file("gradient_compute.wesl")
-    fragment_shader = wesl_compiler.compile_file("tint.wesl")
+    compute_shader = wesl_compiler.compile_file(
+        "tests/examples/testing/shaders/gradient_compute.wesl"
+    )
+    fragment_shader = wesl_compiler.compile_file(
+        "tests/examples/testing/shaders/tint.wesl"
+    )
     multiplier = np.array([0.5, 0.75, 0.25, 1], dtype=np.float32)
     with ExitStack() as stack:
         texture = wesl_device.create_texture(
@@ -47,7 +51,9 @@ def test_compute_to_fragment(
             layout="auto",
             vertex={
                 "module": wesl_device.create_shader_module(
-                    code=wesl_compiler.compile_file("fullscreen.wesl").wgsl,
+                    code=wesl_compiler.compile_file(
+                        "tests/examples/testing/shaders/fullscreen.wesl"
+                    ).wgsl,
                 ),
                 "entry_point": "main",
             },

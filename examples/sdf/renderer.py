@@ -16,7 +16,7 @@ def create_shader(
     directory = Path(__file__).parent
     result = wesl.compile_file(
         directory / "shaders" / filename,
-        root_directory=directory.parent,
+        root_directory=directory.parent.parent,
         options=wesl.CompileOptions(
             visibility=True, features=wesl.Features(flags=dict(features))
         ),

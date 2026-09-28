@@ -1,6 +1,6 @@
-import package::sdf::camera::project;
-import package::sdf::parameters::parameters;
-import package::sdf::particle::Particle;
+import package::examples::sdf::camera::project;
+import package::examples::sdf::parameters::parameters;
+import package::examples::sdf::particle::Particle;
 
 @group(0) @binding(1) var<storage, read> particles: array<Particle>;
 
