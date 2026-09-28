@@ -177,7 +177,7 @@ Vectors retain their dimensions, including zero components.
 Boolean assertions report `false` and `true`.
 Use `expect(actual == expected)` to compare signed integers.
 
-Pytest colors failures and differing values when you enable terminal color.
+Shader diagnostics use plain text. Pytest controls terminal presentation.
 Exception text and JUnit output contain no color codes.
 
 Assertions continue after a failure.
@@ -412,6 +412,7 @@ Add the pytest-xdist package separately to use `-n`.
 
 Use `--tb=line` for concise shader failures.
 JUnit reports retain the shader location and failure message in this mode.
+Pytest can repeat plain-text failure messages in this mode.
 Use `--tb=no` to hide details.
 Use `--tb=native` or `--full-trace` to inspect Python execution.
 
@@ -449,9 +450,7 @@ def run_test(
     options: wesl.TestOptions | None = None,
     filenames: Mapping[str, str | PathLike[str]] | None = None,
     root_directory: str | PathLike[str] | None = None,
-    dependencies: (
-        wesl.Dependencies | Mapping[str, str | PathLike[str]] | None
-    ) = None,
+    dependencies: (wesl.Dependencies | Mapping[str, str | PathLike[str]] | None) = None,
     resources: Mapping[int, Sequence[dict[str, Any]]] | None = None,
     layouts: Mapping[int, Sequence[dict[str, Any]]] | None = None,
     constants: Mapping[str, float] | None = None,

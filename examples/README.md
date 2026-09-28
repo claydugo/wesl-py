@@ -1,7 +1,7 @@
 # Examples
 
 Run these commands from the repository root.
-The Pixi environments below support Linux x86-64.
+The Pixi environments support Linux x86-64, macOS arm64, and Windows x86-64.
 Graphics and compute examples require a WebGPU adapter.
 
 | Example | Purpose | Run | Output |

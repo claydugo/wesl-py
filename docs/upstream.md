@@ -36,7 +36,7 @@ local fix. The [dependency constraints](#dependency-constraints) describe the
 visitor migration and compiler hooks.
 
 The WESL Rust examples require neither Python nor a GPU.
-Use `wesl = { version = "=0.4.4", default-features = false,
+Use `wesl = { version = ">=0.4.4,<0.5", default-features = false,
 features = ["eval"] }` in `[dependencies]`.
 Each example is a separate `src/main.rs`, except the PyO3 example.
 
@@ -241,7 +241,7 @@ Sources: [signature handling](https://docs.rs/crate/pyo3-macros-backend/0.29.2/s
 and [type annotations](https://pyo3.rs/v0.29.2/function/signature.html#type-annotations-in-the-signature).
 The rejection remains in the audited PyO3 main source.
 
-This separate crate uses `pyo3 = { version = "=0.29.2",
+This separate crate uses `pyo3 = { version = ">=0.29.2,<0.30",
 features = ["experimental-inspect"] }` and the following `src/lib.rs`:
 
 ```rust

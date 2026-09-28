@@ -804,14 +804,7 @@ def test_failure_reports_and_junit(
             ]
         )
     else:
-        result.stdout.fnmatch_lines(["*math.test.wesl:3: expectEq failed"])
-        assert (
-            sum(
-                line.endswith("math.test.wesl:3: expectEq failed")
-                for line in result.stdout.lines
-            )
-            == 1
-        )
+        result.stdout.fnmatch_lines(["*math.test.wesl:3:5: expectEq failed"])
         assert "actual:" not in result.stdout.str()
         assert "All traceback entries are hidden" not in result.stdout.str()
     report = ET.parse(pytester.path / "results.xml")  # noqa: S314
@@ -829,9 +822,6 @@ def test_failure_reports_and_junit(
         assert "4294967295" in failure.text
         assert "3 |     expectEq(4294967295u, 4294967294u);" in failure.text
         assert "1 of 1 assertions failed" in failure.text
-        if color == "yes":
-            assert "\x1b[31m4294967295u\x1b[0m" in result.stdout.str()
-            assert "\x1b[32m4294967294u\x1b[0m" in result.stdout.str()
     if color == "no":
         assert "\x1b" not in result.stdout.str()
 
@@ -861,13 +851,13 @@ def test_failure_notes(pytester: pytest.Pytester, workers: int) -> None:
         "-q", "-n", str(workers), "--color=yes", "--junitxml=results.xml"
     )
     result.assert_outcomes(failed=1)
-    assert "\x1b[31mfalse\x1b[0m" in result.stdout.str()
-    assert "\x1b[32mtrue\x1b[0m" in result.stdout.str()
+    assert "actual:   false" in result.stdout.str()
+    assert "expected: true" in result.stdout.str()
     assert (
         "  expected: extra diagnostic\n"
         "  actual: vec2f(1.0, 2.0)\n"
         "  expected: false\n"
-        "  actual: extra diagnostic\n"
+        "  actual: extra diagnostic"
     ) in result.stdout.str()
     report = ET.parse(pytester.path / "results.xml")  # noqa: S314
     failure = report.find(".//failure")
@@ -875,6 +865,58 @@ def test_failure_notes(pytester: pytest.Pytester, workers: int) -> None:
     assert failure.text is not None
     assert "  actual: extra diagnostic" in failure.text
     assert "\x1b" not in failure.text
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize(
+    ("raise_statement", "cause_visible", "workers"),
+    [
+        ("raise error from cause", True, 0),
+        ("raise error from cause", True, 2),
+        ("raise error", True, 0),
+        ("raise error from None", False, 0),
+    ],
+)
+def test_failure_chaining(
+    pytester: pytest.Pytester,
+    raise_statement: str,
+    *,
+    cause_visible: bool,
+    workers: int,
+) -> None:
+    pytester.makeconftest(f"""
+        import pytest
+        from wesl.testing import ShaderAssertionError
+
+        @pytest.hookimpl(wrapper=True)
+        def pytest_runtest_call(item):
+            try:
+                return (yield)
+            except ShaderAssertionError as error:
+                error.add_note("shader assertion note")
+                try:
+                    raise RuntimeError("shader input failed")
+                except RuntimeError as cause:
+                    {raise_statement}
+    """)
+    pytester.makefile(
+        ".test.wesl",
+        failure="@test fn failing() { wgsl_test::expect(false); }",
+    )
+    result = pytester.runpytest_subprocess(
+        "-q", "-n", str(workers), "--junitxml=results.xml"
+    )
+    result.assert_outcomes(failed=1)
+    assert ("RuntimeError: shader input failed" in result.stdout.str()) is cause_visible
+    assert "shader assertion note" in result.stdout.str()
+    report = ET.parse(pytester.path / "results.xml")  # noqa: S314
+    failure = report.find(".//failure")
+    assert failure is not None
+    assert failure.text is not None
+    assert ("RuntimeError: shader input failed" in failure.text) is cause_visible
+    assert "shader assertion note" in failure.text
+    assert "failure.test.wesl:1:22" in failure.text
+    assert "expect failed" in failure.text
 
 
 @pytest.mark.gpu
@@ -891,8 +933,8 @@ def test_vector_failure_color_and_project_root(pytester: pytest.Pytester) -> Non
         "-q", "--color=yes", "--junitxml=results.xml"
     )
     result.assert_outcomes(failed=1)
-    assert "vec3f(\x1b[31m1.0\x1b[0m, 0.0, 0.0)" in result.stdout.str()
-    assert "vec3f(\x1b[32m2.0\x1b[0m, 0.0, 0.0)" in result.stdout.str()
+    assert "actual:   vec3f(1.0, 0.0, 0.0)" in result.stdout.str()
+    assert "expected: vec3f(2.0, 0.0, 0.0)" in result.stdout.str()
     report = ET.parse(pytester.path / "results.xml")  # noqa: S314
     failure = report.find(".//failure")
     assert failure is not None
@@ -1069,18 +1111,19 @@ def test_xdist(pytester: pytest.Pytester, style: str) -> None:
         "-q", "-n", "2", f"--tb={style}", "--color=yes", "--junitxml=results.xml"
     )
     result.assert_outcomes(passed=3, failed=1)
-    result.stdout.fnmatch_lines(["*parallel.test.wesl*expectEq failed*"])
+    assert "parallel.test.wesl:5:22" in result.stdout.str()
+    assert "expectEq failed" in result.stdout.str()
     report = ET.parse(pytester.path / "results.xml")  # noqa: S314
     failure = report.find(".//failure")
     assert failure is not None
-    assert failure.attrib["message"] == "expectEq failed"
+    assert "expectEq failed" in failure.attrib["message"]
     assert failure.text is not None
     assert "\x1b" not in failure.text
     assert "parallel.test.wesl:5:22" in failure.text
     if style == "auto":
         assert "actual:" in failure.text
-        assert "\x1b[31m1u\x1b[0m" in result.stdout.str()
-        assert "\x1b[32m2u\x1b[0m" in result.stdout.str()
+        assert "actual:   1u" in result.stdout.str()
+        assert "expected: 2u" in result.stdout.str()
 
 
 @pytest.mark.gpu

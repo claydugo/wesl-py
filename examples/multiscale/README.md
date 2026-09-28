@@ -1,6 +1,6 @@
 # Multiscale fluorescence
 
-Run from the repository root on Linux x86-64:
+Run from the repository root:
 
 ```bash
 pixi run -e examples python -m examples.multiscale

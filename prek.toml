@@ -1,0 +1,72 @@
+minimum_prek_version = "0.5.4"
+default_stages = ["pre-commit"]
+
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "ruff-format"
+name = "Ruff format"
+language = "system"
+entry = "pixi run --locked -e lint ruff format --force-exclude"
+types_or = ["python", "pyi", "jupyter", "markdown"]
+
+[[repos.hooks]]
+id = "ruff"
+name = "Ruff"
+language = "system"
+entry = "pixi run --locked -e lint ruff check --force-exclude"
+types_or = ["python", "pyi", "jupyter", "markdown"]
+
+[[repos.hooks]]
+id = "rustfmt"
+name = "Rustfmt"
+language = "system"
+entry = "pixi run --locked -e rust cargo fmt --all"
+files = { glob = ["**/*.rs", "**/Cargo.toml", "**/rustfmt.toml", "pixi.toml", "prek.toml"] }
+pass_filenames = false
+
+[[repos.hooks]]
+id = "rumdl"
+name = "rumdl"
+language = "system"
+entry = "pixi run --locked -e lint rumdl check --fix"
+types = ["markdown"]
+
+[[repos.hooks]]
+id = "tombi-format"
+name = "Tombi format"
+language = "system"
+entry = "pixi run --locked -e lint tombi format"
+files = { glob = "**/*.toml" }
+
+[[repos.hooks]]
+id = "tombi"
+name = "Tombi lint"
+language = "system"
+entry = "pixi run --locked -e lint tombi lint --error-on-warnings"
+files = { glob = "**/*.toml" }
+
+[[repos.hooks]]
+id = "actionlint"
+name = "actionlint"
+language = "system"
+entry = "pixi run --locked -e lint actionlint"
+files = { glob = [".github/workflows/*.{yml,yaml}", ".github/actionlint.{yml,yaml}"] }
+pass_filenames = false
+
+[[repos.hooks]]
+id = "zizmor"
+name = "zizmor"
+language = "system"
+entry = "pixi run --locked -e lint zizmor --persona auditor --strict-collection --no-progress ."
+files = { glob = [".github/workflows/*.{yml,yaml}", "**/action.{yml,yaml}", ".github/dependabot.{yml,yaml}", ".github/zizmor.{yml,yaml}", "zizmor.{yml,yaml}"] }
+pass_filenames = false
+
+[[repos.hooks]]
+id = "configuration"
+name = "Check shared configuration"
+language = "system"
+entry = "pixi run --locked -e lint lint"
+files = { glob = ["pyproject.toml", "pixi.toml", "pixi.lock", "prek.toml"] }
+pass_filenames = false

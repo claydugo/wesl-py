@@ -3,7 +3,7 @@
 This advanced example schedules a hierarchy of GPU passes.
 Start with [RMSNorm](../rmsnorm/README.md) for a single compute kernel.
 
-Run from the repository root on Linux x86-64:
+Run from the repository root:
 
 ```bash
 pixi run -e gpu python -m examples.compaction

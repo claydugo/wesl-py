@@ -6,29 +6,49 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
   checks:
-    runs-on: ubuntu-24.04
+    name: Check source / ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, macos-26, windows-2025]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e
         with:
           pixi-version: v0.80.0
+          environments: lint rust dev test freethreading
           locked: true
       - run: pixi run --locked lint
-      - run: pixi run --locked format-check
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - run: pixi run --locked check-rust
+      - run: pixi run --locked check-types
       - run: pixi run --locked generate-stubs
       - run: git diff --exit-code -- python/wesl/_native.pyi
       - run: pixi run --locked -e test cargo test --locked --test upstream
+      - run: pixi run --locked -e test python -m pytest tests/test_check_syntax.py -q
+      - run: pixi run --locked test-freethreading
       - run: pixi run --locked check-dependencies
 
   sdist:
+    name: Build source distribution
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e
         with:
           pixi-version: v0.80.0
@@ -76,6 +96,7 @@ jobs:
           if-no-files-found: error
 
   wheel:
+    name: Build wheels / ${{ matrix.target }}
     needs: sdist
     strategy:
       fail-fast: false
@@ -90,6 +111,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e
         with:
           pixi-version: v0.80.0
@@ -145,6 +168,9 @@ jobs:
           done
           mv wheelhouse/*.whl dist/
       - run: pixi run --locked -e artifacts twine check --strict dist/*.whl
+      - name: Check wheel contents
+        shell: bash
+        run: pixi run --locked -e artifacts check-wheel-contents --config pyproject.toml dist/*.whl
       - name: Audit Python ABI
         shell: bash
         run: pixi run --locked -e artifacts abi3audit --strict --summary dist/*-cp312-abi3-*.whl
@@ -197,6 +223,8 @@ jobs:
         python: ["3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: wheel-x86_64-unknown-linux-gnu
@@ -210,10 +238,13 @@ jobs:
       - run: python -m pytest tests -q
 
   freethreading:
+    name: Test free-threaded wheel
     needs: wheel
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: wheel-x86_64-unknown-linux-gnu
@@ -235,6 +266,7 @@ jobs:
       - run: python -m pytest tests -q
 
   compute:
+    name: Test GPU integration
     needs: wheel
     runs-on: ubuntu-24.04
     env:
@@ -242,6 +274,8 @@ jobs:
       VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: wheel-x86_64-unknown-linux-gnu
@@ -265,20 +299,23 @@ jobs:
         env:
           XDG_RUNTIME_DIR: ${{ runner.temp }}
         run: python -m pytest tests -q
-      - name: Install minimum pytest version
-        run: uv pip install pytest==8.2.0
-      - name: Test minimum pytest version
+      - name: Install oldest supported pytest series
+        run: uv pip install 'pytest>=8.2,<8.3'
+      - name: Test oldest supported pytest series
         env:
           XDG_RUNTIME_DIR: ${{ runner.temp }}
         run: python -m pytest tests/test_pytest_plugin.py -q
 
   examples:
+    name: Test examples
     runs-on: ubuntu-24.04
     env:
       WGPU_BACKEND_TYPE: Vulkan
       VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e
         with:
           pixi-version: v0.80.0

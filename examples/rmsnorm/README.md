@@ -1,6 +1,6 @@
 # Fused residual RMSNorm
 
-Run from the repository root on Linux x86-64:
+Run from the repository root:
 
 ```bash
 pixi run -e gpu python -m examples.rmsnorm

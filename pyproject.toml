@@ -1,49 +1,60 @@
-[build-system]
-requires = ["maturin>=1.15,<2"]
-build-backend = "maturin"
-
 [project]
 name = "wesl-py"
-dynamic = ["version"]
 description = "Python bindings for the Rust WESL compiler"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 license-files = ["LICENSE"]
 classifiers = [
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
-    "Programming Language :: Python :: 3.15",
-    "Programming Language :: Rust",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
+  "Programming Language :: Rust",
 ]
+dynamic = ["version"]
 
 [project.urls]
-Repository = "https://github.com/claydugo/wesl-py"
 Issues = "https://github.com/claydugo/wesl-py/issues"
+Repository = "https://github.com/claydugo/wesl-py"
 
-[project.optional-dependencies]
-testing = [
-    "pytest>=8.2",
-    "wgpu==0.32.0",
-]
 [project.entry-points.pytest11]
 wesl = "wesl.pytest_plugin"
 
+[project.optional-dependencies]
+testing = [
+  "pytest>=8.2",
+  "wgpu>=0.32,<0.33",
+]
+
+[build-system]
+requires = ["maturin>=1.15,<2"]
+build-backend = "maturin"
+
+[tool.check-wheel-contents]
+package = ["python/wesl"]
+package_omit = [".*", "__pycache__", "*.pyc", "*.pyo", "*.so", "*.pyd"]
+ignore = ["W102"]
+
 [tool.maturin]
-python-source = "python"
-module-name = "wesl._native"
 locked = true
+module-name = "wesl._native"
+python-source = "python"
+
+[tool.pytest.ini_options]
+addopts = ["--import-mode=importlib"]
+testpaths = ["tests"]
 
 [tool.ruff]
 target-version = "py312"
+line-length = 88
 
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = ["COM812", "CPY001"]
 
 [tool.ruff.lint.flake8-builtins]
-builtins-ignorelist = ["compile"]
+ignorelist = ["compile"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
@@ -60,10 +71,19 @@ convention = "numpy"
 [tool.rumdl]
 enable = ["ALL"]
 
+[tool.rumdl.MD013]
+line-length = 80
+code-block-line-length = 88
+
 [tool.rumdl.MD063]
 style = "sentence-case"
 ignore-words = ["Python", "wesl-py"]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = ["--import-mode=importlib"]
+[tool.tombi.lint.rules]
+dotted-keys-out-of-order = "error"
+key-empty = "error"
+tables-out-of-order = "error"
+
+[tool.tombi.schema]
+enabled = true
+strict = true

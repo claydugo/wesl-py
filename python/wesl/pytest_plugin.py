@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import sys
 from collections.abc import Mapping
 from os.path import abspath
@@ -9,7 +8,6 @@ from types import ModuleType
 from typing import TYPE_CHECKING
 
 import pytest
-from _pytest._code.code import ExceptionChainRepr, ExceptionRepr, ReprEntryNative
 
 from . import (
     CompileError,
@@ -29,7 +27,6 @@ if TYPE_CHECKING:
     from typing import Any
 
     import wgpu
-    from _pytest._io import TerminalWriter
 
     from . import Feature
     from ._project import Project
@@ -55,62 +52,6 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers", "gpu: requires a WebGPU adapter (hardware or software)"
     )
-
-
-def pytest_runtest_logreport(report: pytest.TestReport) -> None:
-    if (
-        "wesl" in report.keywords
-        and isinstance(report.longrepr, ExceptionChainRepr)
-        and report.longrepr.reprtraceback.style == "value"
-    ):
-        representation = WeslFailureRepr(report.longrepr.chain)
-        representation.sections = report.longrepr.sections
-        report.longrepr = representation
-
-
-class WeslFailureRepr(ExceptionChainRepr):
-    def toterminal(self, tw: TerminalWriter) -> None:
-        writer = tw
-        for traceback, _, description in self.chain:
-            if traceback.style != "value":
-                traceback.toterminal(writer)
-            else:
-                for entry in traceback.reprentries:
-                    if entry.style != "value":
-                        entry.toterminal(writer)
-                        continue
-                    for index, line in enumerate(entry.lines):
-                        if line.startswith(("  actual:", "  expected:")):
-                            label, value = line.split(":", 1)
-                            other = entry.lines[
-                                index + 1 if label == "  actual" else index - 1
-                            ].split(":", 1)[1]
-                            components = re.split(r"([(),]\s*)", value.lstrip())
-                            other_components = re.split(r"([(),]\s*)", other.lstrip())
-                            writer.write(
-                                label + ":" + value[: len(value) - len(value.lstrip())]
-                            )
-                            for component, other_component in zip(
-                                components, other_components, strict=True
-                            ):
-                                writer.write(
-                                    component,
-                                    red=label == "  actual"
-                                    and component != other_component,
-                                    green=label == "  expected"
-                                    and component != other_component,
-                                )
-                            writer.line()
-                        else:
-                            writer.line(
-                                line,
-                                red=index == 0
-                                or (line.lstrip().startswith("| ") and "^" in line),
-                            )
-            if description is not None:
-                writer.line()
-                writer.line(description, yellow=True)
-        ExceptionRepr.toterminal(self, writer)
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -231,7 +172,14 @@ class WeslTest:
             return self.repr_item_failure(excinfo)
         from .testing import ShaderAssertionError
 
-        if not isinstance(excinfo.value, ShaderAssertionError):
+        if (
+            not isinstance(excinfo.value, ShaderAssertionError)
+            or excinfo.value.__cause__ is not None
+            or (
+                excinfo.value.__context__ is not None
+                and not excinfo.value.__suppress_context__
+            )
+        ):
             return self.repr_item_failure(excinfo)
         error = ShaderAssertionError(
             excinfo.value.diagnostic,
@@ -242,32 +190,13 @@ class WeslTest:
             invocation=excinfo.value.invocation,
             root_directory=self.item.config.rootpath,
         )
-        representation = excinfo.getrepr(
-            style="line" if style == "line" else "value",
-            tbfilter=False,
-            chain=style != "line",
-        )
-        entry = representation.reprtraceback.reprentries[-1]
-        entry.lines = str(error).splitlines()
         if style == "line":
             diagnostic = error.diagnostic
-            entry.lines = [
-                (
-                    f"{error.filename}:{diagnostic.line or 1}:"
-                    f"{diagnostic.column or 1}: {diagnostic.message} failed"
-                ),
-            ]
-        elif notes := getattr(excinfo.value, "__notes__", ()):
-            representation.reprtraceback.reprentries = [
-                *representation.reprtraceback.reprentries,
-                ReprEntryNative([f"{note}\n" for note in notes]),
-            ]
-        if representation.reprcrash is not None:
-            diagnostic = excinfo.value.diagnostic
-            representation.reprcrash.path = error.filename
-            representation.reprcrash.lineno = diagnostic.line or 1
-            representation.reprcrash.message = f"{diagnostic.message} failed"
-        return representation
+            return (
+                f"{error.filename}:{diagnostic.line or 1}:"
+                f"{diagnostic.column or 1}: {diagnostic.message} failed"
+            )
+        return "\n".join((str(error), *getattr(excinfo.value, "__notes__", ())))
 
 
 @pytest.fixture(scope="session")
