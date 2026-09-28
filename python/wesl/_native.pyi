@@ -108,7 +108,7 @@ def check_syntax(source: str, filename: str) -> None: ...
 def compile(
     modules: collections.abc.Mapping[str, str],
     root: str,
-    options: wesl.CompileOptions | None,
+    options: wesl.CompileOptions,
     filenames: dict[str, str],
     root_directory: str | PathLike[str] | None,
     dependencies: dict[str, str | PathLike[str]],
@@ -128,9 +128,7 @@ def compile_test(
 def constant_module(
     module: str, constants: collections.abc.Mapping[str, bool | int | float]
 ) -> str: ...
-def discover_tests(
-    source: str, filename: str, features: wesl.Features | None = None
-) -> list[tuple[str, int, int]]: ...
+def discover_tests(source: str, filename: str) -> list[tuple[str, int, int]]: ...
 def render_diagnostic(diagnostic: Diagnostic) -> str: ...
 
 class CompileError(Exception):

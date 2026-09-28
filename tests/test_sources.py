@@ -86,7 +86,7 @@ def test_compile_source_returns_emitted_names_and_dependencies() -> None:
             "package::helper": "fn value() -> u32 { return 7u; }",
             "package::unused": "fn broken( }",
         },
-        options=wesl.CompileOptions(mangle_root=True),
+        options=wesl.CompileOptions(mangle_main=True),
     )
     assert isinstance(result, wesl.CompileResult)
     assert result.modules == ("package::main", "package::helper")

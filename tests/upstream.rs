@@ -4,7 +4,7 @@
 )]
 
 use pyo3::{prelude::*, types::PyDict};
-use wesl::{CompileOptions, EscapeMangler, Feature, Features, VirtualResolver};
+use wesl::{CompileOptions, Feature, Features, resolver::VirtualResolver};
 use wgsl_parse::syntax::ModulePath;
 
 #[test]
@@ -32,35 +32,43 @@ fn compilation_matches_upstream() -> Result<(), Box<dyn std::error::Error>> {
             modules.set_item(path, source)?;
             resolver.add_module(path.parse::<ModulePath>()?, source.into());
         }
-        let options = CompileOptions {
-            keep: Some(vec!["selected".to_owned()]),
-            features: Features {
-                flags: [("enabled".to_owned(), Feature::Enable)].into(),
-                ..Features::default()
-            },
-            ..CompileOptions::default()
-        };
-        let expected = wesl::compile(
-            &"package::main".parse()?,
-            &resolver,
-            &EscapeMangler,
-            &options,
-        )?;
         let context = PyDict::new(py);
         context.set_item("wesl", py.import("wesl")?)?;
         context.set_item("modules", modules)?;
-        let actual = py
-            .eval(
-                c"wesl.compile(modules, options=wesl.CompileOptions(keep=['selected'], features=wesl.Features(flags={'enabled': True}))).wgsl",
-                Some(&context),
-                None,
-            )?
-            .extract::<String>()?;
-        assert_eq!(
-            actual,
-            expected.to_string(),
-            "binding changes upstream output"
-        );
+        for (strip, keep_main, mangle_main, visibility, sourcemap) in [
+            (true, false, false, false, true),
+            (true, false, true, true, false),
+            (true, true, false, true, true),
+            (false, false, true, false, true),
+        ] {
+            let options = CompileOptions {
+                strip,
+                keep_main,
+                mangle_main,
+                visibility,
+                sourcemap,
+                keep: Some(vec!["selected".to_owned()]),
+                features: Features {
+                    flags: [("enabled".to_owned(), Feature::Enable)].into(),
+                    ..Features::default()
+                },
+                ..CompileOptions::default()
+            };
+            let expected = wesl::compile(&"package::main".parse()?, &options, &resolver)?;
+            context.set_item("strip", strip)?;
+            context.set_item("keep_main", keep_main)?;
+            context.set_item("mangle_main", mangle_main)?;
+            context.set_item("visibility", visibility)?;
+            context.set_item("sourcemap", sourcemap)?;
+            let actual = py
+                .eval(
+                    c"wesl.compile(modules, options=wesl.CompileOptions(strip=strip, keep_main=keep_main, mangle_main=mangle_main, visibility=visibility, sourcemap=sourcemap, keep=['selected'], features=wesl.Features(flags={'enabled': True}))).wgsl",
+                    Some(&context),
+                    None,
+                )?
+                .extract::<String>()?;
+            assert_eq!(actual, expected.to_string(), "WGSL differs");
+        }
         Ok(())
     })
 }

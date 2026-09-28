@@ -179,8 +179,16 @@ The free-threaded wheel runs on Linux with Python 3.15 and 3.15t.
 - Keep the ImGui upper bound while PyPI wgpu 0.32.0 uses the removed
   `cmd_lists_count` attribute. Conda's [backend patch](https://github.com/conda-forge/wgpu-py-feedstock/blob/main/recipe/0001-Use-len-draw_data.cmd_lists-in-imgui-backend.patch)
   makes newer versions work. Verify the PyPI dependencies before changing the bound.
-- Retain the Rust statement traversal until the upstream visitor covers plain
-  `else` branches. WESL 0.5.0 omits them in [its visitor](https://github.com/webgpu-tools/wesl-rs/blob/63a3627ba31258565df177f3f553beed8ff45338/crates/wesl/src/pass/visit.rs).
+- Use the pinned upstream visitor for statements and expressions. Published
+  WESL 0.5.0 omits plain `else` branches in [its visitor](https://github.com/webgpu-tools/wesl-rs/blob/63a3627ba31258565df177f3f553beed8ff45338/crates/wesl/src/pass/visit.rs).
+  The pin includes the fix from [PR #307](https://github.com/webgpu-tools/wesl-rs/pull/307).
+- Keep the compiler adapter until upstream supports module transformations and
+  resolves the [integration gaps](docs/upstream.md#compiler-driver-integration).
+  Check the reproducers and removal criteria when updating the WESL pin.
+- Track the [lost initializer](docs/upstream.md#lowering-drops-side-effects-in-a-for-initializer)
+  when updating WESL. Both option classes default lowering to `False`.
+  Shader tests have a partial workaround. Ordinary compilation remains affected.
+  Verify the upstream fix before removing the local transformation.
 - Review GPU resource and ImGui context cleanup for repeated viewer use.
   The SDF viewer has no explicit teardown. Its particle buffer remains usable
   after the canvas closes while the viewer remains referenced.

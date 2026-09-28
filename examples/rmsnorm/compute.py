@@ -34,7 +34,8 @@ def normalize(
         directory / "shaders/normalize.wesl",
         root_directory=directory.parent,
         options=wesl.CompileOptions(
-            features=wesl.Features(flags={"residual": residual is not None})
+            visibility=True,
+            features=wesl.Features(flags={"residual": residual is not None}),
         ),
     )
     pipeline = device.create_compute_pipeline(

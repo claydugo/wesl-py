@@ -1,3 +1,4 @@
+from dataclasses import replace
 from importlib.util import find_spec
 from pathlib import Path
 
@@ -17,6 +18,16 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 @pytest.fixture(scope="session")
 def wgsl_test() -> Path:
     return Path(wesl.__file__).parent / "shaders/wgsl_test"
+
+
+@pytest.fixture
+def wesl_options(wesl_options: wesl.CompileOptions) -> wesl.CompileOptions:
+    return replace(wesl_options, visibility=True)
+
+
+@pytest.fixture
+def wesl_test_options(wesl_test_options: wesl.TestOptions) -> wesl.TestOptions:
+    return replace(wesl_test_options, visibility=True)
 
 
 @pytest.fixture

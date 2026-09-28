@@ -11,14 +11,17 @@ use pyo3::{
     types::{PyMapping, PyTuple, PyType},
 };
 use wesl::{
-    FileResolver, ModulePath, ResolveError, Resolver, Router, SourceMap, SourceMapper,
-    StandardResolver, SyntaxUtil, VirtualResolver, Wesl,
+    Resolver,
+    error::ResolveError,
+    resolver::{FileResolver, Router, StandardResolver, VirtualResolver},
+    sourcemap::SourceMap,
 };
 use wgsl_parse::{
     error::ErrorKind,
-    syntax::{GlobalDeclaration, ImportContent, ImportStatement, PathOrigin, TranslationUnit},
+    syntax::{GlobalDeclaration, ImportStatement, ModulePath, PathOrigin, TranslationUnit},
 };
 
+mod compiler;
 mod testing;
 
 create_exception!(
@@ -93,14 +96,15 @@ struct ManglerKind {
 struct CompileOptions<'py> {
     imports: bool,
     condcomp: bool,
+    visibility: bool,
     strip: bool,
     lower: bool,
     validate: bool,
     sourcemap: bool,
     mangler: ManglerKind,
-    mangle_root: bool,
+    mangle_main: bool,
     keep: Option<Vec<String>>,
-    keep_root: bool,
+    keep_main: bool,
     features: Features<'py>,
 }
 
@@ -111,12 +115,21 @@ impl TryFrom<CompileOptions<'_>> for wesl::CompileOptions {
         Ok(Self {
             imports: options.imports,
             condcomp: options.condcomp,
+            visibility: options.visibility,
             strip: options.strip,
             lower: options.lower,
             validate: options.validate,
-            mangle_root: options.mangle_root,
+            sourcemap: options.sourcemap,
+            mangler: match options.mangler.value.as_str() {
+                "Escape" => wesl::ManglerKind::Escape,
+                "Hash" => wesl::ManglerKind::Hash,
+                "Unicode" => wesl::ManglerKind::Unicode,
+                "None" => wesl::ManglerKind::None,
+                _ => return Err(PyValueError::new_err("invalid mangler")),
+            },
+            mangle_main: options.mangle_main,
             keep: options.keep,
-            keep_root: options.keep_root,
+            keep_main: options.keep_main,
             features: options.features.try_into()?,
             ..Self::default()
         })
@@ -383,42 +396,6 @@ impl Resolver for ModuleResolver {
     }
 }
 
-struct ProjectResolver<R> {
-    inner: R,
-}
-
-impl<R: Resolver> Resolver for ProjectResolver<R> {
-    fn canonical_path(&self, path: &ModulePath) -> ModulePath {
-        self.inner.canonical_path(path)
-    }
-
-    fn resolve_source<'a>(&'a self, path: &ModulePath) -> Result<Cow<'a, str>, ResolveError> {
-        self.inner.resolve_source(path)
-    }
-
-    fn display_name(&self, path: &ModulePath) -> Option<String> {
-        self.inner.display_name(path)
-    }
-
-    fn resolve_module(&self, path: &ModulePath) -> Result<TranslationUnit, ResolveError> {
-        let mut syntax = self.inner.resolve_module(path)?;
-        if let PathOrigin::Package(namespace) = &path.origin {
-            for import in &mut syntax.imports {
-                if import.path.is_none()
-                    && let ImportContent::Collection(collection) = &mut import.content
-                {
-                    for item in collection {
-                        if let Some(name) = item.path.first_mut() {
-                            *name = format!("{namespace}/{name}");
-                        }
-                    }
-                }
-            }
-        }
-        Ok(syntax)
-    }
-}
-
 impl Diagnostic {
     fn position(&self, offset: usize) -> Option<(usize, usize)> {
         let prefix = self.source.as_ref()?.get(..offset)?;
@@ -450,7 +427,7 @@ enum Failure {
 }
 
 impl Failure {
-    fn from_diagnostic(mut diagnostic: wesl::Diagnostic<wesl::Error>) -> Self {
+    fn from_diagnostic(mut diagnostic: wesl::error::Diagnostic<wesl::Error>) -> Self {
         if let wesl::Error::ParseError(error) = &mut *diagnostic.error
             && matches!(error.error, ErrorKind::UnexpectedEof { .. })
             && let Some(source) = &diagnostic.detail.source
@@ -534,7 +511,7 @@ fn module_path(path: &str) -> Result<ModulePath, Failure> {
 }
 
 #[pyfunction]
-#[pyo3(signature = (modules: "collections.abc.Mapping[str, str]", root, options: "wesl.CompileOptions | None", filenames, root_directory, dependencies, dependency_aliases=None))]
+#[pyo3(signature = (modules: "collections.abc.Mapping[str, str]", root, options: "wesl.CompileOptions", filenames, root_directory, dependencies, dependency_aliases=None))]
 #[expect(
     clippy::too_many_arguments,
     reason = "The binding accepts compiler settings and Python source inputs."
@@ -547,28 +524,14 @@ fn compile(
     py: Python<'_>,
     modules: &Bound<'_, PyMapping>,
     root: String,
-    options: Option<CompileOptions<'_>>,
+    options: CompileOptions<'_>,
     filenames: HashMap<String, String>,
     root_directory: Option<PathBuf>,
     dependencies: HashMap<String, PathBuf>,
     dependency_aliases: Option<HashMap<String, String>>,
 ) -> PyResult<CompileResult> {
     let modules = modules.items()?.extract::<Vec<(String, String)>>()?;
-    let sourcemap = options.as_ref().is_none_or(|options| options.sourcemap);
-    let mangler = match options
-        .as_ref()
-        .map(|options| options.mangler.value.as_str())
-    {
-        Some("Escape") | None => wesl::ManglerKind::Escape,
-        Some("Hash") => wesl::ManglerKind::Hash,
-        Some("Unicode") => wesl::ManglerKind::Unicode,
-        Some("None") => wesl::ManglerKind::None,
-        _ => return Err(PyValueError::new_err("invalid mangler")),
-    };
-    let options = options
-        .map(wesl::CompileOptions::try_from)
-        .transpose()?
-        .unwrap_or_default();
+    let options = options.try_into()?;
     py.detach(move || {
         let root = module_path(&root)?;
         let mut dependency_resolver = Router::new();
@@ -610,65 +573,45 @@ fn compile(
             resolver.modules.add_module(path, source.into());
         }
         let root = resolver.dependency_path(&root);
-        let result = if sourcemap {
-            let mangler: Box<dyn wesl::Mangler> = match mangler {
-                wesl::ManglerKind::Escape => Box::new(wesl::EscapeMangler),
-                wesl::ManglerKind::Hash => Box::new(wesl::HashMangler),
-                wesl::ManglerKind::Unicode => Box::new(wesl::UnicodeMangler),
-                wesl::ManglerKind::None => Box::new(wesl::NoMangler),
-            };
-            let mapper = SourceMapper::new(&root, &resolver, &mangler);
-            let result = wesl::compile(
-                &root,
-                &ProjectResolver { inner: &mapper },
-                &mapper,
-                &options,
-            );
-            let sourcemap = mapper.finish();
-            match result {
-                Ok(mut result) => {
-                    result.sourcemap = Some(sourcemap);
-                    Ok(result)
-                }
-                Err(error) => Err(error
-                    .diagnostic()
-                    .with_sourcemap(&sourcemap)
-                    .unmangle(Some(&sourcemap), Some(&mangler))
-                    .into()),
-            }
-        } else {
-            let mut compiler =
-                Wesl::new_barebones().set_custom_resolver(ProjectResolver { inner: resolver });
-            compiler.set_options(options);
-            compiler.set_mangler(mangler);
-            compiler.use_sourcemap(sourcemap);
-            compiler.compile(&root)
-        };
+        let result = compiler::compile(&root, &options, &resolver, |_, _| Ok(()));
         result
             .map(|result| CompileResult {
                 wgsl: result.to_string(),
-                modules: result.modules.iter().map(ToString::to_string).collect(),
+                modules: result
+                    .modules
+                    .iter()
+                    .map(|module| module.path.to_string())
+                    .collect(),
                 sources: result
                     .modules
                     .iter()
                     .filter_map(|module| {
-                        let text = result.sourcemap.get_source(module)?;
+                        let module = &module.path;
+                        let text = result.sourcemap.source(module)?;
                         Some((
                             module.to_string(),
                             Source {
                                 text: text.to_owned(),
-                                filename: result
-                                    .sourcemap
-                                    .get_display_name(module)
-                                    .map(str::to_owned),
+                                filename: result.sourcemap.display_name(module).map(str::to_owned),
                             },
                         ))
                     })
                     .collect(),
                 entry_points: result
                     .syntax
-                    .entry_points()
-                    .map(ToString::to_string)
+                    .global_declarations
+                    .iter()
+                    .filter_map(|declaration| match &**declaration {
+                        GlobalDeclaration::Function(function)
+                            if function
+                                .attributes
+                                .iter()
+                                .any(|attribute| attribute.is_entry_point()) =>
+                        {
+                            Some(function.ident.to_string())
+                        }
+                        _ => None,
+                    })
                     .collect(),
             })
             .map_err(|error| Failure::from_diagnostic(error.diagnostic()))
@@ -711,9 +654,9 @@ fn constant_module(
             resolver.add_constant(
                 name,
                 match value {
-                    ConstantValue::Boolean(value) => value.into(),
-                    ConstantValue::Integer(value) => value.into(),
-                    ConstantValue::Float(value) => value.into(),
+                    ConstantValue::Boolean(value) => wesl::eval::LiteralInstance::from(value),
+                    ConstantValue::Integer(value) => wesl::eval::LiteralInstance::from(value),
+                    ConstantValue::Float(value) => wesl::eval::LiteralInstance::from(value),
                 },
             );
         }
@@ -723,7 +666,7 @@ fn constant_module(
                 Vec::new(),
             ))
             .map(Cow::into_owned)
-            .map_err(|error| Failure::from_diagnostic(wesl::Diagnostic::from(error)))
+            .map_err(|error| Failure::from_diagnostic(wesl::error::Diagnostic::from(error)))
     })
     .map_err(|failure| failure.into_pyerr(py))
 }
@@ -784,7 +727,7 @@ fn check_syntax(py: Python<'_>, source: String, filename: String) -> PyResult<()
             .parse::<TranslationUnit>()
             .map(|_| ())
             .map_err(|error| {
-                let mut diagnostic = wesl::Diagnostic::from(error).with_source(source);
+                let mut diagnostic = wesl::error::Diagnostic::from(error).with_source(source);
                 diagnostic.detail.display_name = Some(filename);
                 Failure::from_diagnostic(diagnostic)
             })

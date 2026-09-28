@@ -20,7 +20,7 @@ print(result.wgsl)
 ```
 
 `compile(modules, *, root="package::main", options=None, features=None, constant_modules=None,
-keep=..., keep_root=None, strip=None, filenames=None, root_directory=None,
+keep=..., keep_main=None, strip=None, filenames=None, root_directory=None,
 dependencies=None)` returns a `CompileResult`.
 
 Module keys and `root` use names such as `package::main` and
@@ -28,7 +28,7 @@ Module keys and `root` use names such as `package::main` and
 An explicit `root_directory` also enables file imports.
 The function accepts mappings and preserves their contents.
 
-`features`, `keep`, `keep_root`, and `strip` override the corresponding fields in
+`features`, `keep`, `keep_main`, and `strip` override the corresponding fields in
 `options` for one call. They do not mutate the supplied options.
 Omit `keep` to use the stored selection. Pass `keep=None` to select entry points.
 Pass `keep=[]` to select no root declarations.
@@ -38,7 +38,9 @@ The other keyword overrides use `None` to retain the stored setting.
 The shader runner accepts `TestOptions` instead.
 See [shader test options](testing.md#fixtures-and-pytest-behavior).
 It is a mutable dataclass with keyword arguments.
-Omit `options` to use upstream defaults.
+Omit `options` to use the defaults below.
+Visibility checks default to `False` so existing external shaders remain usable.
+Upstream defaults visibility checks to `True`.
 
 `features` accepts a mapping such as `{"enabled": True}` or a `Features` instance.
 Mappings use the default policy, `Feature.Disable`.
@@ -73,8 +75,8 @@ The compile boundary checks field types.
 Applications can pass these values to process workers.
 
 The retention options follow
-[wesl-rs `CompileOptions`](https://docs.rs/wesl/0.4.4/wesl/struct.CompileOptions.html).
-`keep_root` and `mangle_root` refer to the root module.
+[wesl-rs `CompileOptions`](https://github.com/webgpu-tools/wesl-rs/blob/0303eccfafd534cc76c91eddd4b4f5c4413a1733/crates/wesl/src/frontend.rs).
+`keep_main` and `mangle_main` refer to the root module.
 They do not refer to a function named `main`.
 
 - `strip=True`: Keep selected root declarations and their dependencies.
@@ -83,29 +85,31 @@ They do not refer to a function named `main`.
 - `keep=None`: Select entry points when stripping is enabled.
 - `keep=["answer"]`: Select these original root names when stripping is enabled.
 - `keep=[]`: Select no root declarations when stripping is enabled.
-- `keep_root=True`: Select all active root declarations when stripping is
+- `keep_main=True`: Select all active root declarations when stripping is
   enabled.
 
-`strip=False` overrides `keep_root` and `keep`.
-`keep_root=True` overrides `keep`.
-The compiler ignores unknown names in `keep`. This includes declarations that conditional
-translation removes.
+`strip=False` overrides `keep_main` and `keep`.
+`keep_main=True` overrides `keep`.
+The compiler rejects unknown names in `keep`. This includes declarations that
+conditional translation removes.
 
 A root with only unused helpers produces empty WGSL under the default options.
 Use `compile_source(source, keep=["answer"])` to retain a helper and its dependencies.
-Use `keep_root=True` to retain all active root declarations, or `strip=False`
+Use `keep_main=True` to retain all active root declarations, or `strip=False`
 to disable stripping.
 The compiler loads modules when declarations depend on them. It does not scan
 every file in a package.
-The binding enables upstream's lazy import resolution.
+The compiler uses upstream usage analysis to load dependencies.
 
-Set `mangle_root=True` to rename root declarations as well as imported declarations.
+Set `mangle_main=True` to rename root declarations as well as imported declarations.
 Selections always use original names, independent of mangling.
 
-The remaining `CompileOptions` fields also use upstream names and defaults:
+The remaining `CompileOptions` fields use upstream names:
 
 - `imports=True`: Resolve imports.
 - `condcomp=True`: Evaluate conditional translation attributes.
+- `visibility=False`: Ignore visibility restrictions. Set `True` to require
+  declarations imported from external packages to be `public`.
 - `lower=False`: Enable upstream lowering when set to `True`. This build evaluates
   constant expressions, inlines aliases, and removes unreachable code.
 - `validate=True`: Run upstream compiler checks.
@@ -115,19 +119,18 @@ The remaining `CompileOptions` fields also use upstream names and defaults:
 The build enables upstream evaluation. It does not enable generics.
 `CompileOptions` does not expose the inactive generics option.
 
-The pinned wesl-rs 0.4.4 compiler has these known limitations:
+The pinned compiler has these known limitations:
 
-- `imports=False` can strip root entry points. Use `strip=False` with this option.
 - `lower=True` can remove side effects from a `for` initializer when its condition
   is always false. Keep lowering disabled for affected shaders.
   See [the upstream reproducer](upstream.md#lowering-drops-side-effects-in-a-for-initializer).
 - Large expressions can exhaust a small caller stack on Windows.
   See the [10,000-term expression failure](https://github.com/claydugo/wesl-py/actions/runs/35526430139/job/106119676932).
 
-The binding uses the published crates without local compiler patches.
-It stays on 0.4.4 so existing shader libraries remain usable without visibility
-modifiers.
-See the [upstream recommendation](https://github.com/webgpu-tools/wesl-rs/issues/300#issuecomment-5757180358).
+The binding pins upstream 0.5.0 plus the merged visibility and visitor fixes.
+It does not modify dependency sources. The compiler adapter handles the remaining
+[upstream integration gaps](upstream.md#compiler-driver-integration).
+Disabling visibility follows the [upstream recommendation](https://github.com/webgpu-tools/wesl-rs/issues/300#issuecomment-5757180358).
 
 `mangler` accepts `ManglerKind.Escape`, `ManglerKind.Hash`,
 `ManglerKind.Unicode`, or `ManglerKind.None_`.
@@ -273,7 +276,12 @@ result = wesl.compile_source(
 )
 ```
 
-Imports across package boundaries work without visibility modifiers in WESL 0.4.4.
+Imports across package boundaries work without visibility modifiers when
+`visibility=False`, the binding default.
+For shaders you maintain, mark declarations exported to other packages as `public`
+and enable `visibility=True`. Declarations used only within the package can keep
+their default visibility. The repository examples and shader tests enable these
+checks.
 This applies to declarations. To re-export an imported name, mark the import
 with `@publish`. Each conditional import needs the annotation:
 
@@ -334,13 +342,13 @@ including scoped dependencies. Each inner mapping pairs constant names with valu
 Compilation preserves the supplied mappings and the stored compiler settings.
 Omit the argument, or pass `None` or `{}`, to generate no modules.
 
-The compiler emits one `const` declaration for each value:
+The compiler emits one `public const` declaration for each value:
 
 | Python value | Generated declaration |
 | --- | --- |
-| `64` | `const width = 64;` |
-| `0.5` | `const scale = 0.5;` |
-| `True` | `const enabled = true;` |
+| `64` | `public const width = 64;` |
+| `0.5` | `public const scale = 0.5;` |
+| `True` | `public const enabled = true;` |
 
 Numeric declarations retain WGSL's abstract numeric types. The shader determines
 the concrete type where it uses a constant. For example, the same integer constant
@@ -355,7 +363,7 @@ meet these requirements. Their dtype does not determine the WGSL type.
 Compilation does not import or require NumPy.
 
 WESL generates the declarations and formats the literals. Declaration order is
-unspecified. WESL 0.4.4 cannot parse its generated literal for `-2**63`.
+unspecified. The pinned parser cannot parse its generated literal for `-2**63`.
 Using that value raises `CompileError` when the compiler loads its module.
 
 Strings, complex values, arrays, and other unsupported types raise `TypeError`.
@@ -412,7 +420,7 @@ Each compilation reads current shader contents from the stored directories.
 `Compiler.compile_file()` uses these settings without searching for another manifest.
 
 `compile_source(source, *, root="package::main", filename="<string>", ...)`
-uses the stored settings. Both methods accept `features`, `keep`, `keep_root`, and
+uses the stored settings. Both methods accept `features`, `keep`, `keep_main`, and
 `strip` overrides for one call. They also accept `constant_modules` for that call.
 `compile_file(filename, ...)` resolves relative paths from `root_directory`,
 or the working directory when `root_directory` is `None`.
@@ -555,7 +563,14 @@ Concurrent calls can share inputs when callers do not modify those inputs.
 
 `wesl.__version__` identifies the binding.
 `wesl.__version__` matches Python distribution metadata. This package uses the
-published WESL and `wgsl-parse` 0.4.4 crates without local patches.
+WESL workspace crates at commit
+[`0303eccfafd534cc76c91eddd4b4f5c4413a1733`](https://github.com/webgpu-tools/wesl-rs/tree/0303eccfafd534cc76c91eddd4b4f5c4413a1733).
+This commit follows upstream 0.5.0 and includes
+[PR #301](https://github.com/webgpu-tools/wesl-rs/pull/301) and
+[PR #307](https://github.com/webgpu-tools/wesl-rs/pull/307).
+Python wheels include the compiled Rust dependencies. Source builds require
+Cargo and access to the pinned Git sources unless those sources are cached.
+The source distribution includes `Cargo.lock`; builds use locked resolution.
 Report parser defects to the [upstream issue tracker](https://github.com/webgpu-tools/wesl-rs/issues).
 See [LICENSE](../LICENSE) for source provenance and third-party notices.
 

@@ -1,12 +1,13 @@
 # Upstream integration limits
 
-Reviewed on 2026-09-26 against the pinned `wesl`, `wgsl-parse`, `wgsl-types`,
+Initially reviewed on 2026-09-26 against the then-pinned `wesl`, `wgsl-parse`, `wgsl-types`,
 and `wesl-quote` 0.4.4 crates, plus PyO3 0.29.2.
 Upstream status uses [wesl-rs main at 0303ecc](https://github.com/webgpu-tools/wesl-rs/tree/0303eccfafd534cc76c91eddd4b4f5c4413a1733)
 and [PyO3 main at 3260c48](https://github.com/PyO3/pyo3/tree/3260c4835f33d3c05d39715c2b729dfdb5e31e35).
 Upstream checks inspect source and issue status.
-The runtime checks use the pinned versions. All seven Rust examples below
-reproduce the stated outcomes.
+The original runtime checks use the 0.4.4 versions. The Rust examples for those
+checks retain their original API. The binding now pins the audited WESL commit.
+Migration checks on 2026-09-28 confirm the additional failures below.
 
 ## Next actions
 
@@ -15,6 +16,7 @@ The table distinguishes current binding behavior from the upstream failure.
 
 | Item | Current binding behavior | Next action |
 | --- | --- | --- |
+| [Compiler adapter](#compiler-driver-integration) | A local driver supports transformations and works around three frontend defects | Request a transformation hook and fix visibility, disabled imports, and qualified references upstream |
 | [Lost for initializer](#lowering-drops-side-effects-in-a-for-initializer) | Ordinary compilation with lowering changes behavior; shader tests have a partial workaround | Preserve the initializer and its scope upstream |
 | [Zero alignment](#buffer-sizing-assumes-positive-member-alignment) | Local checks reject zero alignment in custom result layouts | Reject zero before layout arithmetic upstream |
 | [Cyclic types](#type-evaluation-assumes-acyclic-declarations) | Local checks reject the documented alias and structure cycles | Add the low-level crash cases to issue #157 |
@@ -24,9 +26,14 @@ The table distinguishes current binding behavior from the upstream failure.
 | [Exact assertion values](#the-bundled-assertion-protocol-loses-integer-precision) | Local fields preserve exact operands | Add an upstream host regression test before changing the protocol |
 | [Invalid diagnostic spans](#diagnostic-rendering-accepts-invalid-utf-8-spans) | Assertion rendering rejects invalid ranges | Consider a small upstream hardening patch |
 
+Record the upstream issue or pull request and the fix revision in each section.
+When updating a dependency, rerun the relevant reproducer against upstream without
+the local workaround. Remove a workaround only after the pinned dependency includes
+the fix and the associated binding tests pass.
+
 The [wrapper parameter collision](#local-wrapper-parameters-can-collide) has a
-local fix. The [dependency constraints](#dependency-constraints) need migration
-work when the pin changes.
+local fix. The [dependency constraints](#dependency-constraints) describe the
+visitor migration and compiler hooks.
 
 The WESL Rust examples require neither Python nor a GPU.
 Use `wesl = { version = "=0.4.4", default-features = false,
@@ -69,6 +76,8 @@ fn main() {
 
 Observed: `before` contains `U32(1)` and `after` contains `U32(0)`.
 Ordinary `wesl.compile` with `CompileOptions(lower=True)` also removes `bump()`.
+Both `CompileOptions.lower` and `TestOptions.lower` default to `False`.
+The compiler adapter does not correct this lowering defect.
 
 In [compile_test](../src/testing.rs), instrumentation moves initializers into
 enclosing blocks before lowering. It skips functions in `wgsl_test` and
@@ -82,6 +91,8 @@ Submit a fix that preserves the initializer and its scope.
 Cover a call initializer, a declaration with a side effect, and no initializer.
 Remove the local initializer transformation after adopting that fix and verifying
 assertion instrumentation with the control-flow tests.
+Also verify ordinary compilation and overridden assertion modules without the
+transformation. Both must preserve the initializer's side effects.
 
 ## Buffer sizing assumes positive member alignment
 
@@ -353,6 +364,82 @@ does not promise fresh names against the insertion scope.
 
 ## Dependency constraints
 
+### Compiler driver integration
+
+The pin uses upstream 0.5.0 at `0303eccfafd534cc76c91eddd4b4f5c4413a1733`.
+[The adapter](../src/compiler.rs) implements upstream `CompilerDriver`.
+It uses public upstream APIs.
+It calls the upstream parsing, conditional translation, usage analysis, linking,
+mangling, lowering, and validation passes. It records original sources before
+applying the project and test transformations.
+
+The standard frontend keeps `CompilationPass` private. Request a public way to
+wrap its module loading step. That would let the binding retain its transformations
+without duplicating the frontend's option handling.
+The transformation must run after the source mapper records the original source
+and before conditional translation, identifier retargeting, and validation.
+Expose the existing default driver and its constructor, or add this hook to the
+standard frontend. Entry selection, pass ordering, and result assembly should
+remain upstream responsibilities. Removing the adapter depends on this API and
+the fixes below.
+
+Test discovery parses declarations. Test selection uses the public
+`pass::condcomp` directly. Neither requires the custom driver.
+Compiling with imports disabled removes
+qualified paths that the generated test entry point still needs.
+
+Three small examples fail through upstream `wesl::compile` at this revision.
+Use `CompileOptions { visibility: false, keep_main: true, ..Default::default() }`
+and a `wesl::resolver::VirtualResolver` with `package::main` as the main module.
+
+For disabled visibility, the main source is:
+
+```wesl
+import library::value;
+fn main() -> u32 { return value(); }
+```
+
+Set the `library` source to `fn value() -> u32 { return 7u; }`.
+Compilation requires public visibility despite the option.
+
+For disabled imports, use the same main source with `missing` in place of
+`library`. Also set `imports: false`. Compilation tries to resolve `missing`.
+
+For the qualified reference, the main source is:
+
+```wesl
+fn value() -> u32 { return package::helper::value(); }
+```
+
+Set `package::helper` to `fn value() -> u32 { return 7u; }`.
+Compilation reports a cycle in `value`.
+
+Report these cases upstream:
+
+- In `pass::usage_analysis`, apply `ignore_visibility` when first finding a
+  declaration. The adapter passes private minimum visibility when checks are off.
+- Restore `CompileOptions.imports` handling in the frontend. The adapter prevents
+  external module traversal and linking when imports are off.
+- In `pass::retarget_idents`, keep qualified references separate from local
+  declarations. The adapter gives those references independent identifiers after
+  upstream retargeting and before validation.
+
+The existing project tests cover scoped imports and shared package state.
+Visibility tests cover private and public external declarations with source maps
+enabled and disabled. After adopting an upstream fix, remove its adapter adjustment
+and run the corresponding regression tests:
+
+| Adjustment | Regression tests |
+| --- | --- |
+| Disabled visibility | `test_external_visibility_is_optional` in [test_compile.py](../tests/test_compile.py) |
+| Disabled imports | `test_import_resolution_can_be_disabled` and `test_disabled_imports_preserve_the_root_entry_point` in [test_compile.py](../tests/test_compile.py) |
+| Qualified references | `test_resource_loader_compiles_package_roots` in [test_sources.py](../tests/test_sources.py) and `test_cooperative_qualified_workgroup_size` in [test_testing.py](../tests/test_testing.py) |
+
+Remove the full adapter only after adopting the transformation hook and all three
+fixes. Verify option parity with [tests/upstream.rs](../tests/upstream.rs).
+Retain coverage for scoped dependencies, shared package state, transformed result
+modules, and original source locations when moving to the upstream frontend.
+
 ### Plain else traversal
 
 The 0.4.4 [visitors](https://docs.rs/crate/wesl/0.4.4/source/src/visit.rs) omit
@@ -360,10 +447,20 @@ plain `else` bodies for both statements and expressions, including mutable visit
 [PR #307](https://github.com/webgpu-tools/wesl-rs/pull/307), merged on 2026-09-26,
 fixes [issue #306](https://github.com/webgpu-tools/wesl-rs/issues/306).
 
-Keep the explicit traversal in [compile_test](../src/testing.rs) while pinned to
-0.4.4, where `Visit` is private. After adopting the fix, assess the public
-`wesl::pass::Visit` API and verify nested `else` assertions with
-[test_assertions_in_control_flow](../tests/test_testing.py).
+The binding now uses `wesl::pass::Visit` from the fixed revision in
+[compile_test](../src/testing.rs). The manual statement traversal is removed.
+[test_assertions_in_control_flow](../tests/test_testing.py) verifies nested `else`
+assertions with both lowering settings.
+
+### Quoted visibility modifiers
+
+`quote_declaration!(public fn exported() {})` fails to compile at the pinned
+revision. The quote parser reads `public` as an identifier. The ordinary WESL
+parser accepts the same declaration. Report the missing visibility tokens in
+the quote parser upstream.
+
+The test transformation sets `Function.visibility` to `Visibility::Public`
+for its generated collector. This uses the upstream syntax API.
 
 ### SourceMapper resolver order
 
@@ -373,10 +470,10 @@ It reparses the source and bypasses transformations in an inner resolver.
 [Issue #143](https://github.com/webgpu-tools/wesl-rs/issues/143) records this defect;
 [PR #144](https://github.com/webgpu-tools/wesl-rs/pull/144) is closed without merging.
 
-[compile_test](../src/testing.rs) places transforming resolvers outside
-`SourceMapper` and uses the same mapper for mangling. Keep that order while pinned.
-Audited main [removes `resolve_module` from `Resolver`](https://github.com/webgpu-tools/wesl-rs/blob/0303eccfafd534cc76c91eddd4b4f5c4413a1733/crates/wesl/src/resolver.rs)
-and removes `Preprocessor`. Assess the replacement compiler hooks during migration.
-Verify transformed result modules with
-[test_result_instrumentation](../tests/test_testing.py) and source tracking with
-[test_failure_in_imported_helper](../tests/test_testing.py).
+The 0.4.4 binding places transforming resolvers outside `SourceMapper` and uses
+the same mapper for mangling. Audited main [removes `resolve_module` from `Resolver`](https://github.com/webgpu-tools/wesl-rs/blob/0303eccfafd534cc76c91eddd4b4f5c4413a1733/crates/wesl/src/resolver.rs)
+and removes `Preprocessor`. The binding now applies transformations through
+`CompilerDriver::load_module`, after source recording and before conditional
+translation. [test_result_instrumentation](../tests/test_testing.py) verifies
+transformed result modules. [test_failure_in_imported_helper](../tests/test_testing.py)
+verifies original source tracking.

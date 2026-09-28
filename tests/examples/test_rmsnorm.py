@@ -19,7 +19,7 @@ normalize = import_module("examples.rmsnorm.compute").normalize
 @pytest.fixture(params=[False, True], ids=["plain", "residual"])
 def wesl_options(request: pytest.FixtureRequest) -> wesl.CompileOptions:
     return wesl.CompileOptions(
-        features=wesl.Features(flags={"residual": request.param})
+        visibility=True, features=wesl.Features(flags={"residual": request.param})
     )
 
 

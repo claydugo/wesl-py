@@ -36,7 +36,7 @@ def test_particle_collisions(*, cutout: bool) -> None:
             directory / "sdf/shaders/simulate.wesl",
             root_directory=directory,
             options=wesl.CompileOptions(
-                features=wesl.Features(flags={"cutout": cutout})
+                visibility=True, features=wesl.Features(flags={"cutout": cutout})
             ),
         ).wgsl
     )

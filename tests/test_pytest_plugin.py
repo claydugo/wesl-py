@@ -485,47 +485,18 @@ def test_setup_plan_does_not_execute_fixtures(pytester: pytest.Pytester) -> None
     )
 
 
-def test_disabled_tests_defer_resource_fixtures(pytester: pytest.Pytester) -> None:
+def test_disabled_tests_report_fixture_errors(pytester: pytest.Pytester) -> None:
     pytester.makeconftest("""
         import pytest
 
-        @pytest.fixture(params=[False, True], ids=["off", "on"])
-        def wesl_features(request):
-            return {"enabled": request.param}
-
-        @pytest.fixture(scope="session", params=[1, 2])
-        def device_configuration(request):
-            pytest.fail("disabled tests must not initialize device dependencies")
-
         @pytest.fixture(scope="session")
-        def wesl_device(device_configuration):
-            pytest.fail("disabled tests must not initialize the device")
-
-        @pytest.fixture(params=[3, 7])
-        def wesl_resources(request, wesl_device):
-            pytest.fail("disabled tests must not allocate resources")
-
-        @pytest.fixture
-        def wesl_layouts(wesl_device):
-            pytest.fail("disabled tests must not request layouts")
-
-        @pytest.fixture
-        def wesl_constants():
-            pytest.fail("disabled tests must not request constants")
+        def wesl_device():
+            pytest.fail("device setup failed")
     """)
-    pytester.makefile(
-        ".test.wesl",
-        disabled="""
-            import missing::value;
-            @if(enabled) { @test fn selected() {} }
-            @elif(false) @test fn selected() {}
-            @else @test fn fallback() {}
-        """,
-    )
-    result = pytester.runpytest_subprocess("-q", "-k", "selected and off")
-    result.assert_outcomes(skipped=4, deselected=12)
-    result = pytester.runpytest_subprocess("-q", "-k", "fallback and on")
-    result.assert_outcomes(skipped=4, deselected=12)
+    pytester.makefile(".test.wesl", disabled="@if(false) @test fn selected() {}")
+    result = pytester.runpytest_subprocess("-q")
+    result.assert_outcomes(errors=1)
+    result.stdout.fnmatch_lines(["*device setup failed*"])
 
 
 @pytest.mark.gpu
@@ -545,6 +516,7 @@ def test_fixture_names_remain_visible_during_setup(pytester: pytest.Pytester) ->
     result.assert_outcomes(passed=1)
 
 
+@pytest.mark.gpu
 def test_disabled_tests_preserve_explicit_fixtures(pytester: pytest.Pytester) -> None:
     pytester.makeconftest("""
         import pytest

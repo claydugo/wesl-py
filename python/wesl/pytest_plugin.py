@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 import sys
 from collections.abc import Mapping
-from dataclasses import replace
 from os.path import abspath
 from pathlib import Path
 from types import ModuleType
@@ -133,7 +132,6 @@ def pytest_collect_file(
 class WeslModule(pytest.Module):
     def collect(self) -> Iterator[pytest.Item | pytest.Collector]:
         source = self.path.read_text(encoding="utf-8")
-        self.source = source
         try:
             tests = _native.discover_tests(source, str(self.path))
         except CompileError as error:
@@ -207,7 +205,6 @@ class WeslModule(pytest.Module):
             for item in items if isinstance(items, list) else [items]:
                 if isinstance(item, pytest.Function):
                     shader = WeslTest(item, self, name)
-                    item.setup = shader.setup
                     item.reportinfo = shader.reportinfo
                     vars(item).pop("location", None)
                     item.repr_failure = shader.repr_failure
@@ -219,55 +216,7 @@ class WeslTest:
         self.item = item
         self.module = module
         self.name = name
-        self.item_setup = item.setup
         self.repr_item_failure = item.repr_failure
-
-    def setup(self) -> None:
-        __tracebackhide__ = True
-        if self.item.config.getoption("setupplan"):
-            self.item_setup()
-            return
-        request = self.item._request  # noqa: SLF001
-        fillfixtures = request._fillfixtures  # noqa: SLF001
-
-        def fillfixtures_when_enabled() -> None:
-            __tracebackhide__ = True
-            information = self.item._fixtureinfo  # noqa: SLF001
-            initialnames = set(information.initialnames) - {
-                "wesl_device",
-                "wesl_resources",
-                "wesl_layouts",
-                "wesl_constants",
-            }
-            manager = self.item.session._fixturemanager  # noqa: SLF001
-            initialnames.update(manager._getautousenames(self.item))  # noqa: SLF001
-            initialnames.update(
-                name
-                for marker in self.item.iter_markers("usefixtures")
-                for name in marker.args
-            )
-            setup_information = replace(
-                information,
-                initialnames=tuple(initialnames),
-                names_closure=list(self.item.fixturenames),
-            )
-            setup_information.prune_dependency_tree()
-            for name in setup_information.names_closure:
-                if name not in self.item.funcargs:
-                    self.item.funcargs[name] = request.getfixturevalue(name)
-            options = request.getfixturevalue("wesl_test_options")
-            tests = _native.discover_tests(
-                self.module.source, str(self.module.path), options.features
-            )
-            if not any(name == self.name for name, _, _ in tests):
-                pytest.skip("WESL conditions disable this test")
-            fillfixtures()
-
-        vars(request)["_fillfixtures"] = fillfixtures_when_enabled
-        try:
-            self.item_setup()
-        finally:
-            vars(request)["_fillfixtures"] = fillfixtures
 
     def reportinfo(self) -> tuple[Path, int, str]:
         return self.item.path, self.module.locations[self.name], self.item.name

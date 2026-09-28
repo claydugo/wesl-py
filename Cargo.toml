@@ -24,9 +24,9 @@ stub-gen = ["pyo3/experimental-inspect"]
 
 [dependencies]
 pyo3 = { version = "=0.29.2", features = ["abi3-py312", "abi3t-py315"] }
-wesl = { version = "=0.4.4", default-features = false, features = ["eval"] }
-wesl-quote = "=0.4.4"
-wgsl-parse = { version = "=0.4.4", default-features = false }
+wesl = { git = "https://github.com/webgpu-tools/wesl-rs", rev = "0303eccfafd534cc76c91eddd4b4f5c4413a1733", default-features = false, features = ["eval"] }
+wesl-quote = { git = "https://github.com/webgpu-tools/wesl-rs", rev = "0303eccfafd534cc76c91eddd4b4f5c4413a1733" }
+wgsl-parse = { git = "https://github.com/webgpu-tools/wesl-rs", rev = "0303eccfafd534cc76c91eddd4b4f5c4413a1733", default-features = false }
 
 [profile.release]
 strip = "symbols"

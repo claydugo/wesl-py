@@ -36,9 +36,9 @@ def test_constant_modules_preserve_inputs_and_source_metadata() -> None:
     assert result.entry_points == ("main",)
     assert result.modules == ("package::main", "package::config")
     assert set(result.sources["package::config"].text.splitlines()) == {
-        "const width = 64;",
-        "const scale = 1.0;",
-        "const enabled = true;",
+        "public const width = 64;",
+        "public const scale = 1.0;",
+        "public const enabled = true;",
     }
     assert result.sources["package::config"].filename == "generated.wesl"
     assert list(modules) == ["package::main"]
@@ -58,7 +58,9 @@ def test_constant_modules_apply_to_one_compilation(method: str, tmp_path: Path) 
     (tmp_path / "config.wesl").write_text("const width = 1;")
     modules = {"package::unused": "fn unused() {}"}
     compiler = wesl.Compiler(
-        root_directory=tmp_path, modules=modules, features={"selected": False}
+        root_directory=tmp_path,
+        modules=modules,
+        options=wesl.CompileOptions(features=wesl.Features(flags={"selected": False})),
     )
     argument = source if method == "compile_source" else filename
     result = getattr(compiler, method)(
@@ -73,12 +75,12 @@ def test_constant_modules_apply_to_one_compilation(method: str, tmp_path: Path) 
         features={"selected": True},
         constant_modules={"package::config": {"width": 64}},
     )
-    assert result.sources["package::config"].text == "const width = 64;"
+    assert result.sources["package::config"].text == "public const width = 64;"
     restored = getattr(compiler, method)(argument, features={"selected": True})
     assert restored.sources["package::config"].text == "const width = 1;"
     assert compiler.modules is modules
     assert modules == {"package::unused": "fn unused() {}"}
-    assert compiler.features == {"selected": False}
+    assert compiler.options.features.flags == {"selected": False}
     assert getattr(compiler, method)(argument).entry_points == ()
 
 
@@ -103,7 +105,9 @@ def test_constant_scalar_representations(value: object, initializer: str) -> Non
         constant_modules={"package::config": {"value": value}},
         keep=["main"],
     )
-    assert result.sources["package::config"].text == f"const value = {initializer};"
+    assert (
+        result.sources["package::config"].text == f"public const value = {initializer};"
+    )
 
 
 def test_constant_modules_report_upstream_minimum_integer_parse_error() -> None:
@@ -114,7 +118,10 @@ def test_constant_modules_report_upstream_minimum_integer_parse_error() -> None:
             keep=["main"],
         )
     assert caught.value.diagnostics[0].module == "package::config"
-    assert caught.value.diagnostics[0].source == "const value = -9223372036854775808;"
+    assert (
+        caught.value.diagnostics[0].source
+        == "public const value = -9223372036854775808;"
+    )
 
 
 @pytest.mark.parametrize(
@@ -190,7 +197,7 @@ def test_constant_modules_accept_unicode_names() -> None:
         constant_modules={"package::config": {"café": 1}},
         keep=["main"],
     )
-    assert result.sources["package::config"].text == "const café = 1;"
+    assert result.sources["package::config"].text == "public const café = 1;"
 
 
 @pytest.mark.parametrize("module", ["super::config", "package::::config"])
@@ -228,7 +235,7 @@ def test_constant_modules_follow_dependency_scopes() -> None:
         keep=["main"],
     )
     assert set(result.modules) == {"package::main", "library", "library/settings"}
-    assert result.sources["library/settings"].text == "const scale = 0.5;"
+    assert result.sources["library/settings"].text == "public const scale = 0.5;"
 
 
 @pytest.mark.parametrize(
@@ -250,7 +257,9 @@ def test_constant_modules_normalize_numpy_scalars(
         constant_modules={"package::config": {"value": getattr(numpy, dtype)(value)}},
         keep=["main"],
     )
-    assert result.sources["package::config"].text == f"const value = {initializer};"
+    assert (
+        result.sources["package::config"].text == f"public const value = {initializer};"
+    )
 
 
 @pytest.mark.parametrize(("duration", "unit"), [(1000, "ns"), (1, "us")])

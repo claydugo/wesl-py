@@ -69,7 +69,8 @@ def main() -> None:
         ("pooling", "main", [13, 17, 7, 3, 2, 1], [buffers[4], buffers[3]], (2, 1, 1)),
     ]:
         source = wesl.compile_file(
-            Path(__file__).parent / "shaders" / f"{module}.wesl"
+            Path(__file__).parent / "shaders" / f"{module}.wesl",
+            options=wesl.CompileOptions(visibility=True),
         ).wgsl
         pipeline = device.create_compute_pipeline(
             layout="auto",

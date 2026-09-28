@@ -97,13 +97,11 @@ Keep collected files inside this directory. Their paths determine their
 Pytest also collects any `.wesl` file that you select explicitly.
 
 `@if`, `@elif`, and `@else` select implementations with `wesl_features`.
-Collection includes conditional tests. A disabled test reports a skip during setup.
-The plugin checks conditions before it requests `wesl_device`, `wesl_resources`,
-or `wesl_constants`. These fixtures still contribute their parameter variants.
-The `wesl_layouts` fixture follows the same rules.
-Autouse fixtures and fixtures requested with `usefixtures` run before the check.
-Fixtures that supply test options or sources also run before the check.
-If these fixtures require a GPU, they can initialize it for disabled tests.
+Collection includes conditional tests and all fixture parameter variants.
+Pytest runs fixture setup before the runner checks WESL conditions.
+A disabled test reports a skip during the call phase.
+GPU and resource fixtures can run before this skip. Fixture failures remain errors,
+even when WESL conditions disable the test.
 Multiple conditional definitions of one name produce one item.
 
 ### Assertions
@@ -111,7 +109,8 @@ Multiple conditional definitions of one name produce one item.
 Import assertions from `wgsl_test`. The installed package includes the two
 [upstream assertion shaders](https://github.com/webgpu-tools/wesl-js/tree/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test/shaders)
 and registers them automatically for compilation and testing.
-Only attribution comments differ from upstream. The distribution names upstream
+Attribution comments and public visibility modifiers differ from upstream.
+The distribution names upstream
 `lib.wesl` as `package.wesl` to identify the package root for the resolver and
 wgsl-analyzer.
 The runner instruments them to capture typed values, source locations, assertion
@@ -507,6 +506,7 @@ Passing `CompileOptions` raises `TypeError`.
 | --- | --- |
 | `features=Features()` | Select conditional declarations and statements. |
 | `strip=True` | Remove the declarations unused by the selected test. |
+| `visibility=False` | Load external shaders without visibility restrictions. |
 | `lower=False` | Keep aliases and constants. Set `True` to lower them. |
 | `validate=True` | Run WESL validation before GPU validation. |
 

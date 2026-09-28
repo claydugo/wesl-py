@@ -19,7 +19,9 @@ def create_shader(
         directory / "shaders" / filename,
         root_directory=directory.parent,
         options=wesl.CompileOptions(
-            keep=[entry_point], features=wesl.Features(flags=dict(features))
+            visibility=True,
+            keep=[entry_point],
+            features=wesl.Features(flags=dict(features)),
         ),
     )
     shader = ComputeShader(result.wgsl, entry_point=entry_point)

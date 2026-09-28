@@ -25,6 +25,23 @@ def test_run_test_rejects_compile_options(wesl_device: wgpu.GPUDevice) -> None:
         )
 
 
+@pytest.mark.parametrize("workgroup", ["", "@workgroup_size(2)"])
+def test_shader_test_visibility(wesl_device: wgpu.GPUDevice, workgroup: str) -> None:
+    modules = {
+        "package::main": (
+            "import library::value; import wgsl_test::expectEq; "
+            f"@test {workgroup} fn selected() {{ expectEq(value(), 7u); }}"
+        ),
+        "library": "fn value() -> u32 { return 7u; }",
+    }
+    run_test(wesl_device, modules, "selected")
+    options = wesl.TestOptions(visibility=True)
+    with pytest.raises(wesl.CompileError, match="visibility"):
+        run_test(wesl_device, modules, "selected", options=options)
+    modules["library"] = "public fn value() -> u32 { return 7u; }"
+    run_test(wesl_device, modules, "selected", options=options)
+
+
 @pytest.mark.parametrize("override", [False, True])
 def test_run_test_reuses_project_dependencies(
     wesl_device: wgpu.GPUDevice, tmp_path: Path, *, override: bool
@@ -962,6 +979,65 @@ def test_cooperative_barriers_and_builtin_parameters(
     )
 
 
+@pytest.mark.parametrize("lower", [False, True])
+@pytest.mark.parametrize(
+    "source",
+    [
+        """
+            @test
+            fn selected(@builtin(local_invocation_index) selected: u32) {
+                wgsl_test::expectEq(selected, 0u);
+            }
+        """,
+        """
+            const width = 2u;
+            @test @workgroup_size(width)
+            fn selected(@builtin(local_invocation_index) width: u32) {
+                wgsl_test::expect(width < 2u);
+            }
+        """,
+    ],
+    ids=["test_name", "workgroup_size"],
+)
+def test_cooperative_parameters_do_not_shadow_globals(
+    wesl_device: wgpu.GPUDevice, source: str, *, lower: bool
+) -> None:
+    run_test(
+        wesl_device,
+        {"package::main": source},
+        "selected",
+        options=wesl.TestOptions(visibility=True, lower=lower),
+    )
+
+
+@pytest.mark.parametrize("lower", [False, True])
+def test_cooperative_qualified_workgroup_size(
+    wesl_device: wgpu.GPUDevice, *, lower: bool
+) -> None:
+    run_test(
+        wesl_device,
+        {
+            "package::main": """
+                @if(enabled)
+                @test @workgroup_size(package::configuration::width)
+                fn selected(
+                    @builtin(local_invocation_index)
+                    invocation: package::configuration::Index,
+                ) {
+                    wgsl_test::expect(invocation < package::configuration::width);
+                }
+            """,
+            "package::configuration": "const width = 2u; alias Index = u32;",
+        },
+        "selected",
+        options=wesl.TestOptions(
+            visibility=True,
+            lower=lower,
+            features=wesl.Features(flags={"enabled": True}),
+        ),
+    )
+
+
 def test_cooperative_three_dimensional_builtins(wesl_device: wgpu.GPUDevice) -> None:
     run_test(
         wesl_device,
@@ -1082,10 +1158,19 @@ def test_cooperative_generated_names_avoid_user_declarations(
         wesl_device,
         {
             "package::main": """
-                @test @workgroup_size(8) fn wesl_test_entry_invocation() {
-                    wgsl_test::expect(true);
+                import package::configuration::width as wesl_test_entry_parameter_0;
+                const wesl_test_entry_parameter_0_ = 1u;
+                @test
+                @workgroup_size(
+                    wesl_test_entry_parameter_0 * wesl_test_entry_parameter_0_
+                )
+                fn wesl_test_entry_invocation(
+                    @builtin(local_invocation_id) position: vec3u,
+                ) {
+                    wgsl_test::expect(all(position < vec3u(8u, 1u, 1u)));
                 }
             """,
+            "package::configuration": "const width = 8u;",
             "wgsl_test::TestResult": result_source,
         },
         "wesl_test_entry_invocation",

@@ -2,7 +2,7 @@ enable f16;
 
 @id(12) override wide_activation: bool = false;
 
-fn activate(total: f32, bias: f16, mode: u32) -> f16 {
+public fn activate(total: f32, bias: f16, mode: u32) -> f16 {
     if (wide_activation) {
         let value = total + f32(bias);
         if (mode == 1u) {

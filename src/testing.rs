@@ -1,5 +1,4 @@
 use std::{
-    borrow::Cow,
     collections::{HashMap, HashSet},
     path::PathBuf,
 };
@@ -11,9 +10,11 @@ use pyo3::{
     types::{PyMapping, PyTuple},
 };
 use wesl::{
-    EscapeMangler, FileResolver, ModulePath, ResolveError, Resolver, Router, SourceMap,
-    SourceMapper, SyntaxUtil, VirtualResolver,
+    Resolver,
     eval::{Context, Instance, LiteralInstance, SyntaxUtil as _, Type, ty_eval_ty},
+    pass::{self, Visit},
+    resolver::{FileResolver, Router, VirtualResolver},
+    sourcemap::SourceMap,
 };
 use wesl_quote::{quote_declaration, quote_expression};
 use wgsl_parse::SyntaxNode;
@@ -21,13 +22,13 @@ use wgsl_parse::syntax::{
     AddressSpace, AssignmentOperator, AssignmentStatement, Attribute, BinaryExpression,
     BinaryOperator, BuiltinValue, CompoundStatement, Declaration, DeclarationKind, Expression,
     FormalParameter, Function, FunctionCall, FunctionCallStatement, GlobalDeclaration, Ident,
-    IfClause, IfStatement, ImportContent, LiteralExpression, NamedComponentExpression,
-    ParenthesizedExpression, PathOrigin, Span, Spanned, Statement, Struct, StructMember,
-    TemplateArg, TranslationUnit, TypeExpression, UnaryExpression, UnaryOperator,
-    WorkgroupSizeAttribute,
+    IfClause, IfStatement, ImportContent, LiteralExpression, ModulePath, NamedComponentExpression,
+    ParenthesizedExpression, PathOrigin, Span, Spanned, Statement, StatementNode, Struct,
+    StructMember, TemplateArg, TranslationUnit, TypeExpression, UnaryExpression, UnaryOperator,
+    Visibility, WorkgroupSizeAttribute,
 };
 
-use crate::{Diagnostic, Failure, Features, ModuleResolver, ProjectResolver, module_path};
+use crate::{Diagnostic, Failure, Features, ModuleResolver, module_path};
 
 #[pyclass(frozen, module = "wesl._native")]
 pub(super) struct TestLayout {
@@ -146,13 +147,13 @@ impl TestResult {
 #[derive(FromPyObject)]
 pub(super) struct TestOptions<'py> {
     strip: bool,
+    visibility: bool,
     lower: bool,
     validate: bool,
     features: Features<'py>,
 }
 
-struct TestResolver<R> {
-    inner: R,
+struct TestTransform {
     root: ModulePath,
     test_name: String,
     entry_point: String,
@@ -165,35 +166,21 @@ struct TestResolver<R> {
     names: Vec<String>,
 }
 
-impl<R: Resolver> Resolver for TestResolver<R> {
-    fn canonical_path(&self, path: &ModulePath) -> ModulePath {
-        self.inner.canonical_path(path)
-    }
-
-    fn resolve_source<'a>(&'a self, path: &ModulePath) -> Result<Cow<'a, str>, ResolveError> {
-        self.inner.resolve_source(path)
-    }
-
-    fn display_name(&self, path: &ModulePath) -> Option<String> {
-        self.inner.display_name(path)
-    }
-
+impl TestTransform {
     #[expect(
         clippy::too_many_lines,
         clippy::cognitive_complexity,
-        reason = "Apply test transformations after source mapping in one resolver."
+        reason = "Keep test transformations together before upstream compilation passes."
     )]
-    fn resolve_module(&self, path: &ModulePath) -> Result<TranslationUnit, ResolveError> {
+    fn apply(&self, path: &ModulePath, syntax: &mut TranslationUnit) -> Result<(), wesl::Error> {
         if matches!(&path.origin, PathOrigin::Package(name) if name.ends_with("/wgsl_test")) {
-            return Err(ResolveError::Error(
-                wesl::Error::Custom(
-                    "shader tests do not support scoped wgsl_test overrides".to_owned(),
-                )
-                .diagnostic()
-                .with_module_path(path.clone(), self.display_name(path)),
-            ));
+            return Err(wesl::Error::Custom(
+                "shader tests do not support scoped wgsl_test overrides".to_owned(),
+            )
+            .diagnostic()
+            .with_module_path(path.clone(), None)
+            .into());
         }
-        let mut syntax = self.inner.resolve_module(path)?;
         if path == &self.result_module {
             let mut structure = None;
             let mut binding = None;
@@ -281,17 +268,17 @@ impl<R: Resolver> Resolver for TestResolver<R> {
                 };
                 if let GlobalDeclaration::Function(function) = &mut collector {
                     function.ident = self.collector.clone();
+                    function.visibility = Visibility::Public;
                 }
                 syntax.global_declarations.extend([
                     GlobalDeclaration::Struct(structure).into(),
                     GlobalDeclaration::Declaration(binding).into(),
                     collector.into(),
                 ]);
-                syntax.retarget_idents();
             }
         }
         if path != &self.root {
-            return Ok(syntax);
+            return Ok(());
         }
         let test_name = &self.test_name;
         let mut wrapper = quote_declaration! {
@@ -304,6 +291,13 @@ impl<R: Resolver> Resolver for TestResolver<R> {
         if let GlobalDeclaration::Function(function) = &mut wrapper {
             function.ident = Ident::new(self.entry_point.clone());
             function.parameters.clone_from(&self.parameters);
+            for (index, parameter) in function.parameters.iter_mut().enumerate() {
+                let mut name = format!("{}_parameter_{index}", self.entry_point);
+                while self.names.contains(&name) {
+                    name.push('_');
+                }
+                parameter.ident = Ident::new(name);
+            }
             if let Some(workgroup_size) = &self.workgroup_size {
                 function
                     .attributes
@@ -313,7 +307,7 @@ impl<R: Resolver> Resolver for TestResolver<R> {
                     .push(Attribute::WorkgroupSize(workgroup_size.clone()).into());
             }
             if let Statement::FunctionCall(call) = &mut *function.body.statements[1] {
-                call.call.arguments = self
+                call.call.arguments = function
                     .parameters
                     .iter()
                     .map(|parameter| Expression::from(parameter.ident.clone()).into())
@@ -392,49 +386,25 @@ impl<R: Resolver> Resolver for TestResolver<R> {
             }
         }
         syntax.global_declarations.push(wrapper.into());
-        syntax.retarget_idents();
-        Ok(syntax)
+        Ok(())
     }
 }
 
 #[pyfunction]
-#[pyo3(signature = (source, filename, features: "wesl.Features | None"=None))]
 pub(super) fn discover_tests(
     py: Python<'_>,
     source: String,
     filename: String,
-    features: Option<Features<'_>>,
 ) -> PyResult<Vec<(String, usize, usize)>> {
-    let features = features.map(wesl::Features::try_from).transpose()?;
     py.detach(move || {
-        let conditional = features.is_some();
-        let syntax: TranslationUnit = if let Some(features) = features {
-            let root = module_path("package::main")?;
-            let mut resolver = VirtualResolver::new();
-            resolver.add_module(root.clone(), source.as_str().into());
-            wesl::compile(
-                &root,
-                &resolver,
-                &wesl::NoMangler,
-                &wesl::CompileOptions {
-                    imports: false,
-                    strip: false,
-                    lower: false,
-                    validate: false,
-                    features,
-                    ..Default::default()
-                },
-            )
-            .map(|compiled| compiled.syntax)
-            .map_err(|error| error.diagnostic())
-        } else {
-            source.parse().map_err(wesl::Diagnostic::from)
-        }
-        .map_err(|mut diagnostic| {
-            diagnostic.detail.source = Some(source);
-            diagnostic.detail.display_name = Some(filename);
-            Failure::from_diagnostic(diagnostic)
-        })?;
+        let syntax = source
+            .parse::<TranslationUnit>()
+            .map_err(wesl::error::Diagnostic::from)
+            .map_err(|mut diagnostic| {
+                diagnostic.detail.source = Some(source);
+                diagnostic.detail.display_name = Some(filename);
+                Failure::from_diagnostic(diagnostic)
+            })?;
         let mut pending: Vec<_> = syntax.global_declarations.iter().collect();
         let mut tests = Vec::new();
         while let Some(declaration) = pending.pop() {
@@ -447,7 +417,7 @@ pub(super) fn discover_tests(
                         tests.push((function.ident.name().to_string(), range.start, range.end));
                     }
                 }
-                GlobalDeclaration::Compound(compound) if !conditional => {
+                GlobalDeclaration::Compound(compound) => {
                     pending.extend(&compound.body);
                 }
                 _ => {}
@@ -490,6 +460,7 @@ pub(super) fn compile_test(
     let modules = modules.items()?.extract::<Vec<(String, String)>>()?;
     let TestOptions {
         strip,
+        visibility,
         lower,
         validate,
         features,
@@ -536,9 +507,8 @@ pub(super) fn compile_test(
             resolver.modules.add_module(path, source.into());
         }
         let root = resolver.dependency_path(&root);
-        let syntax = resolver
-            .resolve_module(&root)
-            .map_err(|error| Failure::from_diagnostic(wesl::Diagnostic::from(error)))?;
+        let mut syntax = pass::load_module(&root, &resolver)
+            .map_err(|error| Failure::from_diagnostic(wesl::error::Diagnostic::from(error)))?;
         let mut pending: Vec<_> = syntax.global_declarations.iter().collect();
         let mut names = Vec::new();
         let mut test_exists = false;
@@ -578,20 +548,14 @@ pub(super) fn compile_test(
         while names.contains(&entry_point) {
             entry_point.push('_');
         }
-        let active = wesl::compile(
-            &root,
-            &resolver,
-            &wesl::NoMangler,
-            &wesl::CompileOptions {
-                imports: false,
-                strip: false,
-                lower: false,
-                validate: false,
-                features: features.clone(),
-                ..Default::default()
-            },
-        ).map_err(|error| Failure::from_diagnostic(error.diagnostic()))?;
-        let Some(declaration) = active.syntax.global_declarations.iter().find(|declaration| {
+        if let Err(error) = pass::condcomp(&mut syntax, &features) {
+            return Err(Failure::from_diagnostic(error.diagnostic().with_source(
+                resolver.resolve_source(&root)
+                    .map_err(|error| Failure::from_diagnostic(wesl::error::Diagnostic::from(error)))?
+                    .into_owned(),
+            ).with_module_path(root.clone(), resolver.display_name(&root))));
+        }
+        let Some(declaration) = syntax.global_declarations.iter().find(|declaration| {
             matches!(&***declaration, GlobalDeclaration::Function(function)
                 if *function.ident.name() == test_name
                     && function.attributes.iter().any(|attribute| {
@@ -609,7 +573,7 @@ pub(super) fn compile_test(
                 "@test requires a function with only builtin parameters, no return value, and no shader stage".to_owned(),
             ).diagnostic().with_source(
                 resolver.resolve_source(&root)
-                    .map_err(|error| Failure::from_diagnostic(wesl::Diagnostic::from(error)))?
+                    .map_err(|error| Failure::from_diagnostic(wesl::error::Diagnostic::from(error)))?
                     .into_owned(),
             ).with_module_path(root.clone(), resolver.display_name(&root))
             .with_span(declaration.span())));
@@ -623,7 +587,7 @@ pub(super) fn compile_test(
             _ => return Err(Failure::Message("shader test is not a function".to_owned())),
         };
         let cooperative = !parameters.is_empty() || workgroup_size.is_some();
-        let result_syntax = resolver.resolve_module(&result_module).map_err(|error| Failure::from_diagnostic(wesl::Diagnostic::from(error)))?;
+        let result_syntax = pass::load_module(&result_module, &resolver).map_err(|error| Failure::from_diagnostic(wesl::error::Diagnostic::from(error)))?;
         let mut pending: Vec<_> = result_syntax.global_declarations.iter().collect();
         while let Some(declaration) = pending.pop() {
             if let Some(ident) = declaration.ident() {
@@ -637,11 +601,7 @@ pub(super) fn compile_test(
         while [collector.clone(), format!("{collector}_output"), format!("{collector}_result")]
             .iter().any(|name| names.contains(name))
         { collector.push('_'); }
-        let mapper = SourceMapper::new(&root, &resolver, &EscapeMangler);
-        let transformed = TestResolver {
-            inner: ProjectResolver {
-                inner: &mapper,
-            },
+        let transformed = TestTransform {
             root: root.clone(),
             test_name,
             entry_point: entry_point.clone(),
@@ -653,22 +613,21 @@ pub(super) fn compile_test(
             collector: Ident::new(collector),
             names,
         };
-        let result = wesl::compile(&root, &transformed, &mapper, &wesl::CompileOptions {
+        let result = crate::compiler::compile(&root, &wesl::CompileOptions {
             imports: true,
+            visibility,
             condcomp: true,
             strip,
             lower: false,
             validate,
             keep: Some(vec![entry_point.clone()]),
-            keep_root: false,
-            mangle_root: true,
+            keep_main: false,
+            mangle_main: true,
             features,
             ..Default::default()
-        });
-        let sourcemap = mapper.finish();
-        let mut result = result.map_err(|error| Failure::from_diagnostic(
-            error.diagnostic().with_sourcemap(&sourcemap).unmangle(Some(&sourcemap), Some(&EscapeMangler))
-        ))?;
+        }, &resolver, |path, syntax| transformed.apply(path, syntax));
+        let mut result = result.map_err(|error| Failure::from_diagnostic(error.diagnostic()))?;
+        let sourcemap = result.sourcemap.take();
         let mut assertions = HashMap::new();
         let mut result_name = None;
         let mut result_type = None;
@@ -677,7 +636,7 @@ pub(super) fn compile_test(
         let mut context = Context::new(&result.syntax);
         for declaration in &result.syntax.global_declarations {
             if let Some(ident) = declaration.ident()
-                && let Some((module, name)) = sourcemap.get_decl(&ident.name())
+                && let Some(wesl::sourcemap::SourceMapEntry { path: module, name, .. }) = sourcemap.item(&ident.name())
             {
                 let value_type = match &**declaration {
                     GlobalDeclaration::Function(function) if module == &assertion_module && name.starts_with("expect") => {
@@ -697,33 +656,15 @@ pub(super) fn compile_test(
                                 active.remove(&name);
                                 continue;
                             }
-                            let mut expressions: Vec<_> = ty.template_args.iter().flatten()
-                                .map(|argument| &*argument.expression).collect();
-                            while let Some(expression) = expressions.pop() {
-                                pending.extend(wesl::query!(expression.{
-                                    Expression::TypeOrIdentifier,
-                                    Expression::FunctionCall.ty,
-                                }).map(|child| (child, false)));
-                                expressions.extend(wesl::query!(expression.{
-                                    Expression::Parenthesized.expression,
-                                    Expression::NamedComponent.base,
-                                    Expression::Indexing.{ base, index },
-                                    Expression::Unary.operand,
-                                    Expression::Binary.{ left, right },
-                                    Expression::FunctionCall.arguments.[],
-                                }).map(|child| &**child));
-                            }
+                            pending.extend(Visit::<TypeExpression>::visit(ty).map(|child| (child, false)));
                             if let Some(declaration @ (GlobalDeclaration::TypeAlias(_) | GlobalDeclaration::Struct(_))) = context.source().user_decl(&name) {
                                 if active.contains(&name) {
-                                    return Err(wesl::Error::from(wesl::ValidateError::Cycle(name.clone(), name)));
+                                    return Err(wesl::Error::from(wesl::error::ValidateError::Cycle(name.clone(), name)));
                                 }
                                 if checked.insert(name.clone()) {
                                     active.insert(name);
                                     pending.push((ty, true));
-                                    pending.extend(wesl::query!(declaration.{
-                                        GlobalDeclaration::TypeAlias.ty,
-                                        GlobalDeclaration::Struct.members.[].ty,
-                                    }).map(|child| (child, false)));
+                                    pending.extend(Visit::<TypeExpression>::visit(declaration).map(|child| (child, false)));
                                 }
                             }
                         }
@@ -749,8 +690,8 @@ pub(super) fn compile_test(
                     })
                     .transpose()
                     .map_err(|error| Failure::from_diagnostic(
-                        wesl::Diagnostic::from(error)
-                            .with_module_path(module.clone(), sourcemap.get_display_name(module).map(str::to_owned))
+                        wesl::error::Diagnostic::from(error)
+                            .with_module_path(module.clone(), sourcemap.display_name(module).map(str::to_owned))
                             .with_span(declaration.span())
                             .with_sourcemap(&sourcemap)
                     ))?;
@@ -760,7 +701,7 @@ pub(super) fn compile_test(
                     result_name = Some(ident.name().to_string());
                     result_type = value_type;
                 } else if module == &root {
-                    if name == entry_point {
+                    if *name == entry_point {
                         compiled_entry = Some(ident.name().to_string());
                     }
                     if matches!(&**declaration, GlobalDeclaration::Declaration(value)
@@ -786,7 +727,7 @@ pub(super) fn compile_test(
             function.attributes.retain(|attribute| {
                 !matches!(&**attribute, Attribute::Custom(custom) if custom.name == "test")
             });
-            let Some((module, _)) = sourcemap.get_decl(&function.ident.name()) else {
+            let Some(wesl::sourcemap::SourceMapEntry { path: module, .. }) = sourcemap.item(&function.ident.name()) else {
                 continue;
             };
             if module == &assertion_module || module == &result_module {
@@ -802,9 +743,9 @@ pub(super) fn compile_test(
                             "shader assertions require a bool first parameter or at least two parameters".to_owned(),
                         ).diagnostic().with_module_path(
                             module.clone(),
-                            sourcemap.get_display_name(module).map(str::to_owned),
+                            sourcemap.display_name(module).map(str::to_owned),
                         ).with_span(declaration.span());
-                        diagnostic.detail.source = sourcemap.get_source(module).map(str::to_owned);
+                        diagnostic.detail.source = sourcemap.source(module).map(str::to_owned);
                         return Err(Failure::from_diagnostic(diagnostic));
                     };
                     let (value_kind, components): (u32, u8) = match parameter_type {
@@ -815,7 +756,7 @@ pub(super) fn compile_test(
                         _ => return Err(Failure::from_diagnostic(
                             wesl::Error::Custom("shader assertion values require bool, u32, f32, or a vector of f32".to_owned())
                                 .diagnostic()
-                                .with_module_path(module.clone(), sourcemap.get_display_name(module).map(str::to_owned))
+                                .with_module_path(module.clone(), sourcemap.display_name(module).map(str::to_owned))
                                 .with_span(declaration.span())
                                 .with_sourcemap(&sourcemap)
                         )),
@@ -906,8 +847,8 @@ pub(super) fn compile_test(
                         sites.push(Diagnostic {
                             message: name.clone(),
                             module: Some(module.to_string()),
-                            filename: sourcemap.get_display_name(module).map(str::to_owned),
-                            source: sourcemap.get_source(module).map(str::to_owned),
+                            filename: sourcemap.display_name(module).map(str::to_owned),
+                            source: sourcemap.source(module).map(str::to_owned),
                             span: Some((range.start, range.end)),
                         });
                         let site = u32::try_from(sites.len())
@@ -920,42 +861,13 @@ pub(super) fn compile_test(
                     }
                     continue;
                 }
-                match &mut **statement {
-                    Statement::Compound(compound) => pending.extend(&mut compound.statements),
-                    Statement::If(conditional) => {
-                        pending.extend(&mut conditional.if_clause.body.statements);
-                        for clause in &mut conditional.else_if_clauses {
-                            pending.extend(&mut clause.body.statements);
-                        }
-                        if let Some(clause) = &mut conditional.else_clause {
-                            pending.extend(&mut clause.body.statements);
-                        }
-                    }
-                    Statement::Switch(switch) => {
-                        for clause in &mut switch.clauses {
-                            pending.extend(&mut clause.body.statements);
-                        }
-                    }
-                    Statement::Loop(repeated) => {
-                        pending.extend(&mut repeated.body.statements);
-                        if let Some(continuing) = &mut repeated.continuing {
-                            pending.extend(&mut continuing.body.statements);
-                        }
-                    }
-                    Statement::For(repeated) => {
-                        pending.extend(&mut repeated.body.statements);
-                        pending.extend(&mut repeated.initializer);
-                        pending.extend(&mut repeated.update);
-                    }
-                    Statement::While(repeated) => pending.extend(&mut repeated.body.statements),
-                    _ => {}
-                }
+                pending.extend(Visit::<StatementNode>::visit_mut(&mut **statement));
             }
         }
         result.syntax.global_declarations.extend(wrappers);
         if lower {
-            result.syntax.retarget_idents();
-            wesl::lower(&mut result.syntax).map_err(|error| {
+            pass::retarget_idents(&mut result.syntax);
+            wesl::pass::lower(&mut result.syntax).map_err(|error| {
                 Failure::from_diagnostic(error.diagnostic().with_sourcemap(&sourcemap))
             })?;
         }

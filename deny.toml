@@ -11,3 +11,6 @@ allow = [
     "Unicode-3.0",
     "Zlib",
 ]
+
+[sources]
+allow-git = ["https://github.com/webgpu-tools/wesl-rs"]

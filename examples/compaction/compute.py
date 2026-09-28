@@ -30,9 +30,10 @@ def compact(  # noqa: C901
             directory / filename,
             root_directory=directory.parent,
             options=wesl.CompileOptions(
+                visibility=True,
                 features=wesl.Features(
                     flags={"select_values": select_values, "keep_below": keep_below}
-                )
+                ),
             ),
         )
         pipelines[name] = device.create_compute_pipeline(

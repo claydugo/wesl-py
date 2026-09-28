@@ -17,7 +17,9 @@ def create_shader(
     result = wesl.compile_file(
         directory / "shaders" / filename,
         root_directory=directory.parent,
-        options=wesl.CompileOptions(features=wesl.Features(flags=dict(features))),
+        options=wesl.CompileOptions(
+            visibility=True, features=wesl.Features(flags=dict(features))
+        ),
     )
     return device.create_shader_module(code=result.wgsl)
 

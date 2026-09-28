@@ -206,7 +206,10 @@ def wesl_resources(  # noqa: C901, PLR0915
             )
         )
     source = wesl.compile_file(
-        Path(__file__).parents[3] / "examples/convolution/shaders" / f"{operation}.wesl"
+        Path(__file__).parents[3]
+        / "examples/convolution/shaders"
+        / f"{operation}.wesl",
+        options=wesl.CompileOptions(visibility=True),
     ).wgsl
     pipeline = wesl_device.create_compute_pipeline(
         layout="auto",

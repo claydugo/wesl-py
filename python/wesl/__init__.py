@@ -70,14 +70,15 @@ class Features:
 class CompileOptions:
     imports: bool = True
     condcomp: bool = True
+    visibility: bool = False
     strip: bool = True
     lower: bool = False
     validate: bool = True
     sourcemap: bool = True
     mangler: ManglerKind = ManglerKind.Escape
-    mangle_root: bool = False
+    mangle_main: bool = False
     keep: Sequence[str] | None = None
-    keep_root: bool = False
+    keep_main: bool = False
     features: Features = field(default_factory=Features)
 
 
@@ -86,6 +87,7 @@ class TestOptions:
     __test__ = False
 
     strip: bool = True
+    visibility: bool = False
     lower: bool = False
     validate: bool = True
     features: Features = field(default_factory=Features)
@@ -99,7 +101,7 @@ def compile(
     features: Features | Mapping[str, bool | Feature] | None = None,
     constant_modules: _ConstantModules | None = None,
     keep: Sequence[str] | _Unset | None = _Unset.Value,
-    keep_root: bool | None = None,
+    keep_main: bool | None = None,
     strip: bool | None = None,
     filenames: Mapping[str, str | os.PathLike[str]] | None = None,
     root_directory: str | os.PathLike[str] | None = None,
@@ -128,7 +130,7 @@ def compile(
         if isinstance(features, Mapping)
         else features,
         keep=options.keep if keep is _Unset.Value else keep,
-        keep_root=options.keep_root if keep_root is None else keep_root,
+        keep_main=options.keep_main if keep_main is None else keep_main,
         strip=options.strip if strip is None else strip,
     )
     directories = (
@@ -166,7 +168,7 @@ def compile_source(
     features: Features | Mapping[str, bool | Feature] | None = None,
     constant_modules: _ConstantModules | None = None,
     keep: Sequence[str] | _Unset | None = _Unset.Value,
-    keep_root: bool | None = None,
+    keep_main: bool | None = None,
     strip: bool | None = None,
     filenames: Mapping[str, str | os.PathLike[str]] | None = None,
     root_directory: str | os.PathLike[str] | None = None,
@@ -189,7 +191,7 @@ def compile_source(
         features=features,
         constant_modules=constant_modules,
         keep=keep,
-        keep_root=keep_root,
+        keep_main=keep_main,
         strip=strip,
         filenames=copied_filenames,
         root_directory=root_directory,
@@ -206,7 +208,7 @@ def compile_file(
     features: Features | Mapping[str, bool | Feature] | None = None,
     constant_modules: _ConstantModules | None = None,
     keep: Sequence[str] | _Unset | None = _Unset.Value,
-    keep_root: bool | None = None,
+    keep_main: bool | None = None,
     strip: bool | None = None,
     filenames: Mapping[str, str | os.PathLike[str]] | None = None,
     dependencies: Dependencies | Mapping[str, str | os.PathLike[str]] | None = None,
@@ -226,7 +228,7 @@ def compile_file(
         features=features,
         constant_modules=constant_modules,
         keep=keep,
-        keep_root=keep_root,
+        keep_main=keep_main,
         strip=strip,
         filenames=filenames,
         root_directory=directory,
@@ -277,7 +279,7 @@ class Compiler:
         features: Features | Mapping[str, bool | Feature] | None = None,
         constant_modules: _ConstantModules | None = None,
         keep: Sequence[str] | _Unset | None = _Unset.Value,
-        keep_root: bool | None = None,
+        keep_main: bool | None = None,
         strip: bool | None = None,
     ) -> CompileResult:
         return compile_source(
@@ -289,7 +291,7 @@ class Compiler:
             features=features,
             constant_modules=constant_modules,
             keep=keep,
-            keep_root=keep_root,
+            keep_main=keep_main,
             strip=strip,
             filenames=self.filenames,
             root_directory=self.root_directory,
@@ -303,7 +305,7 @@ class Compiler:
         features: Features | Mapping[str, bool | Feature] | None = None,
         constant_modules: _ConstantModules | None = None,
         keep: Sequence[str] | _Unset | None = _Unset.Value,
-        keep_root: bool | None = None,
+        keep_main: bool | None = None,
         strip: bool | None = None,
     ) -> CompileResult:
         path = (
@@ -319,7 +321,7 @@ class Compiler:
             features=features,
             constant_modules=constant_modules,
             keep=keep,
-            keep_root=keep_root,
+            keep_main=keep_main,
             strip=strip,
             filenames=self.filenames,
             dependencies=self.dependencies,
