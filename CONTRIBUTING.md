@@ -68,8 +68,6 @@ pixi reinstall --locked -e test wesl-py
 
 Replace `test` with `gpu`, `testing`, or `dev` when working in those environments.
 The default environment also contains the editable extension.
-The `freethreading` environment has a separate, non-editable installation.
-Reinstall it after changing either Python or Rust code before testing Python 3.15t.
 
 ## Find the code
 
@@ -187,8 +185,11 @@ The binding uses `expect` attributes with reasons for its argument count and len
 
 Run these additional checks when the change affects the corresponding area:
 
-- Native threading: `pixi run test-freethreading` verifies import without the GIL,
-  concurrent compilation, diagnostics, and shader instrumentation on Python 3.15t.
+- Native threading: `pixi run -e test python -m pytest
+  tests/test_threading.py
+  tests/test_compile.py::test_concurrent_feature_state_isolation
+  tests/test_diagnostics.py::test_concurrent_diagnostics_remain_independent -q`
+  verifies concurrent compilation, diagnostics, and shader instrumentation.
   See [thread behavior](docs/api.md#threads).
 - Rust dependencies: `pixi run check-dependencies` runs Machete against the binding
   manifest and Cargo-deny for licenses and RustSec advisories.
@@ -228,11 +229,9 @@ Update the relevant guide or example when changing the public API.
 
 The [CI workflow](.github/workflows/artifacts.yml) runs development checks and
 verifies built packages.
-Source checks, editable installations, and free-threaded source builds run on
-Linux, macOS, and Windows.
+Source checks and editable installations run on Linux, macOS, and Windows.
 It tests Python 3.12 wheels on Linux, macOS, and Windows.
 Linux also tests those wheels on Python 3.13, 3.14, and 3.15.
-The free-threaded wheel runs on Linux with Python 3.15 and 3.15t.
 The `artifacts` environment includes `check-wheel-contents`.
 CI runs it on every wheel after platform repairs, alongside Twine and ABI checks.
 Its project configuration requires the files from `python/wesl` in each wheel.
@@ -253,8 +252,8 @@ Installation checks verify native imports, type information, and bundled shaders
 - Use the pinned upstream visitor for statements and expressions. Published
   WESL 0.5.0 omits plain `else` branches in [its visitor](https://github.com/webgpu-tools/wesl-rs/blob/63a3627ba31258565df177f3f553beed8ff45338/crates/wesl/src/pass/visit.rs).
   The pin includes the fix from [PR #307](https://github.com/webgpu-tools/wesl-rs/pull/307).
-- Keep the compiler adapter until upstream supports module transformations and
-  resolves the [integration gaps](docs/upstream.md#compiler-driver-integration).
+- Keep the compiler adapter for module transformations. Remove its workarounds
+  as upstream resolves the [integration gaps](docs/upstream.md#compiler-driver-integration).
   Check the reproducers and removal criteria when updating the WESL pin.
 - Track the [lost initializer](docs/upstream.md#lowering-drops-side-effects-in-a-for-initializer)
   when updating WESL. Both option classes default lowering to `False`.

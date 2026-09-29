@@ -35,7 +35,7 @@ doctest = false
 name = "_native"
 
 [dependencies]
-pyo3 = { version = ">=0.29.2,<0.30", features = ["abi3-py312", "abi3t-py315"] }
+pyo3 = { version = ">=0.29.2,<0.30", features = ["abi3-py312"] }
 wesl = { git = "https://github.com/webgpu-tools/wesl-rs", rev = "0303eccfafd534cc76c91eddd4b4f5c4413a1733", default-features = false, features = ["eval"] }
 wesl-quote = { git = "https://github.com/webgpu-tools/wesl-rs", rev = "0303eccfafd534cc76c91eddd4b4f5c4413a1733" }
 wgsl-parse = { git = "https://github.com/webgpu-tools/wesl-rs", rev = "0303eccfafd534cc76c91eddd4b4f5c4413a1733", default-features = false }

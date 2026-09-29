@@ -28,7 +28,7 @@ jobs:
       - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e
         with:
           pixi-version: v0.80.0
-          environments: lint rust dev test freethreading
+          environments: lint rust dev test
           locked: true
       - run: pixi run --locked lint
         env:
@@ -39,7 +39,7 @@ jobs:
       - run: git diff --exit-code -- python/wesl/_native.pyi
       - run: pixi run --locked -e test cargo test --locked --test upstream
       - run: pixi run --locked -e test python -m pytest tests/test_check_syntax.py -q
-      - run: pixi run --locked test-freethreading
+      - run: pixi run --locked -e test python -m pytest tests/test_threading.py tests/test_compile.py::test_concurrent_feature_state_isolation tests/test_diagnostics.py::test_concurrent_diagnostics_remain_independent -q
       - run: pixi run --locked check-dependencies
 
   sdist:
@@ -144,15 +144,6 @@ jobs:
           args: --release --locked --out ../dist -i python3.12
       - if: runner.os != 'Linux'
         run: pixi run --locked -e artifacts maturin build --manifest-path source/Cargo.toml --release --locked --out dist -i python
-      - if: runner.os == 'Linux'
-        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
-        with:
-          maturin-version: v${{ steps.build-tools.outputs.maturin }}
-          rust-toolchain: ${{ steps.build-tools.outputs.rust }}
-          target: x86_64-unknown-linux-gnu
-          manylinux: "2_28"
-          working-directory: source
-          args: --release --locked --out ../dist -i python3.15
       - name: Repair macOS wheels
         if: runner.os == 'macOS'
         shell: bash
@@ -234,34 +225,6 @@ jobs:
           python-version: ${{ matrix.python }}
           activate-environment: true
       - run: uv pip install pytest dist/*-cp312-abi3-*.whl
-      - run: uv pip check
-      - run: python -m pytest tests -q
-
-  freethreading:
-    name: Test free-threaded wheel
-    needs: wheel
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: wheel-x86_64-unknown-linux-gnu
-          path: dist
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
-        with:
-          python-version: "3.15"
-          activate-environment: true
-      - run: uv pip install pytest dist/*-cp315-abi3.abi3t-*.whl
-      - run: uv pip check
-      - run: python -m pytest tests -q
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
-        with:
-          python-version: "3.15t"
-          activate-environment: true
-          venv-path: .venv-freethreading
-      - run: uv pip install pytest dist/*-cp315-abi3.abi3t-*.whl
       - run: uv pip check
       - run: python -m pytest tests -q
 

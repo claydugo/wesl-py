@@ -98,20 +98,6 @@ pytest-xdist = ">=3.6"
 [feature.pytest-oldest.dependencies]
 pytest = ">=8.2,<8.3"
 
-[feature.freethreading]
-channels = ["conda-forge", "conda-forge/label/python_rc"]
-
-[feature.freethreading.dependencies]
-python = ">=3.15.0rc2,<3.16"
-python-freethreading = "*"
-pytest = ">=8.2"
-
-[feature.freethreading.pypi-dependencies]
-wesl-py = { path = "." }
-
-[feature.freethreading.tasks]
-test-freethreading = "python -m pytest tests/test_threading.py tests/test_compile.py::test_concurrent_feature_state_isolation tests/test_diagnostics.py::test_concurrent_diagnostics_remain_independent"
-
 [environments]
 default = { features = ["build"], solve-group = "default" }
 test = { features = ["build", "test"], solve-group = "default" }
@@ -121,7 +107,6 @@ dev = { features = ["build", "dev", "test"], solve-group = "default" }
 lint = { features = ["lint"], no-default-feature = true }
 testing = { features = ["build", "test", "gpu", "examples", "testing"], solve-group = "default" }
 testing-oldest = { features = ["build", "test", "gpu", "testing", "pytest-oldest"] }
-freethreading = { features = ["build", "freethreading"], no-default-feature = true }
 
 [environments.rust]
 features = ["rust"]

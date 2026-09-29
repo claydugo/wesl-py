@@ -1,49 +1,54 @@
 # Upstream integration limits
 
-Initially reviewed on 2026-09-26 against the then-pinned `wesl`, `wgsl-parse`, `wgsl-types`,
-and `wesl-quote` 0.4.4 crates, plus PyO3 0.29.2.
-Upstream status uses [wesl-rs main at 0303ecc](https://github.com/webgpu-tools/wesl-rs/tree/0303eccfafd534cc76c91eddd4b4f5c4413a1733)
-and [PyO3 main at 3260c48](https://github.com/PyO3/pyo3/tree/3260c4835f33d3c05d39715c2b729dfdb5e31e35).
-Upstream checks inspect source and issue status.
-The original runtime checks use the 0.4.4 versions. The Rust examples for those
-checks retain their original API. The binding now pins the audited WESL commit.
-Migration checks on 2026-09-28 confirm the additional failures below.
+Reviewed on 2026-09-29 against the pinned WESL commit
+[`0303ecc`](https://github.com/webgpu-tools/wesl-rs/tree/0303eccfafd534cc76c91eddd4b4f5c4413a1733).
+GitHub main still matches this revision at review time.
+The review checks API preconditions, control cases, and existing reports.
+The reproductions use upstream APIs without the binding's compiler adapter.
 
 ## Next actions
 
-Prioritize the lost initializer and zero alignment.
-The table distinguishes current binding behavior from the upstream failure.
+Ten defects warrant new reports: nine in wesl-rs and one in wgsl-test.
+The getter annotation request already has a PyO3 pull request.
+Prioritize the lost initializer because it changes execution of valid input.
 
-| Item | Current binding behavior | Next action |
+These reports do not all block publication.
+Both wesl-rs and this binding disable lowering by default.
+The lowering defects affect callers that enable it.
+See the [release checklist](../RELEASE_CHECKLIST.md) for publication requirements.
+
+| Item | Current binding behavior | Upstream action |
 | --- | --- | --- |
-| [Compiler adapter](#compiler-driver-integration) | A local driver supports transformations and works around three frontend defects | Request a transformation hook and fix visibility, disabled imports, and qualified references upstream |
-| [Lost for initializer](#lowering-drops-side-effects-in-a-for-initializer) | Ordinary compilation with lowering changes behavior; shader tests have a partial workaround | Preserve the initializer and its scope upstream |
-| [Zero alignment](#buffer-sizing-assumes-positive-member-alignment) | Local checks reject zero alignment in custom result layouts | Reject zero before layout arithmetic upstream |
-| [Cyclic types](#type-evaluation-assumes-acyclic-declarations) | Local checks reject the documented alias and structure cycles | Add the low-level crash cases to issue #157 |
-| [Diagnostic line boundaries](#diagnostic-rendering-uses-different-line-boundaries) | Compiler errors retain incorrect rendered locations | Normalize rendering and remap spans upstream |
-| [PyO3 getter annotations](#pyo3-rejects-signature-overrides-on-getters) | The stub script supplies missing return types | Follow PR #5738 and adopt the fix when released |
-| [Named layout constants](#standalone-type-evaluation-cannot-resolve-named-layout-constants) | Custom layouts with named attributes fail type evaluation | Request evaluation of a selected type and its dependencies |
-| [Exact assertion values](#the-bundled-assertion-protocol-loses-integer-precision) | Local fields preserve exact operands | Add an upstream host regression test before changing the protocol |
-| [Invalid diagnostic spans](#diagnostic-rendering-accepts-invalid-utf-8-spans) | Assertion rendering rejects invalid ranges | Consider a small upstream hardening patch |
+| [Lost for initializer](#lowering-drops-side-effects-in-a-for-initializer) | Lowering changes ordinary shader behavior; tests have a partial workaround | Preserve the initializer and its scope |
+| [Invalid bitcast alignment](#lowering-panics-on-an-invalid-bitcast-with-zero-alignment) | Ordinary lowering raises `PanicException`; custom result checks reject zero alignment | Reject nonnumeric bitcast operands before computing their size |
+| [Disabled visibility](#compiler-driver-integration) | The adapter honors the option | Apply the visibility option during usage analysis |
+| [Disabled imports](#compiler-driver-integration) | The adapter honors the option | Restore the documented behavior of the imports option |
+| [Qualified references](#compiler-driver-integration) | The adapter avoids a false cycle | Keep qualified references separate from local declarations |
+| [Package visibility](#package-visibility-inside-named-packages) | One valid import case remains a strict expected failure | Permit package-visible imports within the same named package |
+| [Quoted visibility](#quoted-visibility-modifiers) | Generated declarations set visibility through the syntax API | Accept visibility keywords in inline declaration quotes |
+| [Diagnostic line boundaries](#diagnostic-rendering-uses-different-line-boundaries) | Compiler errors retain incorrect rendered locations | Count WGSL line breaks when rendering diagnostics |
+| [Parser EOF spans](#parser-eof-spans-split-utf-8-characters) | The binding corrects EOF spans before rendering | Return an empty EOF span at the source end |
+| [Exact assertion values](#the-bundled-assertion-protocol-loses-integer-precision) | Local fields preserve exact operands | Preserve integer operands in shader results and host decoding |
 
-Record the upstream issue or pull request and the fix revision in each section.
-When updating a dependency, rerun the relevant reproducer against upstream without
-the local workaround. Remove a workaround only after the pinned dependency includes
-the fix and the associated binding tests pass.
+Record each upstream issue or pull request and the fix revision below.
+When updating a dependency, rerun its reproducer without the local workaround.
+Remove a workaround only after the pin includes the fix and its binding tests pass.
 
-The [wrapper parameter collision](#local-wrapper-parameters-can-collide) has a
-local fix. The [dependency constraints](#dependency-constraints) describe the
-visitor migration and compiler hooks.
+The Rust examples require neither Python nor a GPU. Use this dependency:
 
-The WESL Rust examples require neither Python nor a GPU.
-Use `wesl = { version = ">=0.4.4,<0.5", default-features = false,
-features = ["eval"] }` in `[dependencies]`.
-Each example is a separate `src/main.rs`, except the PyO3 example.
+```toml
+[dependencies.wesl]
+git = "https://github.com/webgpu-tools/wesl-rs"
+rev = "0303eccfafd534cc76c91eddd4b4f5c4413a1733"
+default-features = false
+features = ["eval"]
+```
+
+Each Rust example is a separate `src/main.rs`, except the PyO3 example.
 
 ## Lowering drops side effects in a for initializer
 
-Source: [eval/lower.rs](https://docs.rs/crate/wesl/0.4.4/source/src/eval/lower.rs).
-The same removal remains in the audited main source.
+Source: [eval/lower.rs](https://github.com/webgpu-tools/wesl-rs/blob/0303eccfafd534cc76c91eddd4b4f5c4413a1733/crates/wesl/src/eval/lower.rs).
 
 When a `for` condition lowers to `false`, lowering replaces the entire statement
 with `Statement::Void`.
@@ -62,11 +67,13 @@ fn main() {
             return count;
         }
     ".parse().unwrap();
+    wesl::pass::retarget_idents(&mut module);
+    wesl::pass::validate_wesl(&module).unwrap();
     let expression: Expression = "main()".parse().unwrap();
     let before = wesl::exec(
         &expression, &module, Default::default(), Default::default(),
     ).0.unwrap();
-    wesl::lower(&mut module).unwrap();
+    wesl::pass::lower(&mut module).unwrap();
     let after = wesl::exec(
         &expression, &module, Default::default(), Default::default(),
     ).0.unwrap();
@@ -94,126 +101,44 @@ assertion instrumentation with the control-flow tests.
 Also verify ordinary compilation and overridden assertion modules without the
 transformation. Both must preserve the initializer's side effects.
 
-## Buffer sizing assumes positive member alignment
+## Lowering panics on an invalid bitcast with zero alignment
 
-Source: [wgsl-types memory utilities](https://docs.rs/crate/wgsl-types/0.4.4/source/src/mem.rs).
-The unchecked rounding remains in the audited main source.
+The standard compiler panics on this source with `lower=true`, `validate=true`,
+and `keep_main=true`:
 
-```rust
-use wesl::{
-    eval::{Context, ty_eval_ty},
-    syntax::{Ident, TranslationUnit, TypeExpression},
-};
-
-fn main() {
-    let module: TranslationUnit =
-        "struct Result { @align(0) value: u32 }".parse().unwrap();
-    wesl::validate_wesl(&module).unwrap();
-    let expression = TypeExpression::new(Ident::new("Result".into()));
-    let result = ty_eval_ty(&expression, &mut Context::new(&module)).unwrap();
-    let _ = result.size_of();
-}
+```wesl
+struct Value { @align(0) member: u32 }
+fn main() -> u32 { return bitcast<u32>(Value(0u)); }
 ```
 
-Observed: validation and type evaluation succeed, then rounding divides by zero.
-`@align(0)` is invalid WGSL. The
-[validator](https://docs.rs/crate/wesl/0.4.4/source/src/validate/mod.rs)
-documents limited checks and does not validate layout attributes.
-The failure is unchecked layout arithmetic on a type returned by the evaluator.
+Both the alignment and the bitcast operand are invalid WGSL.
+Compilation must reject the source. Instead, [bitcast type evaluation](https://github.com/webgpu-tools/wesl-rs/blob/0303eccfafd534cc76c91eddd4b4f5c4413a1733/crates/wgsl-types/src/builtin/call_ty.rs)
+computes the operand's size before rejecting its nonnumeric type.
+Layout arithmetic then divides by zero.
+This reproduces through `wesl::compile` with validation enabled.
+It does not require a direct call to the low-level layout API.
+Python `compile_source` with `CompileOptions(lower=True, validate=True)` and
+`keep_main=True` raises `PanicException` instead of `CompileError`.
 
-[compile_test](../src/testing.rs) calls `Type::size_of` for the result buffer.
-The bundled result structure has valid alignment. A custom result member with
-`@align(0)` previously raised PyO3's `PanicException` with validation enabled and
-either lowering setting. The binding now inspects the upstream evaluated type
-and raises `CompileError` before sizing or lowering. This check includes nested
-structures and arrays. Upstream still owns layout calculation and buffer decoding.
-
-Reject zero before rounding, including nested structures and arrays.
-Verify rejection through type evaluation and result buffer sizing.
-A general checked layout API needs a separate contract for overflow and other
-invalid attributes.
-
-## Type evaluation assumes acyclic declarations
-
-Sources: [eval/ty.rs](https://docs.rs/crate/wesl/0.4.4/source/src/eval/ty.rs),
-[eval/mod.rs](https://docs.rs/crate/wesl/0.4.4/source/src/eval/mod.rs),
-and [validate/mod.rs](https://docs.rs/crate/wesl/0.4.4/source/src/validate/mod.rs).
-The recursive resolution remains in the audited main source.
-
-```rust
-use wesl::{
-    eval::{Context, ty_eval_ty},
-    syntax::{Ident, TranslationUnit, TypeExpression},
-};
-
-fn main() {
-    let module: TranslationUnit = "alias Value = Value;".parse().unwrap();
-    let expression = TypeExpression::new(Ident::new("Value".into()));
-    let _ = ty_eval_ty(&expression, &mut Context::new(&module));
-}
-```
-
-Run this reproducer in a separate process with a timeout.
-Observed: stack overflow aborts the process.
-Replacing the source with `struct Value { child: Value }` also aborts.
-Alias resolution recurses in `SyntaxUtil::resolve_alias`.
-Structure evaluation recurses through member types.
-Mutually recursive aliases and structures reach the same unguarded paths.
-
-This is a low-level evaluation defect on invalid input.
-It does not show that normal compilation with validation enabled accepts cycles.
-The dependency check in [compile_test](../src/testing.rs) guards these cases before
-`ty_eval_ty`, including when callers select `validate=False`.
-[test_shader_assertion_type_cycles_without_validation](../tests/test_shader_compilation.py)
-covers direct and mutual aliases, an array alias, and a recursive structure.
-
-[Issue #157](https://github.com/webgpu-tools/wesl-rs/issues/157)
-already reports a related cyclic-type crash through a different declaration.
-Add these cases to that discussion. An evaluator guard must cover both alias
-resolution and structure evaluation.
-Remove the local check only after upstream evaluation rejects these cycles
-without requiring full validation.
-
-## Diagnostic rendering accepts invalid UTF-8 spans
-
-Source: [error.rs](https://docs.rs/crate/wesl/0.4.4/source/src/error.rs).
-The end-only range check remains in the audited main source.
-
-```rust
-fn main() {
-    let diagnostic = wesl::Diagnostic::from(wesl::ValidateError::Cycle(
-        "value".into(), "value".into(),
-    ))
-    .with_source("é".into())
-    .with_span((0..1).into());
-    println!("{}", diagnostic.render_plain());
-}
-```
-
-Observed: `annotate-snippets` 0.12.16 panics because byte 1 is inside `é`.
-The renderer checks only the span's end against the source length.
-[render_diagnostic](../src/lib.rs) checks the complete range for assertion
-diagnostics. [test_failure_with_invalid_source_span](../tests/test_shader_errors.py)
-verifies the fallback.
-This is a hardening opportunity for caller-supplied metadata.
-The reproducer does not show that the parser generates invalid spans.
-
-Extend the existing fallback for out-of-bounds spans to reversed ranges and
-invalid UTF-8 boundaries. Retain the local range guard while local normalization
-requires valid boundaries. Remove it after upstream handles both requirements.
+Reject nonnumeric bitcast operands before computing their size.
+The binding's custom result checks still need to reject zero alignment.
+This narrow bitcast fix does not establish general layout validation.
 
 ## Diagnostic rendering uses different line boundaries
 
-Source: [error.rs](https://docs.rs/crate/wesl/0.4.4/source/src/error.rs).
-The audited main renderer still passes the source directly to `annotate-snippets`.
+Source: [error.rs](https://github.com/webgpu-tools/wesl-rs/blob/0303eccfafd534cc76c91eddd4b4f5c4413a1733/crates/wesl/src/error.rs).
+The renderer passes the source directly to `annotate-snippets`.
 
 ```rust
 use wesl::syntax::TranslationUnit;
 
 fn main() {
     let source = "fn main() {\rlet value = missing;\r}";
-    let module: TranslationUnit = source.parse().unwrap();
-    let diagnostic = wesl::validate_wesl(&module).unwrap_err();
+    let mut module: TranslationUnit = source.parse().unwrap();
+    wesl::pass::retarget_idents(&mut module);
+    let diagnostic = wesl::error::Diagnostic::from(
+        wesl::pass::validate_wesl(&module).unwrap_err(),
+    );
     println!("{}", diagnostic.with_source(source.into()).render_plain());
 }
 ```
@@ -234,6 +159,35 @@ support.
 Preserve declaration notes and the original source and byte spans exposed to
 Python. Cover compiler errors with multibyte text before the span.
 Remove the local normalization after upstream rendering passes the same cases.
+
+## Parser EOF spans split UTF-8 characters
+
+Parsing an incomplete function followed by U+2028 produces an invalid byte span:
+
+```rust
+use wesl::syntax::TranslationUnit;
+
+fn main() {
+    let source = "fn f() {\u{2028}";
+    let error = source.parse::<TranslationUnit>().unwrap_err();
+    let diagnostic = wesl::error::Diagnostic::from(error).with_source(source.into());
+    println!("{}", diagnostic.render_plain());
+}
+```
+
+The parser returns `8..9`. U+2028 occupies bytes `8..11`, so rendering panics.
+NEL and U+2029 reproduce the failure. The caller supplies no span.
+The source is incomplete, so the expected result is a syntax diagnostic.
+
+The [parser error conversion](https://github.com/webgpu-tools/wesl-rs/blob/0303eccfafd534cc76c91eddd4b4f5c4413a1733/crates/wgsl-parse/src/error.rs#L91-L94)
+adds one byte to the end of the last consumed token for an EOF error.
+An empty span prevents the panic. Reporting the actual source end also requires
+accounting for trailing blankspace.
+
+The binding already rewrites EOF spans to the source end in
+[Failure::from_diagnostic](../src/lib.rs).
+`wesl.check_syntax` reports `CompileError` for this input without panicking.
+Keep that rewrite until upstream supplies an empty span at the actual source end.
 
 ## PyO3 rejects signature overrides on getters
 
@@ -268,50 +222,9 @@ The [stub script](../scripts/generate_stubs.py) restores tuple types for
 
 [PR #5738](https://github.com/PyO3/pyo3/pull/5738) is open and implements getter
 and setter signatures with tests.
-Reviews accept the direction and subsequently request formatting and CI fixes.
+This is a tracked feature request. It needs no new report.
 Follow that PR. Once a release includes it, annotate the native getters and remove
 these three corrections after verifying the generated stubs.
-
-## Standalone type evaluation cannot resolve named layout constants
-
-Sources: [eval/mod.rs](https://docs.rs/crate/wesl/0.4.4/source/src/eval/mod.rs)
-and [eval/eval.rs](https://docs.rs/crate/wesl/0.4.4/source/src/eval/eval.rs).
-The fresh context still starts in function scope on audited main.
-The `Context::kind` field is private; `ScopeKind` itself is public.
-
-```rust
-use wesl::{
-    eval::{Context, ty_eval_ty},
-    syntax::{Ident, TranslationUnit, TypeExpression},
-};
-
-fn main() {
-    let module: TranslationUnit = "
-        const alignment = 64;
-        struct Result { @align(alignment) value: u32 }
-    ".parse().unwrap();
-    let expression = TypeExpression::new(Ident::new("Result".into()));
-    let result = ty_eval_ty(&expression, &mut Context::new(&module));
-    assert!(result.is_ok(), "{result:?}");
-}
-```
-
-Observed: `UnknownDecl("alignment")`.
-Literal `@align(64)` works.
-Executing the module first populates the context and makes this example succeed.
-Thus ordinary module evaluation supports named constants.
-The limitation is evaluating a selected type in a fresh context.
-
-Whole-module execution also evaluates unrelated declarations and module assertions.
-[compile_test](../src/testing.rs) evaluates the result type in a fresh context
-before lowering. Named layout constants fail with both `lower=False` and
-`lower=True`. The bundled result structure uses literals and works.
-
-Request an API contract for evaluating a selected type and its dependencies.
-It must handle cycles and avoid evaluating unrelated declarations.
-An unrelated failing `const_assert` can test that boundary, even though it makes
-the whole module invalid. This is a request for partial evaluation.
-The API shape remains open; changing the default context scope is unverified.
 
 ## The bundled assertion protocol loses integer precision
 
@@ -330,10 +243,13 @@ guaranteed across implementations.
 
 The upstream [host decoder](https://github.com/webgpu-tools/wesl-js/blob/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test/src/TestWesl.ts)
 also reads these operands as floats.
-Add a regression case to [TestWesl.test.ts](https://github.com/webgpu-tools/wesl-js/blob/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test/src/test/TestWesl.test.ts)
-through its existing `runWesl` harness. Require both exact integers and the first
-pair of operands after several failures.
-The upstream host reproduction remains unverified.
+The upstream `runWesl` harness reproduces the precision loss with wgsl-test 0.2.35,
+Node 22.23.2, and webgpu 0.3.8. Its host source matches the audited revision.
+It reports both large operands as `4294967296` while correctly reporting failure.
+A second failed assertion increases `failCount` to two.
+A control with small integers retains the first failed pair correctly.
+First-failure retention needs no fix.
+Add the exact-integer case to [TestWesl.test.ts](https://github.com/webgpu-tools/wesl-js/blob/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test/src/test/TestWesl.test.ts).
 Preserving operand types requires agreement on the shader and host representation.
 
 The binding preserves `recordFailure` and appends `actual_bits` and
@@ -344,23 +260,6 @@ Replace these fields only after adopting an upstream protocol that preserves
 the supported operand types. Source locations and execution metadata still need
 local instrumentation.
 The [testing guide](testing.md#assertions) defines the result layout contract.
-
-## Local wrapper parameters can collide
-
-The wrapper in [compile_test](../src/testing.rs) previously used a fixed
-`wesl_test_location` parameter and prepended the assertion's parameters.
-
-Rename `condition` to `wesl_test_location` in an overridden bundled assertion module,
-then call `wgsl_test::expect(false)` with `TestOptions(lower=False)`.
-Before the fix, the generated wrapper has parameters named `wesl_test_location`
-with both `bool` and `u32` types. GPU shader parsing rejects the duplicate name.
-The bundled assertions do not use this parameter name.
-
-The binding now chooses an unused parameter name and uses its identifier
-throughout the wrapper. Regression tests cover colliding overrides with both
-lowering settings.
-This is a binding defect. [wesl-quote](https://docs.rs/crate/wesl-quote/0.4.4/source/README.md)
-does not promise fresh names against the insertion scope.
 
 ## Dependency constraints
 
@@ -376,15 +275,10 @@ It calls the upstream parsing, conditional translation, usage analysis, linking,
 mangling, lowering, and validation passes. It records original sources before
 applying the project and test transformations.
 
-The standard frontend keeps `CompilationPass` private. Request a public way to
-wrap its module loading step. That would let the binding retain its transformations
-without duplicating the frontend's option handling.
-The transformation must run after the source mapper records the original source
-and before conditional translation, identifier retargeting, and validation.
-Expose the existing default driver and its constructor, or add this hook to the
-standard frontend. Entry selection, pass ordering, and result assembly should
-remain upstream responsibilities. Removing the adapter depends on this API and
-the fixes below.
+The public `CompilerDriver` API supports custom compilation passes.
+The standard frontend keeps its default driver private.
+A hook around module loading could reduce duplicated option handling, but the
+current API supports the binding's transformations. It needs no defect report.
 
 Test discovery parses declarations. Test selection uses the public
 `pass::condcomp` directly. Neither requires the custom driver.
@@ -404,9 +298,13 @@ fn main() -> u32 { return value(); }
 
 Set the `library` source to `fn value() -> u32 { return 7u; }`.
 Compilation requires public visibility despite the option.
+Making the function public succeeds. A private function still fails when checks
+are disabled. This contradicts the documented visibility option.
 
 For disabled imports, use the same main source with `missing` in place of
 `library`. Also set `imports: false`. Compilation tries to resolve `missing`.
+The option documents removal of imports and qualified paths without resolving
+their targets. Both explicit imports and inline paths reproduce the failure.
 
 For the qualified reference, the main source is:
 
@@ -416,6 +314,7 @@ fn value() -> u32 { return package::helper::value(); }
 
 Set `package::helper` to `fn value() -> u32 { return 7u; }`.
 Compilation reports a cycle in `value`.
+Renaming the calling function or importing the helper under an alias succeeds.
 
 Report these cases upstream:
 
@@ -438,50 +337,23 @@ and run the corresponding regression tests:
 | Disabled imports | `test_import_resolution_can_be_disabled` and `test_disabled_imports_preserve_the_root_entry_point` in [test_compile.py](../tests/test_compile.py) |
 | Qualified references | `test_resource_loader_compiles_package_roots` in [test_resources.py](../tests/test_resources.py) and `test_cooperative_qualified_workgroup_size` in [test_shader_workgroups.py](../tests/test_shader_workgroups.py) |
 
-Remove the full adapter only after adopting the transformation hook and all three
-fixes. Verify option parity with [tests/upstream.rs](../tests/upstream.rs).
-Retain coverage for scoped dependencies, shared package state, transformed result
-modules, and original source locations when moving to the upstream frontend.
-
-### Plain else traversal
-
-The 0.4.4 [visitors](https://docs.rs/crate/wesl/0.4.4/source/src/visit.rs) omit
-plain `else` bodies for both statements and expressions, including mutable visits.
-[PR #307](https://github.com/webgpu-tools/wesl-rs/pull/307), merged on 2026-09-26,
-fixes [issue #306](https://github.com/webgpu-tools/wesl-rs/issues/306).
-
-The binding now uses `wesl::pass::Visit` from the fixed revision in
-[compile_test](../src/testing.rs). The manual statement traversal is removed.
-[test_assertions_in_control_flow](../tests/test_shader_assertions.py) verifies nested `else`
-assertions with both lowering settings.
+The adapter still supplies module transformations after these fixes.
+Verify option parity with [tests/upstream.rs](../tests/upstream.rs) when changing it.
 
 ### Quoted visibility modifiers
 
 `quote_declaration!(public fn exported() {})` fails to compile at the pinned
 revision. The quote parser reads `public` as an identifier. The ordinary WESL
-parser accepts the same declaration. Report the missing visibility tokens in
-the quote parser upstream.
+parser accepts the same declaration. The inline `private` form also fails.
+Both modifiers work in the string form, such as
+`quote_declaration!("public fn exported() {}")`.
+Report the inconsistent visibility parsing between quote forms upstream.
+The fix must preserve `private` as an identifier outside a visibility prefix,
+as in `quote_declaration!(fn private() {})`.
+The string parser also rejects this valid identifier at the pin.
 
 The test transformation sets `Function.visibility` to `Visibility::Public`
 for its generated collector. This uses the upstream syntax API.
-
-### SourceMapper resolver order
-
-In 0.4.4, [SourceMapper](https://docs.rs/crate/wesl/0.4.4/source/src/sourcemap.rs)
-forwards `resolve_source` but uses the default `resolve_module` implementation.
-It reparses the source and bypasses transformations in an inner resolver.
-[Issue #143](https://github.com/webgpu-tools/wesl-rs/issues/143) records this defect;
-[PR #144](https://github.com/webgpu-tools/wesl-rs/pull/144) is closed without merging.
-
-The 0.4.4 binding places transforming resolvers outside `SourceMapper` and uses
-the same mapper for mangling. Audited main [removes `resolve_module` from `Resolver`](https://github.com/webgpu-tools/wesl-rs/blob/0303eccfafd534cc76c91eddd4b4f5c4413a1733/crates/wesl/src/resolver.rs)
-and removes `Preprocessor`. The binding now applies transformations through
-`CompilerDriver::load_module`, after source recording and before conditional
-translation.
-[test_result_instrumentation_preserves_layout_and_binding](../tests/test_shader_assertions.py)
-verifies transformed result modules.
-[test_failure_in_imported_helper](../tests/test_shader_assertions.py)
-verifies original source tracking.
 
 ### Package visibility inside named packages
 
@@ -500,3 +372,23 @@ keeps the default behavior and marks the checked case as a strict expected failu
 The test fails on an unexpected pass so an upstream fix requires removal of the
 marker. The workaround disables visibility checks and also permits imports that
 cross package boundaries.
+
+## Local integration requirements
+
+The binding queries custom result types in a fresh evaluation context.
+Named layout constants therefore fail in the binding. Upstream supports them
+when callers execute the module into the context before calling `ty_eval_ty`.
+Transitive constants also work through this public API. Avoiding unrelated module
+assertions would require partial evaluation; it is not an existing API guarantee.
+This is a binding integration limit.
+
+Cyclic types are invalid WGSL. The standard compiler rejects the tested cycles
+with validation enabled. Compilation with `lower=true` and `validate=false` can
+abort on them, as can direct low-level evaluation without validation.
+[Issue #157](https://github.com/webgpu-tools/wesl-rs/issues/157) already tracks a
+related crash. Keep the binding's cycle checks for `validate=False`.
+
+The binding also rejects reversed, out-of-bounds, and invalid UTF-8 diagnostic
+spans in assertion rendering. Keep this guard for caller-supplied metadata and
+local normalization. The separate compiler error path needs the EOF correction
+described above for invalid spans generated by the parser itself.

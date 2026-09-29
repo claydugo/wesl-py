@@ -735,7 +735,7 @@ fn check_syntax(py: Python<'_>, source: String, filename: String) -> PyResult<()
     .map_err(|failure| failure.into_pyerr(py))
 }
 
-#[pymodule(gil_used = false)]
+#[pymodule]
 mod _native {
     use pyo3::{prelude::*, types::PyTuple};
 
