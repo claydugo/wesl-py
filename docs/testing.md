@@ -10,14 +10,10 @@ Compilation and collection need no GPU.
 The executor does not import NumPy. The current PyPI dependency chain still
 installs NumPy through wgpu-py's dependency on rendercanvas.
 
-For your Pixi project, add the checkout with its extra:
-
-```toml
-[pypi-dependencies]
-wesl-py = { path = "/path/to/wesl-py", extras = ["testing"] }
-```
-
-See [installation](../README.md#installation) for requirements.
+For now, use the
+[checkout setup](../CONTRIBUTING.md#set-up-a-checkout) and the `testing` environment.
+After the first PyPI release, install `wesl-py[testing]` with your environment manager.
+See [installation](../README.md#installation) for commands and requirements.
 The first test requires no `conftest.py` or manual plugin registration.
 
 ## WESL tests

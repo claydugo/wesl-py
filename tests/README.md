@@ -79,7 +79,6 @@ Run the numerical file that covers a change:
 pixi run -e testing python -m pytest tests/examples/test_compaction.py -v
 ```
 
-The full TIFF cases require `--image` and ImageIO's sample image.
 Convolution tests require `shader-f16`.
 These tests verify the available adapter. They do not establish numerical
 agreement across GPU vendors.

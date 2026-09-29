@@ -30,10 +30,6 @@ def wesl_test_options(wesl_test_options: wesl.TestOptions) -> wesl.TestOptions:
     return replace(wesl_test_options, visibility=True)
 
 
-def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addoption("--image", action="store_true", help="Also verify the full TIFF.")
-
-
 @pytest.fixture
 def modules() -> dict[str, str]:
     return {

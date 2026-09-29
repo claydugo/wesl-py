@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    name: Require a version tag
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          if [ "$GITHUB_REF_TYPE" != tag ]; then
+            echo "::error::Run this workflow from a version tag."
+            exit 1
+          fi
+
+  artifacts:
+    needs: tag
+    uses: ./.github/workflows/artifacts.yml # zizmor: ignore[self-repository]
+
+  publish:
+    name: Publish to PyPI
+    needs: artifacts
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/wesl-py/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: sdist
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: wheel-*
+          merge-multiple: true
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33

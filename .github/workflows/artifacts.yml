@@ -5,6 +5,7 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_call:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -54,6 +55,18 @@ jobs:
           pixi-version: v0.80.0
           environments: artifacts
           locked: true
+      - name: Verify release version
+        if: github.ref_type == 'tag'
+        run: |
+          pixi run --locked -e artifacts python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          version = tomllib.loads(Path("Cargo.toml").read_text())["package"]["version"]
+          if os.environ["GITHUB_REF_NAME"] != f"v{version}":
+              raise SystemExit("The release tag must match the Cargo package version.")
+          PY
       - run: pixi run --locked -e artifacts maturin sdist --out dist
       - run: pixi run --locked -e artifacts twine check --strict dist/*.tar.gz
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4

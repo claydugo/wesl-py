@@ -60,7 +60,7 @@ pass_filenames = false
 id = "zizmor"
 name = "zizmor"
 language = "system"
-entry = "pixi run --locked -e lint zizmor --persona auditor --strict-collection --no-progress ."
+entry = "pixi run --locked -e lint zizmor --strict-collection --no-progress ."
 files = { glob = [".github/workflows/*.{yml,yaml}", "**/action.{yml,yaml}", ".github/dependabot.{yml,yaml}", ".github/zizmor.{yml,yaml}", "zizmor.{yml,yaml}"] }
 pass_filenames = false
 

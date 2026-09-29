@@ -198,7 +198,6 @@ pixi run -e testing python -m pytest \
 
 [test_multiscale.py](../../tests/examples/test_multiscale.py) compares the
 filter with separable NumPy convolution.
-Add `--image` to verify the full TIFF as well as synthetic inputs.
 Synthetic checks do not download the TIFF.
 
 [test_multiscale_analysis.py](../../tests/examples/test_multiscale_analysis.py)

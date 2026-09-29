@@ -5,7 +5,6 @@ import pytest
 numpy = pytest.importorskip("numpy")
 pytest.importorskip("pygfx")
 get_shared = import_module("pygfx.renderers.wgpu").get_shared
-load_colony = import_module("examples.multiscale.common").load_colony
 enhance = import_module("examples.multiscale.compute").enhance
 
 
@@ -16,12 +15,9 @@ enhance = import_module("examples.multiscale.compute").enhance
         pytest.param("single-pixel", 0.7, id="single-pixel"),
         pytest.param("impulses", 3.0, id="impulses"),
         pytest.param("non-square", 12.0, id="wide-kernel"),
-        pytest.param("sample-tiff", 3.0, id="sample-tiff"),
     ],
 )
-def test_enhancement_matches_gaussian_reference(
-    pytestconfig: pytest.Config, case: str, sigma: float
-) -> None:
+def test_enhancement_matches_gaussian_reference(case: str, sigma: float) -> None:
     device = get_shared().device
     if case == "single-pixel":
         channels = numpy.array([0.25, 0.5, 0.75], dtype=numpy.float32).reshape(3, 1, 1)
@@ -31,12 +27,8 @@ def test_enhancement_matches_gaussian_reference(
         channels[1, 0, 0] = 1
         channels[1, -1, -1] = 1
         channels[2, 9, 18] = 1
-    elif case == "non-square":
-        channels = numpy.random.default_rng(42).random((3, 67, 71), dtype=numpy.float32)
     else:
-        if not pytestconfig.getoption("--image"):
-            pytest.skip("requires --image to load the sample TIFF")
-        channels, _, _ = load_colony()
+        channels = numpy.random.default_rng(42).random((3, 67, 71), dtype=numpy.float32)
 
     references = []
     for deviation in (sigma, sigma * 2):

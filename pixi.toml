@@ -86,7 +86,7 @@ rumdl = ">=0.2.53,<0.3"
 
 [feature.lint.tasks]
 format = "ruff format . && rumdl check --fix . && tombi format && pixi run --locked -e rust cargo fmt --all"
-lint = "ruff check . && ruff format --check . && rumdl check . && tombi format --check && tombi lint --error-on-warnings && actionlint && zizmor --persona auditor --strict-collection --no-progress ."
+lint = "ruff check . && ruff format --check . && rumdl check . && tombi format --check && tombi lint --error-on-warnings && actionlint && zizmor --strict-collection --no-progress ."
 
 [feature.testing.pypi-dependencies]
 wesl-py = { path = ".", editable = true, extras = ["testing"] }

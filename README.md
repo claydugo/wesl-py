@@ -7,17 +7,24 @@ Compilation needs no GPU.
 
 ## Installation
 
-Requires Python 3.12 or later and Rust 1.97.1 or later with a native linker.
-Add a checkout to your project's `pixi.toml`:
+Requires Python 3.12 or later.
+The package is not published on PyPI. For now, install from a
+[checkout](https://github.com/claydugo/wesl-py/blob/main/CONTRIBUTING.md#set-up-a-checkout).
+After publication, install with your environment manager:
 
-```toml
-[pypi-dependencies]
-wesl-py = { path = "/path/to/wesl-py" }
-```
+| Tool | Compile shaders | Run shader tests |
+| --- | --- | --- |
+| pip | `python -m pip install wesl-py` | `python -m pip install "wesl-py[testing]"` |
+| uv | `uv add wesl-py` | `uv add "wesl-py[testing]"` |
+| Pixi | `pixi add --pypi wesl-py` | `pixi add --pypi "wesl-py[testing]"` |
 
-Run `pixi install`. The distribution name is `wesl-py`; import it as `wesl`.
+The distribution name is `wesl-py`; import it as `wesl`.
+Wheels target Linux x86-64 with glibc 2.28 or later, macOS arm64, and Windows x86-64.
+Wheel installation does not require Rust.
+Source builds require Rust 1.97.1 or later, a native linker, and access to the
+pinned Rust dependencies.
 See [CONTRIBUTING.md](https://github.com/claydugo/wesl-py/blob/main/CONTRIBUTING.md)
-to work in this repository.
+for development setup.
 
 ## Compile a shader
 
@@ -79,7 +86,7 @@ Standalone `compile_file()` uses the shader file's parent directory by default.
 
 ## Test a shader
 
-Add `extras = ["testing"]` to the dependency entry and run `pixi install`.
+Install the `testing` extra as shown above.
 Save this as `shaders/math.test.wesl`:
 
 ```wesl
@@ -91,7 +98,8 @@ fn addition() {
 }
 ```
 
-Run `pixi run python -m pytest shaders -q`.
+Run `python -m pytest shaders -q` in your environment.
+With uv or Pixi, prefix this command with `uv run` or `pixi run`.
 The pytest plugin collects `@test` functions and reports failures at the shader
 file and line.
 The package includes assertion shaders. Execution requires a hardware or

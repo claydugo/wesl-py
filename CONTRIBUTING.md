@@ -167,7 +167,10 @@ Tombi checks also fail on warnings, including schema deprecations.
 Its hooks check `.toml` files. Cargo owns the generated `Cargo.lock` format.
 Actionlint enables all checks, including its ShellCheck and Pyflakes integrations.
 Its [configuration](.github/actionlint.yaml) rejects undeclared `vars` references.
-Zizmor uses the `auditor` persona without suppressions.
+Zizmor uses the default `regular` persona in CI and hooks.
+Use `--persona auditor` for manual security reviews.
+The release workflow suppresses `self-repository` until Actionlint accepts
+GitHub's `$/` syntax for reusable workflows.
 CI provides a GitHub token so Zizmor can also run online audits.
 Local runs use offline audits unless `GH_TOKEN`, `GITHUB_TOKEN`, or
 `ZIZMOR_GITHUB_TOKEN` is set.
@@ -238,6 +241,7 @@ Its project configuration requires the files from `python/wesl` in each wheel.
 It excludes local extension builds and bytecode from that source comparison.
 W102 is disabled because wheels add compiled extensions and repaired libraries.
 Installation checks verify native imports, type information, and bundled shaders.
+The [release checklist](RELEASE_CHECKLIST.md) describes PyPI setup and publication.
 
 ## Maintenance
 
