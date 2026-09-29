@@ -84,7 +84,7 @@ enclosing blocks before lowering. It skips functions in `wgsl_test` and
 `wgsl_test::TestResult`, so this workaround has limited coverage.
 An overridden `expect` with a failing assertion in a false loop's initializer
 fails with `lower=False` but passes with `lower=True`.
-[test_assertions_in_control_flow](../tests/test_testing.py) covers initializers
+[test_assertions_in_control_flow](../tests/test_shader_assertions.py) covers initializers
 in test functions with both settings.
 
 Submit a fix that preserves the initializer and its scope.
@@ -164,7 +164,7 @@ This is a low-level evaluation defect on invalid input.
 It does not show that normal compilation with validation enabled accepts cycles.
 The dependency check in [compile_test](../src/testing.rs) guards these cases before
 `ty_eval_ty`, including when callers select `validate=False`.
-[test_shader_assertion_type_cycles_without_validation](../tests/test_diagnostics.py)
+[test_shader_assertion_type_cycles_without_validation](../tests/test_shader_compilation.py)
 covers direct and mutual aliases, an array alias, and a recursive structure.
 
 [Issue #157](https://github.com/webgpu-tools/wesl-rs/issues/157)
@@ -193,7 +193,7 @@ fn main() {
 Observed: `annotate-snippets` 0.12.16 panics because byte 1 is inside `é`.
 The renderer checks only the span's end against the source length.
 [render_diagnostic](../src/lib.rs) checks the complete range for assertion
-diagnostics. [test_failure_with_invalid_source_span](../tests/test_testing.py)
+diagnostics. [test_failure_with_invalid_source_span](../tests/test_shader_errors.py)
 verifies the fallback.
 This is a hardening opportunity for caller-supplied metadata.
 The reproducer does not show that the parser generates invalid spans.
@@ -225,7 +225,7 @@ CR, vertical tab, form feed, NEL, U+2028, and U+2029 reproduce the mismatch.
 These are [WGSL line breaks](https://www.w3.org/TR/WGSL/#line-break).
 
 The binding normalizes assertion sources in [render_diagnostic](../src/lib.rs).
-[test_failure_with_unicode_line_breaks](../tests/test_testing.py) covers all eight
+[test_failure_with_unicode_line_breaks](../tests/test_shader_errors.py) covers all eight
 line-break sequences and multibyte text before the span.
 Compiler errors use upstream rendering and retain this mismatch.
 
@@ -338,7 +338,7 @@ Preserving operand types requires agreement on the shader and host representatio
 
 The binding preserves `recordFailure` and appends `actual_bits` and
 `expected_bits` in [compile_test](../src/testing.rs).
-[test_failure_in_imported_helper](../tests/test_testing.py) verifies exact integers
+[test_failure_in_imported_helper](../tests/test_shader_assertions.py) verifies exact integers
 and retention of the first failure.
 Replace these fields only after adopting an upstream protocol that preserves
 the supported operand types. Source locations and execution metadata still need
@@ -436,7 +436,7 @@ and run the corresponding regression tests:
 | --- | --- |
 | Disabled visibility | `test_external_visibility_is_optional` in [test_compile.py](../tests/test_compile.py) |
 | Disabled imports | `test_import_resolution_can_be_disabled` and `test_disabled_imports_preserve_the_root_entry_point` in [test_compile.py](../tests/test_compile.py) |
-| Qualified references | `test_resource_loader_compiles_package_roots` in [test_sources.py](../tests/test_sources.py) and `test_cooperative_qualified_workgroup_size` in [test_testing.py](../tests/test_testing.py) |
+| Qualified references | `test_resource_loader_compiles_package_roots` in [test_resources.py](../tests/test_resources.py) and `test_cooperative_qualified_workgroup_size` in [test_shader_workgroups.py](../tests/test_shader_workgroups.py) |
 
 Remove the full adapter only after adopting the transformation hook and all three
 fixes. Verify option parity with [tests/upstream.rs](../tests/upstream.rs).
@@ -452,7 +452,7 @@ fixes [issue #306](https://github.com/webgpu-tools/wesl-rs/issues/306).
 
 The binding now uses `wesl::pass::Visit` from the fixed revision in
 [compile_test](../src/testing.rs). The manual statement traversal is removed.
-[test_assertions_in_control_flow](../tests/test_testing.py) verifies nested `else`
+[test_assertions_in_control_flow](../tests/test_shader_assertions.py) verifies nested `else`
 assertions with both lowering settings.
 
 ### Quoted visibility modifiers
@@ -477,6 +477,26 @@ The 0.4.4 binding places transforming resolvers outside `SourceMapper` and uses
 the same mapper for mangling. Audited main [removes `resolve_module` from `Resolver`](https://github.com/webgpu-tools/wesl-rs/blob/0303eccfafd534cc76c91eddd4b4f5c4413a1733/crates/wesl/src/resolver.rs)
 and removes `Preprocessor`. The binding now applies transformations through
 `CompilerDriver::load_module`, after source recording and before conditional
-translation. [test_result_instrumentation](../tests/test_testing.py) verifies
-transformed result modules. [test_failure_in_imported_helper](../tests/test_testing.py)
+translation.
+[test_result_instrumentation_preserves_layout_and_binding](../tests/test_shader_assertions.py)
+verifies transformed result modules.
+[test_failure_in_imported_helper](../tests/test_shader_assertions.py)
 verifies original source tracking.
+
+### Package visibility inside named packages
+
+At revision `0303eccfafd534cc76c91eddd4b4f5c4413a1733`,
+[usage analysis](https://github.com/webgpu-tools/wesl-rs/blob/0303eccfafd534cc76c91eddd4b4f5c4413a1733/crates/wesl/src/pass/usage_analysis.rs#L249-L252)
+requires public visibility for an import whose canonical path names a package.
+This also applies when the importing module belongs to that same package.
+A public function in `library` therefore cannot call a helper with package
+visibility through `package::helper::value`.
+The failure also occurs through `wesl::compile` with `VirtualResolver`.
+The [visibility specification](https://github.com/webgpu-tools/wesl-spec/blob/main/Visibility.md#referring-to-less-visible-declarations)
+permits public functions to refer to less-visible declarations.
+
+[test_named_package_local_imports_allow_package_visibility](../tests/test_sources.py)
+keeps the default behavior and marks the checked case as a strict expected failure.
+The test fails on an unexpected pass so an upstream fix requires removal of the
+marker. The workaround disables visibility checks and also permits imports that
+cross package boundaries.

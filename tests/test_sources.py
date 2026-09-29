@@ -1,79 +1,16 @@
 from __future__ import annotations
 
 import pickle
-import subprocess
 import sys
 from collections import UserDict
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
-from zipfile import Path as ZipPath
-from zipfile import ZipFile
 
 import pytest
 import wesl
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-@pytest.mark.skipif(
-    sys.platform == "win32", reason="Directory symlinks require Windows privileges."
-)
-def test_resource_loader_rejects_directory_cycles(tmp_path: Path) -> None:
-    (tmp_path / "main.wesl").write_text("fn main() {}")
-    (tmp_path / "first").symlink_to(tmp_path, target_is_directory=True)
-    (tmp_path / "second").symlink_to(tmp_path, target_is_directory=True)
-    result = subprocess.run(  # noqa: S603
-        [
-            sys.executable,
-            "-c",
-            "import sys, wesl; wesl.load_modules(sys.argv[1], namespace='package')",
-            str(tmp_path),
-        ],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=5,
-    )
-    assert result.returncode != 0
-    assert "ValueError: resource directory contains a cycle" in result.stderr
-
-
-@pytest.mark.skipif(
-    sys.platform == "win32", reason="Directory symlinks require Windows privileges."
-)
-def test_resource_loader_accepts_shared_directories_without_cycles(
-    tmp_path: Path,
-) -> None:
-    shared = tmp_path / "shared"
-    shared.mkdir()
-    (shared / "helper.wesl").write_text("fn value() {}")
-    root = tmp_path / "root"
-    root.mkdir()
-    (root / "first").symlink_to(shared, target_is_directory=True)
-    (root / "second").symlink_to(shared, target_is_directory=True)
-    loaded = wesl.load_modules(root, namespace="package")
-    assert loaded.modules == {
-        "package::first::helper": "fn value() {}",
-        "package::second::helper": "fn value() {}",
-    }
-
-
-@pytest.mark.parametrize(
-    "suffixes", [("wesl", "wgsl"), ("wgsl", "wesl"), ("wesl", "wesl")]
-)
-def test_resource_loader_rejects_path_aliases(
-    tmp_path: Path, suffixes: tuple[str, str]
-) -> None:
-    with ZipFile(tmp_path / "resources.zip", "w") as archive:
-        archive.writestr(f"a::b.{suffixes[0]}", "fn first() {}")
-        archive.writestr(f"a/b.{suffixes[1]}", "fn second() {}")
-    with (
-        ZipFile(tmp_path / "resources.zip") as archive,
-        pytest.raises(ValueError, match="duplicate module"),
-    ):
-        wesl.load_modules(ZipPath(archive), namespace="package")
 
 
 def test_compile_source_returns_emitted_names_and_dependencies() -> None:
@@ -98,37 +35,35 @@ def test_compile_source_returns_emitted_names_and_dependencies() -> None:
         result.wgsl = "changed"
 
 
-def test_named_packages_resolve_local_and_external_dependencies() -> None:
-    result = wesl.compile_source(
-        "import noise::lib::value; fn main() -> u32 { return value(); }",
-        modules={
-            "noise::lib": """
-                import package::settings::enabled;
-                import arithmetic::one;
-                fn value() -> u32 { return enabled + one; }
-            """,
-            "noise::settings": "const enabled = 2u;",
-            "noise/arithmetic": "const one = 1u;",
-        },
-        options=wesl.CompileOptions(keep=["main"]),
-    )
-    assert result.modules[0] == "package::main"
-    assert set(result.modules) == {
-        "package::main",
-        "noise::lib",
-        "noise::settings",
-        "noise/arithmetic",
-    }
-
-
-def test_named_package_local_imports_allow_package_visibility() -> None:
+@pytest.mark.parametrize(
+    "visibility",
+    [
+        pytest.param(False, id="unchecked"),
+        pytest.param(
+            True,
+            id="checked",
+            marks=pytest.mark.xfail(
+                strict=True,
+                raises=wesl.CompileError,
+                reason=(
+                    "wesl-rs treats imports within named packages as public; "
+                    "see docs/upstream.md"
+                ),
+            ),
+        ),
+    ],
+)
+def test_named_package_local_imports_allow_package_visibility(
+    *, visibility: bool
+) -> None:
     result = wesl.compile_source(
         "@compute @workgroup_size(1) fn main() { library::value(); }",
         modules={
             "library": "import package::helper::value as helper; "
-            "fn value() { helper(); }",
+            "public fn value() { helper(); }",
             "library::helper": "fn value() {}",
         },
+        options=wesl.CompileOptions(visibility=visibility),
     )
     assert "fn library_helper_value(" in result.wgsl
 
@@ -181,24 +116,6 @@ def test_compile_file_preserves_symlink_imports(tmp_path: Path) -> None:
     assert explicit == implicit == expected
 
 
-@pytest.mark.parametrize(
-    ("filename", "root_directory"),
-    [("shaders/../shaders/main.wesl", "."), ("shaders/main.wesl", "shaders/..")],
-)
-def test_compile_file_accepts_parent_components(
-    tmp_path: Path, filename: str, root_directory: str
-) -> None:
-    (tmp_path / "shaders").mkdir()
-    (tmp_path / "shaders/main.wesl").write_text(
-        "@compute @workgroup_size(1) fn main() {}"
-    )
-    result = wesl.compile_file(
-        tmp_path / filename, root_directory=tmp_path / root_directory
-    )
-    assert result.modules == ("package::shaders::main",)
-    assert result.entry_points == ("main",)
-
-
 @pytest.mark.skipif(
     sys.platform == "win32", reason="Directory symlinks require Windows privileges."
 )
@@ -217,28 +134,6 @@ def test_compile_file_reads_parent_components_after_symlinks(tmp_path: Path) -> 
     assert result.sources["package::helper"].text == "fn value() {}"
 
 
-def test_compile_file_defaults_to_parent_and_reports_import_filenames(
-    tmp_path: Path,
-) -> None:
-    root = tmp_path / "main.wesl"
-    root.write_text("import package::helper::value; fn main() { value(); }")
-    helper = tmp_path / "helper.wesl"
-    helper.write_text("fn value( }")
-    with pytest.raises(wesl.CompileError) as caught:
-        wesl.compile_file(root, options=wesl.CompileOptions(keep=["main"]))
-    (diagnostic,) = caught.value.diagnostics
-    assert diagnostic.filename == str(helper)
-    assert diagnostic.module == "package::helper"
-    assert diagnostic.source == helper.read_text()
-    assert diagnostic.line == 1
-    assert str(helper) in str(caught.value)
-    with pytest.raises(FileNotFoundError):
-        wesl.compile_file(tmp_path / "missing.wesl")
-    (tmp_path / "other").mkdir()
-    with pytest.raises(ValueError, match="not in the subpath"):
-        wesl.compile_file(root, root_directory=tmp_path / "other")
-
-
 def test_compilation_labels_sources_without_mutating_mappings(tmp_path: Path) -> None:
     source = "import package::helper::value; fn main() { value(); }"
     modules = UserDict({"package::helper": "fn value( }"})
@@ -254,9 +149,10 @@ def test_compilation_labels_sources_without_mutating_mappings(tmp_path: Path) ->
     assert modules == {"package::helper": "fn value( }"}
     assert filenames == {"package::helper": tmp_path / "generated.wesl"}
     assert not (tmp_path / "generated.wesl").exists()
-    with pytest.raises(wesl.CompileError) as caught:
-        wesl.compile_source("fn main(")
-    assert caught.value.diagnostics[0].filename == "<string>"
+
+
+def test_compile_source_rejects_duplicate_root_modules() -> None:
+    source = "fn main() {}"
     with pytest.raises(ValueError, match="already present"):
         wesl.compile_source(source, modules={"package::main": source})
 
@@ -310,31 +206,6 @@ def test_compile_file_does_not_discover_manifests(tmp_path: Path) -> None:
     assert "7u" in result.wgsl
     assert wesl.compile_file(filename, dependencies={}) == result
     assert wesl.compile_file(filename, dependencies=wesl.Dependencies({})) == result
-
-
-def test_result_metadata_follows_selected_features_and_declarations() -> None:
-    result = wesl.compile_source(
-        """
-            @if(enabled) @compute @workgroup_size(1) fn first() {}
-            @if(!enabled) @compute @workgroup_size(1) fn second() {}
-            fn unused() {}
-        """,
-        options=wesl.CompileOptions(
-            keep=["first"],
-            features=wesl.Features(default=wesl.Feature.Error, flags={"enabled": True}),
-        ),
-    )
-    assert result.entry_points == ("first",)
-    assert result.modules == ("package::main",)
-
-
-def test_bundled_assertions_need_no_registration() -> None:
-    result = wesl.compile_source(
-        "import wgsl_test::expectEq; "
-        "@compute @workgroup_size(1) fn main() { expectEq(7u, 7u); }"
-    )
-    assert {"wgsl_test", "wgsl_test::TestResult"} <= set(result.modules)
-    assert "fn expectEq(" in result.sources["wgsl_test"].text
 
 
 def test_directory_dependencies_follow_imports_and_reload(tmp_path: Path) -> None:
@@ -414,7 +285,9 @@ def test_directory_dependencies_preserve_scoped_overrides(tmp_path: Path) -> Non
     assert result.sources["right/shared"].text == "fn value() -> u32 { return 11u; }"
 
 
-@pytest.mark.parametrize("sourcemap", [False, True])
+@pytest.mark.parametrize(
+    "sourcemap", [False, True], ids=["no-source-map", "source-map"]
+)
 @pytest.mark.parametrize(
     "source",
     [
@@ -422,6 +295,7 @@ def test_directory_dependencies_preserve_scoped_overrides(tmp_path: Path) -> Non
         "import common::value as imported; fn value() -> u32 { return imported(); }",
         "import {common::value as imported}; fn value() -> u32 { return imported(); }",
     ],
+    ids=["qualified-name", "alias", "grouped-alias"],
 )
 def test_dependency_mappings_and_snapshots_use_the_same_scopes(
     tmp_path: Path, source: str, *, sourcemap: bool
@@ -444,92 +318,6 @@ def test_dependency_mappings_and_snapshots_use_the_same_scopes(
     assert set(result.modules) == {"package::main", "library", "library/common"}
     assert result == wesl.compile_source(
         shader, options=options, dependencies=wesl.Dependencies(directories)
-    )
-
-
-def test_directory_dependency_diagnostics(tmp_path: Path) -> None:
-    source = "fn value() -> u32 {\n    return absent;\n}"
-    filename = tmp_path / "value.wesl"
-    filename.write_text(source, newline="\n")
-    with pytest.raises(wesl.CompileError) as caught:
-        wesl.compile_source(
-            "@compute @workgroup_size(1) fn main() { "
-            "let value = library::value::value(); }",
-            dependencies={"library": tmp_path},
-        )
-    (diagnostic,) = caught.value.diagnostics
-    assert diagnostic.module == "library::value"
-    assert diagnostic.filename == str(filename)
-    assert diagnostic.source == source
-    assert diagnostic.span == (source.index("absent"), source.index("absent") + 6)
-
-
-def test_resource_loader_preserves_bytes_and_module_names(tmp_path: Path) -> None:
-    directory = tmp_path / "shaders"
-    (directory / "nested").mkdir(parents=True)
-    (directory / "nested" / "helper.wesl").write_bytes(
-        "fn café() -> u32 {\r\n    return 2u;\r\n}".encode(),
-    )
-    (directory / "nested" / "helper.wgsl").write_text("fn ignored() {}")
-    (directory / "notes.txt").write_text("not a shader")
-    loaded = wesl.load_modules(directory, namespace="imaging")
-    with ZipFile(tmp_path / "resources.zip", "w") as archive:
-        for path in directory.rglob("*"):
-            if path.is_file():
-                archive.write(path, path.relative_to(directory))
-    with ZipFile(tmp_path / "resources.zip") as archive:
-        packaged = wesl.load_modules(ZipPath(archive), namespace="imaging")
-    assert loaded.modules == packaged.modules
-    assert list(loaded.modules) == ["imaging::nested::helper"]
-    assert "\r\n" in loaded.modules["imaging::nested::helper"]
-    assert loaded.filenames["imaging::nested::helper"] == str(
-        directory / "nested" / "helper.wesl",
-    )
-    assert (
-        packaged.filenames["imaging::nested::helper"] == "imaging::nested::helper.wesl"
-    )
-    result = wesl.compile_source(
-        "import imaging::nested::helper::café; fn main() -> u32 { return café(); }",
-        modules={
-            **packaged.modules,
-            "imaging::nested::helper": "fn café() -> u32 { return 7u; }",
-        },
-        options=wesl.CompileOptions(keep=["main"]),
-    )
-    assert "7u" in result.wgsl
-    with ZipFile(tmp_path / "resources.zip", "a") as archive:
-        archive.writestr("nested::helper.wesl", "fn ambiguous() {}")
-    with (
-        ZipFile(tmp_path / "resources.zip") as archive,
-        pytest.raises(ValueError, match="duplicate module"),
-    ):
-        wesl.load_modules(ZipPath(archive), namespace="imaging")
-
-
-def test_resource_loader_compiles_package_roots(tmp_path: Path) -> None:
-    source = "fn value() -> u32 { return package::helper::value(); }"
-    (tmp_path / "package.wesl").write_text(source)
-    (tmp_path / "package.wgsl").write_text("fn ignored() {}")
-    (tmp_path / "helper.wesl").write_text("fn value() -> u32 { return 7u; }")
-    (tmp_path / "math.test.wesl").write_text("@test fn unfinished(")
-    loaded = wesl.load_modules(tmp_path, namespace="library")
-    assert loaded.modules["library"] == source
-    assert loaded.filenames["library"] == str(tmp_path / "package.wesl")
-    with ZipFile(tmp_path / "resources.zip", "w") as archive:
-        for filename in (
-            "package.wesl",
-            "package.wgsl",
-            "helper.wesl",
-            "math.test.wesl",
-        ):
-            archive.write(tmp_path / filename, filename)
-    with ZipFile(tmp_path / "resources.zip") as archive:
-        packaged = wesl.load_modules(ZipPath(archive), namespace="library")
-    assert packaged.modules == loaded.modules
-    shader = "@compute @workgroup_size(1) fn main() { let value = library::value(); }"
-    assert (
-        wesl.compile_source(shader, modules=packaged.modules).wgsl
-        == wesl.compile_source(shader, dependencies={"library": tmp_path}).wgsl
     )
 
 
@@ -600,19 +388,3 @@ def test_package_dependencies_do_not_share_a_flat_namespace() -> None:
     )
     assert result.modules == ("beta/common",)
     assert "7u" in result.wgsl
-
-
-def test_source_mapping_can_be_disabled() -> None:
-    source = (
-        "import package::helper::value; "
-        "@compute @workgroup_size(1) fn main() { value(); }"
-    )
-    modules = {"package::helper": "fn value() {}"}
-    mapped = wesl.compile_source(source, modules=modules)
-    unmapped = wesl.compile_source(
-        source, modules=modules, options=wesl.CompileOptions(sourcemap=False)
-    )
-    assert unmapped.wgsl == mapped.wgsl
-    assert unmapped.modules == mapped.modules
-    assert unmapped.entry_points == mapped.entry_points
-    assert unmapped.sources == {}

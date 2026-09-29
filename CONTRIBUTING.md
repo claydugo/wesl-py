@@ -115,7 +115,7 @@ It does not require the first patch release in that series.
 These tests accept hardware and software WebGPU adapters.
 Each [example](examples/README.md) documents its own test command.
 See the [testing examples](tests/examples/testing/README.md) for snapshot updates
-and [window tests](#window-tests) for display requirements.
+and [viewer checks](#viewer-checks) for example UI changes.
 
 The WESL tests exercise the SDF example's production functions.
 The Python tests verify the executor and its failure reports.
@@ -198,20 +198,19 @@ examples, shader tests, and snapshots. It selects the `testing` environment.
 Use the targeted commands above while working on a change.
 For prose-only changes, verify links and commands in the affected documentation.
 
-### Window tests
+### Viewer checks
 
 GPU tests require a WebGPU adapter. Hardware and software adapters both work.
 Linux CI selects Vulkan and uses Mesa's software adapter.
-Window tests require a display and native cursor positioning.
-On Linux, they require X11. Install Xvfb and xauth to run them in an isolated display:
+Viewer tests render offscreen:
 
 ```bash
-env -u WAYLAND_DISPLAY XDG_SESSION_TYPE=x11 PYGLFW_LIBRARY_VARIANT=x11 \
-  xvfb-run -a pixi run -e testing python -m pytest \
-  tests/examples/test_example_windows.py -q
+pixi run -e testing python -m pytest \
+  tests/examples/test_example_render.py tests/examples/test_sdf.py -q
 ```
 
-Pytest skips these tests without a display or when GLFW uses Wayland.
+After changes to pointer handling or widget layout, open the affected example.
+Verify its controls before and after resizing the window.
 
 ## Edit shaders
 

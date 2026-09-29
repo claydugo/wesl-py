@@ -16,7 +16,7 @@ get_default_device = import_module("wgpu.utils").get_default_device
 
 
 @pytest.mark.gpu
-@pytest.mark.parametrize("cutout", [False, True])
+@pytest.mark.parametrize("cutout", [False, True], ids=["solid", "cutout"])
 def test_particle_collisions(*, cutout: bool) -> None:
     directory = Path(__file__).parents[2] / "examples"
     device = get_default_device()

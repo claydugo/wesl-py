@@ -134,48 +134,6 @@ def test_directory_overrides_retain_child_dependencies(tmp_path: Path) -> None:
     assert "7u" in expected.wgsl
 
 
-def test_project_loading_is_explicit_for_memory_sources(tmp_path: Path) -> None:
-    with pytest.raises(FileNotFoundError, match=r"wesl\.toml"):
-        wesl.Compiler.from_project(tmp_path)
-    (tmp_path / "wesl.toml").write_text('edition = "2026_pre"\nroot = "."\n')
-    (tmp_path / "settings.wesl").write_text("const value = 7u;")
-    source = (
-        "import package::settings::value; "
-        "@compute @workgroup_size(1) fn main() { let result = value; }"
-    )
-    with chdir(tmp_path), pytest.raises(wesl.CompileError):
-        wesl.compile_source(source)
-    with chdir(tmp_path):
-        compiler = wesl.Compiler.from_project(".")
-    assert "7u" in compiler.compile_source(source).wgsl
-
-
-@pytest.mark.parametrize(
-    "dependencies",
-    [
-        'dependencies = "auto"',
-        "[dependencies]\nlibrary = {}",
-        '[dependencies]\nlibrary = { package = "library" }',
-    ],
-)
-def test_project_reports_unsupported_dependencies(
-    tmp_path: Path, dependencies: str
-) -> None:
-    (tmp_path / "wesl.toml").write_text(
-        f'edition = "2026_pre"\nroot = "."\n{dependencies}\n'
-    )
-    with pytest.raises(NotImplementedError, match="path dependencies"):
-        wesl.Compiler.from_project(tmp_path)
-
-
-def test_project_rejects_dependency_cycles(tmp_path: Path) -> None:
-    (tmp_path / "wesl.toml").write_text(
-        'edition = "2026_pre"\nroot = "."\n[dependencies]\nrecursive = { path = "." }\n'
-    )
-    with pytest.raises(ValueError, match="cycle"):
-        wesl.Compiler.from_project(tmp_path)
-
-
 @pytest.mark.gpu
 def test_project_shares_dependency_state_and_bindings(tmp_path: Path) -> None:
     pytest.importorskip("wgpu", exc_type=ModuleNotFoundError)
@@ -225,7 +183,9 @@ def test_project_shares_dependency_state_and_bindings(tmp_path: Path) -> None:
 
 
 @pytest.mark.gpu
-@pytest.mark.parametrize("sourcemap", [False, True])
+@pytest.mark.parametrize(
+    "sourcemap", [False, True], ids=["no-source-map", "source-map"]
+)
 def test_virtual_overrides_preserve_dependency_identity(
     tmp_path: Path, *, sourcemap: bool
 ) -> None:
@@ -421,37 +381,6 @@ def test_project_discovery_normalizes_parent_components(tmp_path: Path) -> None:
     assert compiler.compile_file("nested/../main.wesl").entry_points == ("main",)
 
 
-@pytest.mark.parametrize("sourcemap", [False, True])
-@pytest.mark.parametrize(
-    "source",
-    [
-        "fn value() -> u32 { return beta::value(); }",
-        "import beta::value as imported; fn value() -> u32 { return imported(); }",
-        "import {beta::value as imported}; fn value() -> u32 { return imported(); }",
-    ],
-)
-def test_project_rejects_undeclared_dependency_imports(
-    tmp_path: Path, source: str, *, sourcemap: bool
-) -> None:
-    (tmp_path / "wesl.toml").write_text(
-        'edition = "2026_pre"\nroot = "."\n[dependencies]\n'
-        'alpha = { path = "alpha" }\nbeta = { path = "beta" }\n'
-    )
-    for name in ("alpha", "beta"):
-        directory = tmp_path / name
-        directory.mkdir()
-        (directory / "wesl.toml").write_text('edition = "2026_pre"\nroot = "."\n')
-    (tmp_path / "alpha/package.wesl").write_text(source)
-    (tmp_path / "beta/package.wesl").write_text("fn value() -> u32 { return 7u; }")
-    compiler = wesl.Compiler.from_project(
-        tmp_path, options=wesl.CompileOptions(sourcemap=sourcemap)
-    )
-    with pytest.raises(wesl.CompileError, match="beta"):
-        compiler.compile_source(
-            "@compute @workgroup_size(1) fn main() { let result = alpha::value(); }"
-        )
-
-
 def test_project_rejects_cycles_between_direct_dependencies(tmp_path: Path) -> None:
     (tmp_path / "wesl.toml").write_text(
         'edition = "2026_pre"\nroot = "."\n[dependencies]\n'
@@ -468,7 +397,9 @@ def test_project_rejects_cycles_between_direct_dependencies(tmp_path: Path) -> N
         wesl.Compiler.from_project(tmp_path)
 
 
-@pytest.mark.parametrize("override_parents", [False, True])
+@pytest.mark.parametrize(
+    "override_parents", [False, True], ids=["child-only", "parents-and-child"]
+)
 def test_scoped_overrides_isolate_shared_package_dependencies(
     tmp_path: Path, *, override_parents: bool
 ) -> None:

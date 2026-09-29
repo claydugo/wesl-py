@@ -16,6 +16,10 @@ def test_import_preserves_gil_state() -> None:
             (
                 "import sys, sysconfig; "
                 "import wesl; "
+                "from importlib.metadata import version; "
+                "assert wesl.__version__ == version('wesl-py'); "
+                "assert 'wgpu' not in sys.modules; "
+                "assert 'pygfx' not in sys.modules; "
                 "assert not sysconfig.get_config_var('Py_GIL_DISABLED') "
                 "or not sys._is_gil_enabled()"
             ),

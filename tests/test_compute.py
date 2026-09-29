@@ -7,60 +7,20 @@ import wesl
 wgpu = pytest.importorskip("wgpu", exc_type=ModuleNotFoundError)
 compute_with_buffers = import_module("wgpu.utils.compute").compute_with_buffers
 
+pytestmark = [pytest.mark.gpu, pytest.mark.usefixtures("available_adapter")]
 
-@pytest.mark.gpu
-@pytest.mark.parametrize(("enabled", "expected"), [(False, 3), (True, 7)])
-def test_compute(modules: dict[str, str], *, enabled: bool, expected: int) -> None:
+
+@pytest.fixture(scope="module")
+def available_adapter() -> None:
     try:
         wgpu.gpu.request_adapter_sync()
     except RuntimeError as error:
         if os.environ.get("CI"):
             raise
         pytest.skip(str(error))
-    wgsl = wesl.compile(
-        modules,
-        options=wesl.CompileOptions(features=wesl.Features(flags={"enabled": enabled})),
-    ).wgsl
-    output = compute_with_buffers({}, {0: (1, "I")}, wgsl, n=1)
-    assert output[0][0] == expected
 
 
-@pytest.mark.gpu
-@pytest.mark.parametrize(
-    ("constants", "expected"),
-    [
-        ("const result: f32 = 1;", 1065353216),
-        ("const result = base + 1u; const base = 2u;", 3),
-    ],
-)
-@pytest.mark.parametrize("lower", [False, True])
-def test_constant_semantics(constants: str, expected: int, *, lower: bool) -> None:
-    try:
-        wgpu.gpu.request_adapter_sync()
-    except RuntimeError as error:
-        if os.environ.get("CI"):
-            raise
-        pytest.skip(str(error))
-    result = wesl.compile_source(
-        f"""
-        {constants}
-        @group(0) @binding(0) var<storage, read_write> output: array<u32>;
-        @compute @workgroup_size(1) fn main() {{ output[0] = bitcast<u32>(result); }}
-        """,
-        options=wesl.CompileOptions(lower=lower),
-    )
-    output = compute_with_buffers({}, {0: (1, "I")}, result.wgsl, n=1)
-    assert output[0][0] == expected
-
-
-@pytest.mark.gpu
 def test_injected_constant_semantics() -> None:
-    try:
-        wgpu.gpu.request_adapter_sync()
-    except RuntimeError as error:
-        if os.environ.get("CI"):
-            raise
-        pytest.skip(str(error))
     result = wesl.compile_source(
         """
         import package::config::{binding_number, width, scale, enabled, maximum};

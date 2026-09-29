@@ -304,7 +304,7 @@ jobs:
       - name: Test oldest supported pytest series
         env:
           XDG_RUNTIME_DIR: ${{ runner.temp }}
-        run: python -m pytest tests/test_pytest_plugin.py -q
+        run: python -m pytest tests/test_pytest_plugin.py tests/test_pytest_reporting.py -q
 
   examples:
     name: Test examples

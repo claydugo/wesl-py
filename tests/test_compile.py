@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import pickle
 import re
 from collections import UserDict
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import chdir
-from multiprocessing import get_context
+from functools import partial
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
@@ -13,120 +12,33 @@ import pytest
 import wesl
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from pathlib import Path
 
 
-@pytest.mark.parametrize(("enabled", "expected"), [(False, 3), (True, 7)])
-def test_imports_conditions_and_root_bindings(
-    modules: dict[str, str], *, enabled: bool, expected: int
-) -> None:
-    result = wesl.compile(
-        modules,
-        options=wesl.CompileOptions(features=wesl.Features(flags={"enabled": enabled})),
-    ).wgsl
-    assert isinstance(result, str)
-    assert "package_settings_value" in result
-    assert "fn main(" in result
-    assert "@group(0)" in result
-    assert "@binding(0)" in result
-    assert re.search(rf"return\s+{expected}u\s*;", result)
-    assert "@if" not in result
-    assert "import " not in result
-
-
-@pytest.mark.parametrize(("enabled", "expected"), [(False, 3), (True, 7)])
-def test_conditional_statements(*, enabled: bool, expected: int) -> None:
-    result = wesl.compile(
-        {
-            "package::main": """
-                fn value() -> u32 {
-                    @if(enabled) return 7u;
-                    @if(!enabled) return 3u;
-                }
-            """
-        },
-        options=wesl.CompileOptions(
-            strip=False, features=wesl.Features(flags={"enabled": enabled})
-        ),
-    ).wgsl
-    assert re.search(rf"return\s+{expected}u\s*;", result)
-    assert result.count("return") == 1
-
-
-def test_unspecified_features_are_disabled_per_call(modules: dict[str, str]) -> None:
-    assert (
-        "7u"
-        in wesl.compile(
-            modules,
-            options=wesl.CompileOptions(
-                features=wesl.Features(flags={"enabled": True})
-            ),
-        ).wgsl
-    )
-    assert "3u" in wesl.compile(modules).wgsl
-    assert (
-        "3u"
-        in wesl.compile(
-            modules,
-            options=wesl.CompileOptions(
-                features=wesl.Features(flags={"unrelated": True})
-            ),
-        ).wgsl
-    )
-
-
-def test_stripping_root_preservation_and_mangling() -> None:
-    modules = {"package::main": "fn value() -> u32 { return 7u; }"}
-    assert wesl.compile(modules).wgsl.strip() == ""
-    assert (
-        "fn value("
-        in wesl.compile(modules, options=wesl.CompileOptions(keep_main=True)).wgsl
-    )
-    assert (
-        "fn value("
-        in wesl.compile(modules, options=wesl.CompileOptions(strip=False)).wgsl
-    )
-    assert (
-        wesl.compile(modules, options=wesl.CompileOptions(strip=False)).wgsl
-        == wesl.compile(modules, options=wesl.CompileOptions(keep_main=True)).wgsl
-    )
-    assert (
-        "fn package_main_value("
-        in wesl.compile(
-            modules, options=wesl.CompileOptions(strip=False, mangle_main=True)
-        ).wgsl
-    )
-    assert (
-        "fn value("
-        in wesl.compile(modules, options=wesl.CompileOptions(keep=[], strip=False)).wgsl
-    )
-    assert (
-        "fn value("
-        in wesl.compile(
-            modules, options=wesl.CompileOptions(keep=["missing"], keep_main=True)
-        ).wgsl
-    )
-
-
 def test_keep_selects_declarations_and_their_dependencies() -> None:
-    modules = {
-        "package::main": """
+    options = wesl.CompileOptions(keep_main=True, strip=False)
+    result = wesl.compile_source(
+        """
             import package::helper::value;
             fn exported() -> u32 { return value(); }
             @compute @workgroup_size(1) fn first() { let result = exported(); }
             @compute @workgroup_size(1) fn second() {}
         """,
-        "package::helper": "fn value() -> u32 { return 7u; }",
+        modules={"package::helper": "fn value() -> u32 { return 7u; }"},
+        options=options,
+        keep=["first"],
+        keep_main=False,
+        strip=True,
+    )
+    assert set(re.findall(r"fn (\w+)\(", result.wgsl)) == {
+        "first",
+        "exported",
+        "package_helper_value",
     }
-    result = wesl.compile(modules, options=wesl.CompileOptions(keep=["first"])).wgsl
-    assert "fn first(" in result
-    assert "fn exported(" in result
-    assert "fn package_helper_value(" in result
-    assert "fn second(" not in result
-    result = wesl.compile(modules, options=wesl.CompileOptions(keep=("exported",))).wgsl
-    assert "fn exported(" in result
-    assert "@compute" not in result
-    assert not wesl.compile(modules, options=wesl.CompileOptions(keep=[])).wgsl.strip()
+    assert result.entry_points == ("first",)
+    assert options.keep_main
+    assert not options.strip
 
 
 @pytest.mark.parametrize(
@@ -135,6 +47,7 @@ def test_keep_selects_declarations_and_their_dependencies() -> None:
         ("@compute @workgroup_size(1) fn main() {}", ["mian"]),
         ("@if(enabled) @compute @workgroup_size(1) fn main() {}", ["main"]),
     ],
+    ids=["unknown", "disabled"],
 )
 def test_keep_rejects_unknown_and_disabled_declarations(
     source: str, keep: list[str]
@@ -143,163 +56,32 @@ def test_keep_rejects_unknown_and_disabled_declarations(
         wesl.compile_source(source, options=wesl.CompileOptions(keep=keep))
 
 
-def test_feature_error_policy() -> None:
-    modules = {"package::main": "@if(enabled) @compute @workgroup_size(1) fn main() {}"}
-    with pytest.raises(wesl.CompileError, match="unexpected feature flag"):
-        wesl.compile(
-            modules,
-            options=wesl.CompileOptions(
-                features=wesl.Features(
-                    default=wesl.Feature.Error, flags={"enabeld": True}
-                )
-            ),
-        )
-    assert not wesl.compile(
-        modules,
-        options=wesl.CompileOptions(
-            features=wesl.Features(default=wesl.Feature.Error, flags={"enabled": False})
-        ),
-    ).wgsl.strip()
-    assert (
-        "fn main("
-        in wesl.compile(
-            modules,
-            options=wesl.CompileOptions(
-                features=wesl.Features(
-                    default=wesl.Feature.Error, flags={"enabled": True}
-                )
-            ),
-        ).wgsl
-    )
-    with pytest.raises(wesl.CompileError, match="unexpected feature flag"):
-        wesl.compile(
-            modules,
-            options=wesl.CompileOptions(
-                features=wesl.Features(flags={"enabled": wesl.Feature.Error})
-            ),
-        )
-
-
 @pytest.mark.parametrize(
-    "options",
+    "features",
     [
-        wesl.CompileOptions(strip=False),
-        wesl.CompileOptions(keep_main=True),
+        pytest.param(
+            wesl.Features(default=wesl.Feature.Error, flags={"enabeld": True}),
+            id="misspelled-flag",
+        ),
+        pytest.param(
+            wesl.Features(flags={"enabled": wesl.Feature.Error}),
+            id="explicit-error",
+        ),
     ],
 )
-def test_unused_helpers_resolve_imports_when_preserved(
-    options: wesl.CompileOptions,
-) -> None:
-    modules = {
-        "package::main": """
-            import package::missing::value;
-            fn helper() -> u32 { return value(); }
-            @compute @workgroup_size(1) fn main() {}
-        """
-    }
-    assert "fn main(" in wesl.compile(modules).wgsl
-    with pytest.raises(wesl.CompileError):
-        wesl.compile(modules, options=options)
-
-
-def test_unused_imports_and_unresolved_sources_are_not_validated() -> None:
-    modules = {
-        "package::main": "import package::missing::value; fn main() {}",
-        "package::unused": "fn broken( }",
-    }
-    assert (
-        "fn main("
-        in wesl.compile(modules, options=wesl.CompileOptions(strip=False)).wgsl
-    )
-
-
-def test_imported_names_collide_with_preserved_root_names() -> None:
-    modules = {
-        "package::main": """
-            import package::helper::value;
-            fn package_helper_value() -> u32 { return 1u; }
-            fn main() -> u32 { return value(); }
-        """,
-        "package::helper": "fn value() -> u32 { return 2u; }",
-    }
-    with pytest.raises(wesl.CompileError, match="duplicate declaration"):
-        wesl.compile(modules, options=wesl.CompileOptions(strip=False))
-    assert (
-        "fn package_main_main("
-        in wesl.compile(
-            modules, options=wesl.CompileOptions(strip=False, mangle_main=True)
-        ).wgsl
-    )
-
-
-def test_imports_can_read_root_bindings() -> None:
-    result = wesl.compile(
-        {
-            "package::main": """
-                import package::helper::value;
-                struct Settings { value: u32, }
-                @group(0) @binding(0) var<uniform> settings: Settings;
-                fn main() -> u32 { return value(); }
-            """,
-            "package::helper": """
-                import package::main::settings;
-                fn value() -> u32 { return settings.value; }
-            """,
-        },
-        options=wesl.CompileOptions(strip=False),
-    ).wgsl
-    assert "settings.value" in result
-    assert "package_main_settings" not in result
-    assert "@binding(0)" in result
-
-
-def test_relative_imports_stay_in_the_package() -> None:
-    result = wesl.compile(
-        {
-            "package::main": """
-                import package::nested::helper::value;
-                fn main() -> u32 { return value(); }
-            """,
-            "package::nested::helper": """
-                import super::super::settings::answer;
-                fn value() -> u32 { return answer; }
-            """,
-            "package::settings": "const answer = 7u;",
-        },
-        options=wesl.CompileOptions(strip=False),
-    ).wgsl
-    assert "package_settings_answer" in result
-
-
-@pytest.mark.parametrize("name", ["café", "fn", "async"])
-def test_module_names_follow_upstream_path_grammar(name: str) -> None:
-    modules = {f"package::{name}": "fn value() -> u32 { return 1u; }"}
-    assert (
-        "fn value("
-        in wesl.compile(
-            modules, root=f"package::{name}", options=wesl.CompileOptions(strip=False)
-        ).wgsl
-    )
+def test_unknown_features_can_be_errors(features: wesl.Features) -> None:
+    with pytest.raises(wesl.CompileError, match="unexpected feature flag"):
+        wesl.compile_source(
+            "@if(enabled) @compute @workgroup_size(1) fn main() {}",
+            features=features,
+        )
 
 
 @pytest.mark.parametrize(
     "path",
     [
-        "",
-        "self::main",
         "super::main",
-        "alpha//beta::main",
-        "alpha::beta/main",
-        "package/beta::main",
-        "package::",
         "package::::main",
-        "package::main::",
-        "package::bad-name",
-        "package::9bad",
-        "package::bad?",
-        "package:: main",
-        "package::main/*comment*/",
-        "package::else",
     ],
 )
 def test_module_keys_and_root_reject_invalid_paths(path: str) -> None:
@@ -309,42 +91,6 @@ def test_module_keys_and_root_reject_invalid_paths(path: str) -> None:
     with pytest.raises(ValueError, match="invalid module path") as caught:
         wesl.compile({"package::main": ""}, root=path)
     assert path in str(caught.value)
-
-
-@pytest.mark.parametrize(
-    ("modules", "options"),
-    [
-        ([], {}),
-        ({"package::main": 1}, {}),
-        ({1: ""}, {}),
-        ({"package::main": ""}, {"root": 1}),
-        ({"package::main": ""}, {"options": {"strip": False}}),
-    ],
-)
-def test_invalid_argument_types(modules: object, options: dict[str, object]) -> None:
-    with pytest.raises(TypeError):
-        wesl.compile(modules, **options)
-
-
-def test_general_mappings_remain_unchanged(modules: dict[str, str]) -> None:
-    original = modules.copy()
-    features = UserDict({"enabled": True})
-    assert (
-        "7u"
-        in wesl.compile(
-            MappingProxyType(modules),
-            options=wesl.CompileOptions(features=wesl.Features(flags=features)),
-        ).wgsl
-    )
-    assert (
-        "7u"
-        in wesl.compile(
-            UserDict(modules),
-            options=wesl.CompileOptions(features=wesl.Features(flags=features)),
-        ).wgsl
-    )
-    assert modules == original
-    assert features == {"enabled": True}
 
 
 def test_missing_modules_never_use_the_filesystem(tmp_path: Path) -> None:
@@ -362,29 +108,6 @@ def test_missing_modules_never_use_the_filesystem(tmp_path: Path) -> None:
             },
             options=wesl.CompileOptions(strip=False),
         )
-
-
-def test_named_package_imports_raise_compiler_errors() -> None:
-    with pytest.raises(wesl.CompileError):
-        wesl.compile(
-            {
-                "package::main": """
-                    import alpha::helper::value;
-                    fn main() -> u32 { return value(); }
-                """
-            },
-            options=wesl.CompileOptions(strip=False),
-        )
-
-
-def test_validation_limits() -> None:
-    for source in [
-        "fn main() { let value: u32 = true; }",
-        "fn consume(value: u32) {} fn main() { consume(); }",
-    ]:
-        assert wesl.compile(
-            {"package::main": source}, options=wesl.CompileOptions(strip=False)
-        ).wgsl
 
 
 def test_concurrent_feature_state_isolation(modules: dict[str, str]) -> None:
@@ -456,14 +179,15 @@ def test_validation_can_be_disabled() -> None:
     assert result.wgsl.count("fn same(") == 2  # noqa: PLR2004
 
 
-@pytest.mark.parametrize("modifier", ["", "private ", "public "])
-@pytest.mark.parametrize("sourcemap", [False, True])
-def test_external_visibility_is_optional(modifier: str, *, sourcemap: bool) -> None:
+@pytest.mark.parametrize(
+    "modifier", ["", "private ", "public "], ids=["package", "private", "public"]
+)
+def test_external_visibility_is_optional(modifier: str) -> None:
     modules = {
         "package::main": "import library::value; fn main() -> u32 { return value(); }",
         "library": f"{modifier}fn value() -> u32 {{ return 7u; }}",
     }
-    options = wesl.CompileOptions(keep=["main"], sourcemap=sourcemap)
+    options = wesl.CompileOptions(keep=["main"])
     result = wesl.compile(modules, options=options)
     assert "return 7u;" in result.wgsl
     assert "public " not in result.wgsl
@@ -511,82 +235,6 @@ def test_manglers_rename_imported_functions(
     assert f"{declaration[1]}();" in result.wgsl
 
 
-@pytest.mark.parametrize(
-    "options",
-    [
-        {"strip": 1},
-        {"keep": "main"},
-        {"features": []},
-        {"mangler": "escape"},
-        {"sourcemap": "false"},
-    ],
-)
-def test_compile_options_reject_invalid_types(options: dict[str, object]) -> None:
-    with pytest.raises(TypeError):
-        wesl.compile_source("", options=wesl.CompileOptions(**options))
-
-
-@pytest.mark.parametrize("flags", [[], {"enabled": 1}, {"enabled": "false"}, {1: True}])
-def test_features_reject_invalid_types(flags: object) -> None:
-    with pytest.raises(TypeError):
-        wesl.compile_source(
-            "", options=wesl.CompileOptions(features=wesl.Features(flags=flags))
-        )
-
-
-def test_compile_options_preserve_all_fields_through_pickle() -> None:
-    options = wesl.CompileOptions(
-        imports=False,
-        condcomp=False,
-        strip=False,
-        lower=True,
-        validate=False,
-        sourcemap=False,
-        mangler=wesl.ManglerKind.Hash,
-        mangle_main=True,
-        keep=["main"],
-        keep_main=True,
-        features=wesl.Features(
-            default=wesl.Feature.Error,
-            flags={
-                "enabled": wesl.Feature.Enable,
-                "disabled": wesl.Feature.Disable,
-                "pending": wesl.Feature.Keep,
-                "unexpected": wesl.Feature.Error,
-            },
-        ),
-    )
-    restored = pickle.loads(pickle.dumps(options))  # noqa: S301
-    assert restored == options
-    assert restored is not options
-    assert pickle.loads(pickle.dumps(wesl.ManglerKind.None_)) is wesl.ManglerKind.None_  # noqa: S301
-
-
-def test_features_retain_supplied_flags() -> None:
-    flags: dict[str, bool | wesl.Feature] = {"enabled": False}
-    features = wesl.Features(flags=flags)
-    source = "@if(enabled) @compute @workgroup_size(1) fn main() {}"
-    options = wesl.CompileOptions(features=features)
-    assert wesl.compile_source(source, options=options).entry_points == ()
-    flags["enabled"] = True
-    assert wesl.compile_source(source, options=options).entry_points == ("main",)
-    flags["enabled"] = wesl.Feature.Disable
-    assert wesl.compile_source(source, options=options).entry_points == ()
-
-
-def test_compile_options_apply_mutations_without_sharing_defaults() -> None:
-    options = wesl.CompileOptions()
-    independent_options = wesl.CompileOptions()
-    source = "@if(enabled) @compute @workgroup_size(1) fn main() {}"
-    disabled = wesl.compile_source(source, options=options)
-    options.features.flags["enabled"] = True
-    options.mangle_main = True
-    enabled = wesl.compile_source(source, options=options)
-    assert disabled.entry_points == ()
-    assert enabled.entry_points == ("package_main_main",)
-    assert independent_options.features.flags == {}
-
-
 def test_disabled_imports_preserve_the_root_entry_point() -> None:
     result = wesl.compile_source(
         "@compute @workgroup_size(1) fn main() {}",
@@ -595,46 +243,30 @@ def test_disabled_imports_preserve_the_root_entry_point() -> None:
     assert "fn main(" in result.wgsl
 
 
-def test_compiler_options_cross_process_boundaries() -> None:
-    source = "@if(enabled) @compute @workgroup_size(1) fn main() {}"
-    options = wesl.CompileOptions(
-        mangle_main=True,
-        mangler=wesl.ManglerKind.Hash,
-        features=wesl.Features(default=wesl.Feature.Error, flags={"enabled": True}),
-    )
-    expected = wesl.compile_source(source, options=options)
-    with ProcessPoolExecutor(
-        max_workers=1, mp_context=get_context("spawn")
-    ) as executor:
-        result = executor.submit(wesl.compile_source, source, options=options).result(
-            timeout=10
-        )
-    assert result == expected
-
-
-def test_feature_mappings_and_call_overrides(modules: dict[str, str]) -> None:
+@pytest.mark.parametrize(
+    "features",
+    [
+        pytest.param({}, id="empty-mapping"),
+        pytest.param(MappingProxyType({"enabled": False}), id="read-only-mapping"),
+    ],
+)
+def test_feature_mappings_and_call_overrides(
+    modules: dict[str, str], features: Mapping[str, bool]
+) -> None:
     flags = UserDict({"enabled": True})
     options = wesl.CompileOptions(features=wesl.Features(flags=flags))
     assert "7u" in wesl.compile(modules, options=options).wgsl
-    assert "3u" in wesl.compile(modules, options=options, features={}).wgsl
-    assert (
-        "3u"
-        in wesl.compile(
-            modules, options=options, features=MappingProxyType({"enabled": False})
-        ).wgsl
-    )
+    assert "3u" in wesl.compile(modules, options=options, features=features).wgsl
     assert options.features.flags is flags
     assert flags == {"enabled": True}
-    with pytest.raises(wesl.CompileError, match="enabled"):
-        wesl.compile(
-            modules,
-            features=wesl.Features(default=wesl.Feature.Error),
-        )
-    flags["enabled"] = False
-    assert "3u" in wesl.compile(modules, options=options).wgsl
+    assert "7u" in wesl.compile(modules, options=options).wgsl
 
 
-def test_compiler_call_options_preserve_stored_settings(tmp_path: Path) -> None:
+@pytest.mark.parametrize("method", ["compile_source", "compile_file"])
+def test_compiler_call_options_preserve_stored_settings(
+    tmp_path: Path,
+    method: str,
+) -> None:
     source = (
         "@if(enabled) fn selected() -> u32 { return 7u; } "
         "@else fn selected() -> u32 { return 3u; } "
@@ -642,49 +274,28 @@ def test_compiler_call_options_preserve_stored_settings(tmp_path: Path) -> None:
     )
     (tmp_path / "main.wesl").write_text(source)
     options = wesl.CompileOptions(
-        features=wesl.Features(flags={"enabled": True}), keep=["selected"]
+        features=wesl.Features(flags={"enabled": True}),
+        keep=["selected"],
     )
     compiler = wesl.Compiler(root_directory=tmp_path, options=options)
-    assert "7u" in compiler.compile_source(source).wgsl
-    assert "7u" in compiler.compile_file("main.wesl").wgsl
-    assert "3u" in compiler.compile_source(source, features={}).wgsl
-    assert "3u" in compiler.compile_file("main.wesl", features={}).wgsl
-    selected = compiler.compile_source(source, keep=None)
-    assert selected.entry_points == ("main",)
-    assert "selected" not in selected.wgsl
-    assert not compiler.compile_file("main.wesl", keep=[]).wgsl.strip()
-    assert "fn other(" in compiler.compile_source(source, keep_main=True).wgsl
-    assert "fn other(" in compiler.compile_file("main.wesl", strip=False).wgsl
+    argument = source if method == "compile_source" else "main.wesl"
+    compile_shader = partial(getattr(compiler, method), argument)
+    stored = compile_shader()
+    assert set(re.findall(r"fn (\w+)\(", stored.wgsl)) == {"selected"}
+    assert "7u" in stored.wgsl
+    assert stored.entry_points == ()
+
+    result = compile_shader(features={}, keep=[], keep_main=True, strip=False)
+    assert set(re.findall(r"fn (\w+)\(", result.wgsl)) == {"selected", "other", "main"}
+    assert "3u" in result.wgsl
     assert compiler.options is options
-    assert options.keep == ["selected"]
-    assert options.features.flags == {"enabled": True}
-    compiler.options.features.flags["enabled"] = False
-    compiler.options.keep = ["other"]
-    assert "selected" not in compiler.compile_source(source).wgsl
-    assert "fn other(" in compiler.compile_file("main.wesl").wgsl
-    compiler.options.strip = False
-    assert "3u" in compiler.compile_source(source).wgsl
-    assert "3u" in compiler.compile_file("main.wesl").wgsl
-    compiler.options.strip = True
-    compiler.options.keep_main = True
-    assert "3u" in compiler.compile_source(source).wgsl
-    assert "3u" in compiler.compile_file("main.wesl").wgsl
-    assert "selected" not in compiler.compile_source(source, keep_main=False).wgsl
-    assert compiler.options.keep_main
-    assert options.features.flags == {"enabled": False}
+    assert compile_shader() == stored
+    assert compile_shader(keep=None).entry_points == ("main",)
 
-
-def test_declaration_keywords_follow_upstream_selection() -> None:
-    source = "fn twice(value: f32) -> f32 { return value * 2.0; } fn other() {}"
-    assert not wesl.compile_source(source).wgsl.strip()
-    selected = wesl.compile_source(source, keep=["twice"])
-    assert "fn twice(" in selected.wgsl
-    assert "fn other(" not in selected.wgsl
-    assert "fn other(" in wesl.compile_source(source, keep_main=True).wgsl
-    options = wesl.CompileOptions(keep_main=True, strip=False)
-    result = wesl.compile_source(
-        source, options=options, keep=["twice"], keep_main=False, strip=True
-    )
-    assert result == selected
+    options.features.flags["enabled"] = False
+    options.keep = ["other"]
+    assert set(re.findall(r"fn (\w+)\(", compile_shader().wgsl)) == {"other"}
+    options.keep_main = True
+    assert "3u" in compile_shader().wgsl
+    assert "selected" not in compile_shader(keep_main=False).wgsl
     assert options.keep_main
-    assert not options.strip

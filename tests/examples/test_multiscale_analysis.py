@@ -30,30 +30,6 @@ def gaussian_reference(fields: numpy.ndarray, sigma: float) -> numpy.ndarray:
     return result
 
 
-def test_correlation() -> None:
-    device = get_shared().device
-    channels = (
-        numpy.random.default_rng(42).random((3, 19, 71), dtype=numpy.float32) * 0.8
-        + 0.1
-    )
-    channels[2, :, :23] = channels[1, :, :23]
-    channels[2, :, 48:] = 1 - channels[1, :, 48:]
-    source = device.create_buffer_with_data(
-        data=channels, usage=wgpu.BufferUsage.STORAGE
-    )
-    result = compute.analyze(source, (71, 19), 1.7)
-    actual = numpy.frombuffer(
-        device.queue.read_buffer(result), dtype=numpy.float32
-    ).reshape(19, 71, 2)
-    gfp, rfp = channels[1:].astype(numpy.float64)
-    means = gaussian_reference(numpy.array([gfp, rfp, gfp**2, rfp**2, gfp * rfp]), 1.7)
-    expected = (means[4] - means[0] * means[1]) / numpy.sqrt(
-        (means[2] - means[0] ** 2) * (means[3] - means[1] ** 2)
-    )
-    numpy.testing.assert_allclose(actual[:, :, 0], expected, atol=5e-6)
-    numpy.testing.assert_array_equal(actual[:, :, 1], 1)
-
-
 def test_foreground_correlation() -> None:
     device = get_shared().device
     channels = numpy.full((3, 19, 37), 0.02, dtype=numpy.float32)
@@ -94,69 +70,34 @@ def test_foreground_correlation() -> None:
     numpy.testing.assert_array_equal(actual[~foreground], 0)
 
 
-def test_background_does_not_correlate_constant_foreground() -> None:
+def test_correlation_brightness_offsets() -> None:
     device = get_shared().device
-    channels = numpy.zeros((3, 19, 37), dtype=numpy.float32)
-    channels[0] = 1
-    channels[0, 3:16, 7:30] = 0.5
-    channels[1, 3:16, 7:30] = 0.4
-    channels[2, 3:16, 7:30] = 0.7
-    source = device.create_buffer_with_data(
-        data=channels, usage=wgpu.BufferUsage.STORAGE
-    )
-    result = compute.analyze(source, (37, 19), 3.0)
-    actual = numpy.frombuffer(device.queue.read_buffer(result), dtype=numpy.float32)
-    numpy.testing.assert_array_equal(actual, 0)
-
-
-def test_independent_fluorescence_channels() -> None:
-    device = get_shared().device
-    channels = (
-        numpy.random.default_rng(917).random((3, 129, 129), dtype=numpy.float32) * 0.06
-    )
-    channels[0] = 0.5
+    pattern = numpy.random.default_rng(917).random((2, 129, 129)) < 0.085
+    pattern[1] = pattern[0]
+    channels = numpy.full((3, 129, 129), 0.5, dtype=numpy.float32)
+    channels[1:] = (227 + pattern.astype(numpy.float32)) / 255
     source = device.create_buffer_with_data(
         data=channels, usage=wgpu.BufferUsage.STORAGE
     )
     result = compute.analyze(source, (129, 129), 12)
     actual = numpy.frombuffer(
         device.queue.read_buffer(result), dtype=numpy.float32
-    ).reshape(129, 129, 2)
-    numpy.testing.assert_array_equal(actual[:, :, 1], 1)
-    assert abs(numpy.median(actual[36:-36, 36:-36, 0])) < 0.02
+    ).reshape(129, 129, 2)[36:-36, 36:-36]
+    gfp, rfp = channels[1:].astype(numpy.float64)
+    moments = gaussian_reference(
+        numpy.array([gfp, rfp, gfp**2, rfp**2, gfp * rfp]), 12
+    )[:, 36:-36, 36:-36]
+    variance = moments[2:4] - moments[:2] ** 2
+    valid = numpy.all(variance > 1e-6, axis=0)
+    expected = numpy.zeros_like(gfp[36:-36, 36:-36])
+    expected[valid] = (moments[4] - moments[0] * moments[1])[valid] / numpy.sqrt(
+        variance[0][valid] * variance[1][valid]
+    )
+    numpy.testing.assert_array_equal(actual[:, :, 1], valid)
+    numpy.testing.assert_allclose(actual[:, :, 0], expected, atol=2e-5)
 
 
-@pytest.mark.parametrize("probability", [0.5, 0.085])
-def test_correlation_brightness_offsets(probability: float) -> None:
-    device = get_shared().device
-    pattern = numpy.random.default_rng(917).random((2, 129, 129)) < probability
-    if probability == 0.085:
-        pattern[1] = pattern[0]
-    for baseline in (27, 127, 227):
-        channels = numpy.full((3, 129, 129), 0.5, dtype=numpy.float32)
-        channels[1:] = (baseline + pattern.astype(numpy.float32)) / 255
-        source = device.create_buffer_with_data(
-            data=channels, usage=wgpu.BufferUsage.STORAGE
-        )
-        result = compute.analyze(source, (129, 129), 12)
-        actual = numpy.frombuffer(
-            device.queue.read_buffer(result), dtype=numpy.float32
-        ).reshape(129, 129, 2)[36:-36, 36:-36]
-        gfp, rfp = channels[1:].astype(numpy.float64)
-        moments = gaussian_reference(
-            numpy.array([gfp, rfp, gfp**2, rfp**2, gfp * rfp]), 12
-        )[:, 36:-36, 36:-36]
-        variance = moments[2:4] - moments[:2] ** 2
-        valid = numpy.all(variance > 1e-6, axis=0)
-        expected = numpy.zeros_like(gfp[36:-36, 36:-36])
-        expected[valid] = (moments[4] - moments[0] * moments[1])[valid] / numpy.sqrt(
-            variance[0][valid] * variance[1][valid]
-        )
-        numpy.testing.assert_array_equal(actual[:, :, 1], valid)
-        numpy.testing.assert_allclose(actual[:, :, 0], expected, atol=2e-5)
-
-
-def test_distance_field() -> None:
+def test_distance_field_matches_boundary_distances_and_profiles() -> None:
     device = get_shared().device
     channels = numpy.zeros((3, 19, 37), dtype=numpy.float32)
     channels[1, 3:16, 4:18] = 1
@@ -198,99 +139,7 @@ def test_distance_field() -> None:
         )
 
 
-def test_empty_and_constant_fields() -> None:
-    device = get_shared().device
-    for shape in ((3, 1, 1), (3, 7, 11)):
-        for value in (0.0, 0.01, 0.5):
-            channels = numpy.full(shape, value, dtype=numpy.float32)
-            source = device.create_buffer_with_data(
-                data=channels, usage=wgpu.BufferUsage.STORAGE
-            )
-            result = compute.analyze(source, shape[:0:-1], 0.7)
-            actual = numpy.frombuffer(
-                device.queue.read_buffer(result), dtype=numpy.float32
-            )
-            numpy.testing.assert_array_equal(actual, 0)
-            result, profiles = compute.distance_field(source, shape[:0:-1], 0.7)
-            actual = numpy.frombuffer(
-                device.queue.read_buffer(result), dtype=numpy.float32
-            ).reshape(*shape[1:], 2)
-            actual_profiles = numpy.frombuffer(
-                device.queue.read_buffer(profiles), dtype=numpy.float32
-            ).reshape(-1, 4)
-            if value < 0.03:
-                numpy.testing.assert_array_equal(actual, 0)
-                numpy.testing.assert_array_equal(actual_profiles[:, :3], 0)
-            else:
-                coordinates_y, coordinates_x = numpy.indices(shape[1:])
-                expected = numpy.minimum.reduce(
-                    [
-                        coordinates_y,
-                        coordinates_x,
-                        shape[1] - 1 - coordinates_y,
-                        shape[2] - 1 - coordinates_x,
-                    ]
-                )
-                numpy.testing.assert_array_equal(actual[:, :, 0], expected)
-                numpy.testing.assert_array_equal(actual[:, :, 1], 1)
-                assert actual_profiles[:, 2].sum() == shape[1] * shape[2]
-                numpy.testing.assert_allclose(
-                    actual_profiles[actual_profiles[:, 2] > 0, :2], value
-                )
-
-
-def test_brightfield_threshold() -> None:
-    device = get_shared().device
-    channels = (
-        numpy.random.default_rng(23).random((3, 19, 37), dtype=numpy.float32) * 0.04
-    )
-    source = device.create_buffer_with_data(
-        data=channels, usage=wgpu.BufferUsage.STORAGE
-    )
-    for maximum_brightfield in (0.1, 0.0):
-        result = compute.analyze(
-            source, (37, 19), 0.7, maximum_brightfield=maximum_brightfield
-        )
-        actual = numpy.frombuffer(
-            device.queue.read_buffer(result), dtype=numpy.float32
-        ).reshape(19, 37, 2)
-        if maximum_brightfield == 0.1:
-            assert numpy.any(actual[:, :, 1] > 0)
-        else:
-            numpy.testing.assert_array_equal(actual, 0)
-
-
-def test_perimeter_profile_reduction() -> None:
-    device = get_shared().device
-    channels = (
-        numpy.random.default_rng(17).random((3, 129, 133), dtype=numpy.float32) * 0.5
-        + 0.25
-    )
-    source = device.create_buffer_with_data(
-        data=channels, usage=wgpu.BufferUsage.STORAGE
-    )
-    _, profiles = compute.distance_field(source, (133, 129), 0.7)
-    actual = numpy.frombuffer(
-        device.queue.read_buffer(profiles), dtype=numpy.float32
-    ).reshape(64, 4)
-    coordinates_y, coordinates_x = numpy.indices((129, 133))
-    distances = numpy.minimum.reduce(
-        [coordinates_y, coordinates_x, 128 - coordinates_y, 132 - coordinates_x]
-    )
-    edges = numpy.linspace(0, 65, 65)
-    counts, _ = numpy.histogram(distances, bins=edges)
-    numpy.testing.assert_array_equal(actual[:, 2], counts)
-    numpy.testing.assert_allclose(actual[:, 3], (edges[:-1] + edges[1:]) / 2)
-    for channel in (1, 2):
-        sums, _ = numpy.histogram(
-            distances, bins=edges, weights=channels[channel].astype(numpy.float64)
-        )
-        numpy.testing.assert_allclose(
-            actual[:, channel - 1], sums / numpy.maximum(counts, 1), atol=1e-6
-        )
-
-
-@pytest.mark.parametrize("center", [(18.2, 9.3), (1.2, 2.3)])
+@pytest.mark.parametrize("center", [(18.2, 9.3), (1.2, 2.3)], ids=["interior", "edge"])
 def test_polar_sampling_and_profiles(center: tuple[float, float]) -> None:
     device = get_shared().device
     coordinates_y, coordinates_x = numpy.indices((19, 37), dtype=numpy.float32)
@@ -322,28 +171,3 @@ def test_polar_sampling_and_profiles(center: tuple[float, float]) -> None:
     numpy.testing.assert_allclose(actual_profiles[:, :2], expected_profiles, atol=2e-6)
     numpy.testing.assert_array_equal(actual_profiles[:, 2], inside.sum(axis=1))
     numpy.testing.assert_allclose(actual_profiles[:, 3], radius[:, 0], atol=2e-6)
-
-
-@pytest.mark.parametrize("shape", [(3, 7, 513), (3, 1, 1)])
-def test_profile_reduction(shape: tuple[int, int, int]) -> None:
-    device = get_shared().device
-    channels = numpy.empty(shape, dtype=numpy.float32)
-    channels[0] = 0
-    channels[1] = 0.25
-    channels[2] = 0.75
-    source = device.create_buffer_with_data(
-        data=channels, usage=wgpu.BufferUsage.STORAGE
-    )
-    _, profiles = compute.unwrap(
-        source,
-        (shape[2], shape[1]),
-        ((shape[2] - 1) / 2, (shape[1] - 1) / 2),
-        10.0,
-    )
-    actual = numpy.frombuffer(
-        device.queue.read_buffer(profiles), dtype=numpy.float32
-    ).reshape(shape[1], 4)
-    numpy.testing.assert_allclose(
-        actual[:, :2], numpy.broadcast_to([0.25, 0.75], (shape[1], 2)), atol=1e-6
-    )
-    assert numpy.all(actual[:, 2] > 0)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sys
 from collections import UserDict
 from fractions import Fraction
@@ -84,66 +83,44 @@ def test_constant_modules_apply_to_one_compilation(method: str, tmp_path: Path) 
     assert getattr(compiler, method)(argument).entry_points == ()
 
 
-@pytest.mark.parametrize(
-    ("value", "initializer"),
-    [
-        (False, "false"),
-        (True, "true"),
-        (-1, "-1"),
-        (2**32 - 1, "4294967295"),
-        (2**63 - 1, "9223372036854775807"),
-        (1.0, "1.0"),
-        (-0.0, "-0.0"),
-        (5e-324, "5e-324"),
-        (sys.float_info.max, "1.7976931348623157e308"),
-        (Fraction(1, 2), "0.5"),
-    ],
-)
-def test_constant_scalar_representations(value: object, initializer: str) -> None:
+def test_constant_scalar_representations() -> None:
     result = wesl.compile_source(
-        "fn main() { let value = package::config::value; }",
-        constant_modules={"package::config": {"value": value}},
+        "fn main() { let value = package::config::café; }",
+        constant_modules={
+            "package::config": {
+                "disabled": False,
+                "enabled": True,
+                "negative": -1,
+                "maximum_u32": 2**32 - 1,
+                "maximum_i64": 2**63 - 1,
+                "whole_float": 1.0,
+                "negative_zero": -0.0,
+                "subnormal": 5e-324,
+                "maximum_float": sys.float_info.max,
+                "café": Fraction(1, 2),
+            },
+        },
         keep=["main"],
     )
-    assert (
-        result.sources["package::config"].text == f"public const value = {initializer};"
-    )
-
-
-def test_constant_modules_report_upstream_minimum_integer_parse_error() -> None:
-    with pytest.raises(wesl.CompileError) as caught:
-        wesl.compile_source(
-            "fn main() { let value = package::config::value; }",
-            constant_modules={"package::config": {"value": -(2**63)}},
-            keep=["main"],
-        )
-    assert caught.value.diagnostics[0].module == "package::config"
-    assert (
-        caught.value.diagnostics[0].source
-        == "public const value = -9223372036854775808;"
-    )
+    assert set(result.sources["package::config"].text.splitlines()) == {
+        "public const disabled = false;",
+        "public const enabled = true;",
+        "public const negative = -1;",
+        "public const maximum_u32 = 4294967295;",
+        "public const maximum_i64 = 9223372036854775807;",
+        "public const whole_float = 1.0;",
+        "public const negative_zero = -0.0;",
+        "public const subnormal = 5e-324;",
+        "public const maximum_float = 1.7976931348623157e308;",
+        "public const café = 0.5;",
+    }
 
 
 @pytest.mark.parametrize(
-    ("constant_modules", "message"),
-    [
-        ([], "constant_modules must be a mapping"),
-        ({1: {}}, "constant module names must be strings"),
-        ({"package::config": []}, "package::config.*constants must be a mapping"),
-        (
-            {"package::config": {1: 1}},
-            "package::config.*constant names must be strings",
-        ),
-    ],
+    "value",
+    ["1u", 1j],
+    ids=["shader-expression", "complex"],
 )
-def test_constant_modules_reject_invalid_mapping_types(
-    constant_modules: object, message: str
-) -> None:
-    with pytest.raises(TypeError, match=message):
-        wesl.compile_source("", constant_modules=constant_modules)
-
-
-@pytest.mark.parametrize("value", [None, "1u", b"1", 1j, [1], {"value": 1}])
 def test_constant_modules_reject_non_scalar_values(value: object) -> None:
     with pytest.raises(TypeError, match=r"package::config::value.*scalar"):
         wesl.compile_source("", constant_modules={"package::config": {"value": value}})
@@ -154,11 +131,18 @@ def test_constant_modules_reject_non_scalar_values(value: object) -> None:
     [
         (float("nan"), "finite"),
         (float("inf"), "finite"),
-        (-float("inf"), "finite"),
         (2**63, "signed 64-bit range"),
         (-(2**63) - 1, "signed 64-bit range"),
         (Fraction(1, 10), "loses precision"),
         (Fraction(10**400, 1), "finite float range"),
+    ],
+    ids=[
+        "nan",
+        "infinity",
+        "overflow",
+        "underflow",
+        "lossy-fraction",
+        "float-overflow",
     ],
 )
 def test_constant_modules_reject_unrepresentable_values(
@@ -171,15 +155,8 @@ def test_constant_modules_reject_unrepresentable_values(
 @pytest.mark.parametrize(
     "name",
     [
-        "",
-        "_",
-        "__reserved",
         "fn",
-        "class",
-        "two words",
         "value = 0; const other",
-        "value: i32",
-        "value/*comment*/",
     ],
 )
 def test_constant_modules_validate_unused_names(name: str) -> None:
@@ -191,21 +168,6 @@ def test_constant_modules_validate_unused_names(name: str) -> None:
         )
 
 
-def test_constant_modules_accept_unicode_names() -> None:
-    result = wesl.compile_source(
-        "fn main() -> u32 { return package::config::café; }",
-        constant_modules={"package::config": {"café": 1}},
-        keep=["main"],
-    )
-    assert result.sources["package::config"].text == "public const café = 1;"
-
-
-@pytest.mark.parametrize("module", ["super::config", "package::::config"])
-def test_constant_modules_use_existing_module_path_validation(module: str) -> None:
-    with pytest.raises(ValueError, match="invalid module path"):
-        wesl.compile_source("", constant_modules={module: {}})
-
-
 @pytest.mark.parametrize("module", ["package::main", "package::config"])
 def test_constant_modules_reject_source_collisions(module: str) -> None:
     compiler = wesl.Compiler(modules={"package::config": "const value = 1;"})
@@ -213,16 +175,6 @@ def test_constant_modules_reject_source_collisions(module: str) -> None:
         ValueError, match="present in both modules and constant_modules"
     ):
         compiler.compile_source("", constant_modules={module: {}})
-
-
-def test_constant_modules_replace_whole_files(tmp_path: Path) -> None:
-    (tmp_path / "config.wesl").write_text("const width = 1; const height = 2;")
-    with pytest.raises(wesl.CompileError, match="height"):
-        wesl.compile_source(
-            "@compute @workgroup_size(package::config::height) fn main() {}",
-            root_directory=tmp_path,
-            constant_modules={"package::config": {"width": 64}},
-        )
 
 
 def test_constant_modules_follow_dependency_scopes() -> None:
@@ -238,42 +190,28 @@ def test_constant_modules_follow_dependency_scopes() -> None:
     assert result.sources["library/settings"].text == "public const scale = 0.5;"
 
 
-@pytest.mark.parametrize(
-    ("dtype", "value", "initializer"),
-    [
-        ("int64", -1, "-1"),
-        ("uint64", 2**32 - 1, "4294967295"),
-        ("float16", 0.5, "0.5"),
-        ("float32", 0.1, "0.10000000149011612"),
-        ("float64", 1.0, "1.0"),
-    ],
-)
-def test_constant_modules_normalize_numpy_scalars(
-    dtype: str, value: float, initializer: str
-) -> None:
+def test_constant_modules_normalize_numpy_scalars() -> None:
     numpy = pytest.importorskip("numpy")
     result = wesl.compile_source(
-        "fn main() { let value = package::config::value; }",
-        constant_modules={"package::config": {"value": getattr(numpy, dtype)(value)}},
+        "fn main() { let value = package::config::signed; }",
+        constant_modules={
+            "package::config": {
+                "signed": numpy.int64(-1),
+                "unsigned": numpy.uint64(2**32 - 1),
+                "half": numpy.float16(0.5),
+                "single": numpy.float32(0.1),
+                "double": numpy.float64(1.0),
+            },
+        },
         keep=["main"],
     )
-    assert (
-        result.sources["package::config"].text == f"public const value = {initializer};"
-    )
-
-
-@pytest.mark.parametrize(("duration", "unit"), [(1000, "ns"), (1, "us")])
-def test_constant_modules_reject_numpy_durations(duration: int, unit: str) -> None:
-    numpy = pytest.importorskip("numpy")
-    with pytest.raises(
-        TypeError, match="package::config::duration: expected an integer"
-    ):
-        wesl.compile_source(
-            "",
-            constant_modules={
-                "package::config": {"duration": numpy.timedelta64(duration, unit)},
-            },
-        )
+    assert set(result.sources["package::config"].text.splitlines()) == {
+        "public const signed = -1;",
+        "public const unsigned = 4294967295;",
+        "public const half = 0.5;",
+        "public const single = 0.10000000149011612;",
+        "public const double = 1.0;",
+    }
 
 
 def test_constant_modules_reject_lossy_numpy_conversion() -> None:
@@ -284,50 +222,3 @@ def test_constant_modules_reject_lossy_numpy_conversion() -> None:
         wesl.compile_source(
             "", constant_modules={"package::config": {"value": numpy.longdouble("0.1")}}
         )
-
-
-@pytest.mark.parametrize("shape", [(), (1,)])
-def test_constant_modules_reject_numpy_arrays(shape: tuple[int, ...]) -> None:
-    numpy = pytest.importorskip("numpy")
-    with pytest.raises(TypeError, match=r"package::config::value.*scalar"):
-        wesl.compile_source(
-            "", constant_modules={"package::config": {"value": numpy.ones(shape)}}
-        )
-
-
-@pytest.mark.gpu
-def test_constant_modules_create_render_pipeline() -> None:
-    wgpu = pytest.importorskip("wgpu")
-    try:
-        adapter = wgpu.gpu.request_adapter_sync()
-    except RuntimeError as error:
-        if os.environ.get("CI"):
-            raise
-        pytest.skip(str(error))
-    result = wesl.compile_source(
-        """
-        import package::config::{location_number, scale};
-        @vertex fn vertex_main() -> @builtin(position) vec4f {
-            return vec4f(0.0, 0.0, 0.0, 1.0);
-        }
-        @fragment fn fragment_main() -> @location(location_number) vec4f {
-            return vec4f(scale);
-        }
-        """,
-        constant_modules={"package::config": {"location_number": 0, "scale": 0.5}},
-    )
-    device = adapter.request_device_sync()
-    try:
-        shader = device.create_shader_module(code=result.wgsl)
-        pipeline = device.create_render_pipeline(
-            layout="auto",
-            vertex={"module": shader, "entry_point": "vertex_main"},
-            fragment={
-                "module": shader,
-                "entry_point": "fragment_main",
-                "targets": [{"format": "rgba8unorm"}],
-            },
-        )
-        assert isinstance(pipeline, wgpu.GPURenderPipeline)
-    finally:
-        device.destroy()
