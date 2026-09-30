@@ -132,7 +132,7 @@ def test_diagnostics_are_immutable_values() -> None:
     )
     assert diagnostic.module is None
     assert diagnostic.source is None
-    assert pickle.loads(pickle.dumps(diagnostic)) == diagnostic  # noqa: S301
+    assert pickle.loads(pickle.dumps(diagnostic)) == diagnostic
     with pytest.raises(AttributeError):
         diagnostic.message = "changed"
 
@@ -180,7 +180,7 @@ def test_compile_errors_preserve_diagnostics_through_pickle() -> None:
         wesl.compile({"package::main": "fn café("})
     error = caught.value
     error.add_note("worker failure")
-    restored = pickle.loads(pickle.dumps(error))  # noqa: S301
+    restored = pickle.loads(pickle.dumps(error))
     assert type(restored) is wesl.CompileError
     assert restored.args == error.args
     assert restored.diagnostics == error.diagnostics

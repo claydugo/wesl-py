@@ -111,7 +111,7 @@ def test_missing_modules_never_use_the_filesystem(tmp_path: Path) -> None:
 
 
 def test_concurrent_feature_state_isolation(modules: dict[str, str]) -> None:
-    def compile_feature(enabled: bool) -> str:  # noqa: FBT001
+    def compile_feature(enabled: bool) -> str:
         return wesl.compile(
             modules,
             options=wesl.CompileOptions(
@@ -176,7 +176,7 @@ def test_validation_can_be_disabled() -> None:
     result = wesl.compile_source(
         source, options=wesl.CompileOptions(validate=False, strip=False)
     )
-    assert result.wgsl.count("fn same(") == 2  # noqa: PLR2004
+    assert result.wgsl.count("fn same(") == 2
 
 
 @pytest.mark.parametrize(

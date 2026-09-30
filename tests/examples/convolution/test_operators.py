@@ -48,7 +48,7 @@ pytestmark = pytest.mark.gpu
         ),
     ],
 )
-def test_convolution_matches_numpy(  # noqa: PLR0913
+def test_convolution_matches_numpy(
     assert_operator: Callable[..., None],
     *,
     entry_point: str,
@@ -96,12 +96,12 @@ def test_convolution_matches_numpy(  # noqa: PLR0913
             expected * (np.float32(0.1) if precision == "wide" else np.float16(0.1)),
             expected,
         )
-    if activation == 2 and precision == "wide":  # noqa: PLR2004
+    if activation == 2 and precision == "wide":
         expected = 1 / (1 + np.exp(-expected))
         expected = expected.reshape(-1, 6, output_height, output_width).transpose(
             0, 2, 3, 1
         )
-    elif activation == 2:  # noqa: PLR2004
+    elif activation == 2:
         expected = np.float16(1) / (
             np.float16(1) + np.exp2(expected * np.float16(-1.4423828125))
         )
@@ -168,7 +168,7 @@ def test_convolution_matches_numpy(  # noqa: PLR0913
         pytest.param(5, 7, 3, 13, 1, 6, id="pool-thirteen"),
     ],
 )
-def test_pooling_matches_numpy(  # noqa: PLR0913
+def test_pooling_matches_numpy(
     assert_operator: Callable[..., None],
     *,
     height: int,

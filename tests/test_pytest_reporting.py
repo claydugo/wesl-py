@@ -56,7 +56,7 @@ def test_failure_reports_and_junit(
         result.stdout.fnmatch_lines(["*math.test.wesl:3:5: expectEq failed"])
         assert "actual:" not in result.stdout.str()
         assert "All traceback entries are hidden" not in result.stdout.str()
-    report = ET.parse(pytester.path / "results.xml")  # noqa: S314
+    report = ET.parse(pytester.path / "results.xml")
     case = report.find(".//testcase")
     assert case is not None
     assert case.attrib["name"] == "failing"
@@ -112,7 +112,7 @@ def test_failure_chaining(
     result.assert_outcomes(failed=1)
     assert ("RuntimeError: shader input failed" in result.stdout.str()) is cause_visible
     assert "shader assertion note" in result.stdout.str()
-    report = ET.parse(pytester.path / "results.xml")  # noqa: S314
+    report = ET.parse(pytester.path / "results.xml")
     failure = report.find(".//failure")
     assert failure is not None
     assert failure.text is not None

@@ -1,5 +1,3 @@
-# ruff: noqa: PLR2004
-
 from __future__ import annotations
 
 from importlib import import_module
@@ -10,7 +8,7 @@ import pytest
 if TYPE_CHECKING:
     import wgpu
 
-numpy = pytest.importorskip("numpy")
+np = pytest.importorskip("numpy")
 pytest.importorskip("wgpu")
 compact = import_module("examples.compaction.compute").compact
 
@@ -27,13 +25,11 @@ compact = import_module("examples.compaction.compute").compact
 def test_compaction_preserves_selection_order(
     wesl_device: wgpu.GPUDevice, element_count: int, *, keep_below: bool
 ) -> None:
-    values = (numpy.arange(element_count, dtype=numpy.uint64) * 2654435761).astype(
-        numpy.uint32
-    )
+    values = (np.arange(element_count, dtype=np.uint64) * 2654435761).astype(np.uint32)
     output = compact(wesl_device, values, threshold=2**31, keep_below=keep_below)
     expected = values[values < 2**31] if keep_below else values[values >= 2**31]
-    assert output.dtype == numpy.uint32
-    numpy.testing.assert_array_equal(output, expected)
+    assert output.dtype == np.uint32
+    np.testing.assert_array_equal(output, expected)
 
 
 @pytest.mark.gpu
@@ -41,7 +37,7 @@ def test_compaction_preserves_selection_order(
 def test_compaction_keeps_all_or_none_for_uniform_input(
     wesl_device: wgpu.GPUDevice, value: int
 ) -> None:
-    values = numpy.full(16385, value, dtype=numpy.uint32)
+    values = np.full(16385, value, dtype=np.uint32)
     output = compact(wesl_device, values)
-    expected = values if value >= 500 else numpy.empty(0, dtype=numpy.uint32)
-    numpy.testing.assert_array_equal(output, expected)
+    expected = values if value >= 500 else np.empty(0, dtype=np.uint32)
+    np.testing.assert_array_equal(output, expected)

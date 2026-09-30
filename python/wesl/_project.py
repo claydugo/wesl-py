@@ -38,28 +38,33 @@ class Project:
         with manifest.open("rb") as stream:
             configuration = tomllib.load(stream)
         if configuration.get("edition") != "2026_pre":
-            raise ValueError("unsupported WESL edition")
+            message = "unsupported WESL edition"
+            raise ValueError(message)
         root = Path(configuration.get("root", "shaders"))
         if root.is_absolute():
-            raise ValueError("the WESL root must be relative to its manifest")
+            message = "the WESL root must be relative to its manifest"
+            raise ValueError(message)
         self.root_directory = absolute_path(manifest.parent / root)
         self.dependencies = configuration.get("dependencies", {})
 
-    def load_dependencies(  # noqa: C901
+    def load_dependencies(
         self, overrides: Mapping[str, str | PathLike[str]] | None = None
     ) -> Dependencies:
         if overrides is not None and not isinstance(overrides, Mapping):
-            raise TypeError("dependencies must be a mapping or None")
+            message = "dependencies must be a mapping or None"
+            raise TypeError(message)
         overrides = {} if overrides is None else overrides
         directories: dict[str, Path] = {}
         aliases: dict[str, str] = {}
         identities: dict[tuple[Path, tuple[tuple[str, Path], ...]], str] = {}
+        graph = TopologicalSorter[str]()
         pending: deque[tuple[Project | None, str, str]] = deque([(self, "", "")])
         while pending:
             project, namespace, scope = pending.popleft()
             configuration = {} if project is None else project.dependencies
             if not isinstance(configuration, dict):
-                raise NotImplementedError("only WESL path dependencies are supported")
+                message = "only WESL path dependencies are supported"
+                raise NotImplementedError(message)
             declared = dict(configuration)
             prefix = f"{scope}/" if scope else ""
             declared.update(
@@ -87,18 +92,17 @@ class Project:
                         or "path" not in dependency
                         or "package" in dependency
                     ):
-                        raise NotImplementedError(
-                            "only WESL path dependencies are supported"
-                        )
+                        message = "only WESL path dependencies are supported"
+                        raise NotImplementedError(message)
                     path = Path(dependency["path"])
                     if path.is_absolute():
-                        raise ValueError(
-                            "dependency paths must be relative to their manifest"
-                        )
+                        message = "dependency paths must be relative to their manifest"
+                        raise ValueError(message)
                     path = absolute_path(project.manifest.parent / path) / "wesl.toml"
                 identity = (path.resolve(), scoped_overrides)
                 canonical = identities.setdefault(identity, dependency_name)
                 aliases[dependency_name] = canonical
+                graph.add(dependency_name.rpartition("/")[0], canonical)
                 if canonical in directories:
                     continue
                 loaded = None if dependency_scope in overrides else Project(path)
@@ -106,14 +110,11 @@ class Project:
                     path if loaded is None else loaded.root_directory
                 )
                 pending.append((loaded, canonical, dependency_scope))
-        graph: dict[str, set[str]] = {}
-        for name, canonical in aliases.items():
-            parent = name.rpartition("/")[0]
-            graph.setdefault(parent, set()).add(canonical)
         try:
-            TopologicalSorter(graph).prepare()
+            graph.prepare()
         except CycleError as error:
-            raise ValueError("WESL path dependencies contain a cycle") from error
+            message = "WESL path dependencies contain a cycle"
+            raise ValueError(message) from error
         dependencies = Dependencies(directories)
         object.__setattr__(dependencies, "aliases", MappingProxyType(aliases))
         return dependencies

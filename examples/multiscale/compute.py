@@ -1,6 +1,6 @@
 from pathlib import Path
 
-import numpy
+import numpy as np
 import wesl
 import wgpu
 from pygfx.renderers.wgpu import get_shared
@@ -47,10 +47,10 @@ def smooth(
         )
         for _ in range(2)
     )
-    radius = int(numpy.ceil(3 * sigma))
-    offsets = numpy.arange(-radius, radius + 1, dtype=numpy.float64)
-    coefficients = numpy.exp(-0.5 * (offsets / sigma) ** 2)
-    coefficients = (coefficients / coefficients.sum()).astype(numpy.float32)
+    radius = int(np.ceil(3 * sigma))
+    offsets = np.arange(-radius, radius + 1, dtype=np.float64)
+    coefficients = np.exp(-0.5 * (offsets / sigma) ** 2)
+    coefficients = (coefficients / coefficients.sum()).astype(np.float32)
     weights = device.create_buffer_with_data(
         data=coefficients, usage=wgpu.BufferUsage.STORAGE
     )
@@ -72,13 +72,13 @@ def smooth(
 
 
 def enhance(
-    channels: numpy.ndarray,
+    channels: np.ndarray,
     sigma: float,
     strength: float,
 ) -> tuple[wgpu.GPUBuffer, wgpu.GPUBuffer, wgpu.GPUBuffer, wgpu.GPUBuffer]:
     device = get_shared().device
     source = device.create_buffer_with_data(
-        data=numpy.ascontiguousarray(channels, dtype=numpy.float32),
+        data=np.ascontiguousarray(channels, dtype=np.float32),
         usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_SRC,
     )
     fine = smooth(source, channels.shape, sigma, first_field=1)
@@ -109,11 +109,11 @@ def analyze(
     intermediate = device.create_buffer(
         size=height * width * 32, usage=wgpu.BufferUsage.STORAGE
     )
-    radius = int(numpy.ceil(3 * sigma))
-    offsets = numpy.arange(-radius, radius + 1, dtype=numpy.float64)
-    coefficients = numpy.exp(-0.5 * (offsets / sigma) ** 2)
+    radius = int(np.ceil(3 * sigma))
+    offsets = np.arange(-radius, radius + 1, dtype=np.float64)
+    coefficients = np.exp(-0.5 * (offsets / sigma) ** 2)
     weights = device.create_buffer_with_data(
-        data=(coefficients / coefficients.sum()).astype(numpy.float32),
+        data=(coefficients / coefficients.sum()).astype(np.float32),
         usage=wgpu.BufferUsage.STORAGE,
     )
     output = device.create_buffer(

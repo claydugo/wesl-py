@@ -1,13 +1,14 @@
-# ruff: noqa: D100, INP001
-
 import ast
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 with tempfile.TemporaryDirectory() as directory:
-    subprocess.run(  # noqa: S603
-        [  # noqa: S607
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
             "maturin",
             "generate-stubs",
             "--locked",

@@ -30,7 +30,7 @@ def test_compile_source_returns_emitted_names_and_dependencies() -> None:
     assert result.entry_points == ("package_main_main",)
     assert "fn package_main_main(" in result.wgsl
     assert str(result) == result.wgsl
-    assert pickle.loads(pickle.dumps(result)) == result  # noqa: S301
+    assert pickle.loads(pickle.dumps(result)) == result
     with pytest.raises(AttributeError):
         result.wgsl = "changed"
 

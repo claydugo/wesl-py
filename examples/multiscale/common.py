@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import imageio.v3 as imageio
-import numpy
+import numpy as np
 import pygfx
 import wesl
 import wgpu
@@ -9,21 +9,21 @@ from pygfx.renderers.wgpu import get_shared
 from pygfx.utils.compute import ComputeShader
 
 
-def load_colony() -> tuple[numpy.ndarray, numpy.ndarray, list[str]]:
+def load_colony() -> tuple[np.ndarray, np.ndarray, list[str]]:
     with imageio.imopen(
         "imageio:bacterial_colony.tif", "r", plugin="tifffile"
     ) as image_file:
         channels = image_file.read(index=0)
         metadata = image_file.metadata()
-    colors = numpy.ones((3, 256, 4), dtype=numpy.float32)
-    colors[:, :, :3] = numpy.asarray(metadata["LUTs"]).transpose(0, 2, 1) / 255
-    return channels.astype(numpy.float32) / 255, colors, metadata["Labels"]
+    colors = np.ones((3, 256, 4), dtype=np.float32)
+    colors[:, :, :3] = np.asarray(metadata["LUTs"]).transpose(0, 2, 1) / 255
+    return channels.astype(np.float32) / 255, colors, metadata["Labels"]
 
 
 def composite(
     channels: wgpu.GPUBuffer,
-    colors: numpy.ndarray,
-    weights: numpy.ndarray,
+    colors: np.ndarray,
+    weights: np.ndarray,
     dimensions: tuple[int, int],
 ) -> tuple[pygfx.Texture, ComputeShader, wgpu.GPUBuffer]:
     device = get_shared().device

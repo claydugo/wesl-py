@@ -108,17 +108,22 @@ def compile(
     dependencies: Dependencies | Mapping[str, str | os.PathLike[str]] | None = None,
 ) -> CompileResult:
     if not isinstance(modules, Mapping):
-        raise TypeError("modules must be a mapping")
+        message = "modules must be a mapping"
+        raise TypeError(message)
     if filenames is not None and not isinstance(filenames, Mapping):
-        raise TypeError("filenames must be a mapping or None")
+        message = "filenames must be a mapping or None"
+        raise TypeError(message)
     if dependencies is not None and not isinstance(
         dependencies, (Dependencies, Mapping)
     ):
-        raise TypeError("dependencies must be Dependencies, a mapping, or None")
+        message = "dependencies must be Dependencies, a mapping, or None"
+        raise TypeError(message)
     if options is not None and not isinstance(options, CompileOptions):
-        raise TypeError("options must be CompileOptions or None")
+        message = "options must be CompileOptions or None"
+        raise TypeError(message)
     if options is not None and not isinstance(options.mangler, ManglerKind):
-        raise TypeError("mangler must be ManglerKind")
+        message = "mangler must be ManglerKind"
+        raise TypeError(message)
     if constant_modules is not None:
         modules = add_constant_modules(modules, constant_modules)
     options = CompileOptions() if options is None else options
@@ -175,13 +180,16 @@ def compile_source(
     dependencies: Dependencies | Mapping[str, str | os.PathLike[str]] | None = None,
 ) -> CompileResult:
     if modules is not None and not isinstance(modules, Mapping):
-        raise TypeError("modules must be a mapping or None")
+        message = "modules must be a mapping or None"
+        raise TypeError(message)
     copied_modules = {} if modules is None else dict(modules)
     if root in copied_modules:
-        raise ValueError("root module is already present in modules")
+        message = "root module is already present in modules"
+        raise ValueError(message)
     copied_modules[root] = source
     if filenames is not None and not isinstance(filenames, Mapping):
-        raise TypeError("filenames must be a mapping or None")
+        message = "filenames must be a mapping or None"
+        raise TypeError(message)
     copied_filenames = {} if filenames is None else dict(filenames)
     copied_filenames[root] = filename
     return compile(
@@ -247,7 +255,7 @@ class Compiler:
     )
 
     @classmethod
-    def from_project(  # noqa: D102
+    def from_project(
         cls,
         directory: str | os.PathLike[str],
         *,
@@ -259,7 +267,8 @@ class Compiler:
     ) -> Self:
         project = load_project(Path(directory))
         if project is None:
-            raise FileNotFoundError("no wesl.toml found")
+            message = "no wesl.toml found"
+            raise FileNotFoundError(message)
         return cls(
             options=CompileOptions() if options is None else options,
             modules={} if modules is None else modules,
@@ -270,7 +279,7 @@ class Compiler:
             dependencies=project.load_dependencies(dependencies),
         )
 
-    def compile_source(  # noqa: D102
+    def compile_source(
         self,
         source: str,
         *,
@@ -298,7 +307,7 @@ class Compiler:
             dependencies=self.dependencies,
         )
 
-    def compile_file(  # noqa: D102
+    def compile_file(
         self,
         filename: str | os.PathLike[str],
         *,

@@ -23,8 +23,8 @@ def wesl_resources(
     wesl_constants: dict[str, float],
     wesl_device: wgpu.GPUDevice,
 ) -> Iterator[dict[int, list[dict[str, Any]]]]:
-    import numpy as np  # noqa: PLC0415
-    import wgpu  # noqa: PLC0415
+    import numpy as np
+    import wgpu
 
     values = np.array([-0.25, 0.0, 0.25, 0.75, 1.0], dtype=np.float32)
     expected = values * 2

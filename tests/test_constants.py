@@ -191,16 +191,16 @@ def test_constant_modules_follow_dependency_scopes() -> None:
 
 
 def test_constant_modules_normalize_numpy_scalars() -> None:
-    numpy = pytest.importorskip("numpy")
+    np = pytest.importorskip("numpy")
     result = wesl.compile_source(
         "fn main() { let value = package::config::signed; }",
         constant_modules={
             "package::config": {
-                "signed": numpy.int64(-1),
-                "unsigned": numpy.uint64(2**32 - 1),
-                "half": numpy.float16(0.5),
-                "single": numpy.float32(0.1),
-                "double": numpy.float64(1.0),
+                "signed": np.int64(-1),
+                "unsigned": np.uint64(2**32 - 1),
+                "half": np.float16(0.5),
+                "single": np.float32(0.1),
+                "double": np.float64(1.0),
             },
         },
         keep=["main"],
@@ -215,10 +215,10 @@ def test_constant_modules_normalize_numpy_scalars() -> None:
 
 
 def test_constant_modules_reject_lossy_numpy_conversion() -> None:
-    numpy = pytest.importorskip("numpy")
-    if numpy.finfo(numpy.longdouble).nmant <= numpy.finfo(float).nmant:
+    np = pytest.importorskip("numpy")
+    if np.finfo(np.longdouble).nmant <= np.finfo(float).nmant:
         pytest.skip("longdouble has no additional precision")
     with pytest.raises(ValueError, match=r"package::config::value.*loses precision"):
         wesl.compile_source(
-            "", constant_modules={"package::config": {"value": numpy.longdouble("0.1")}}
+            "", constant_modules={"package::config": {"value": np.longdouble("0.1")}}
         )

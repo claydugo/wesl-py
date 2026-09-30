@@ -1,5 +1,3 @@
-# ruff: noqa: PLR2004
-
 import logging
 from importlib import import_module
 from pathlib import Path
@@ -7,7 +5,7 @@ from pathlib import Path
 import pytest
 import wesl
 
-numpy = pytest.importorskip("numpy")
+np = pytest.importorskip("numpy")
 wgpu = pytest.importorskip("wgpu")
 pytest.importorskip("imgui_bundle")
 RenderCanvas = import_module("rendercanvas.offscreen").RenderCanvas
@@ -20,16 +18,16 @@ get_default_device = import_module("wgpu.utils").get_default_device
 def test_particle_collisions(*, cutout: bool) -> None:
     directory = Path(__file__).parents[2] / "examples"
     device = get_default_device()
-    parameters = numpy.zeros((7, 4), dtype=numpy.float32)
+    parameters = np.zeros((7, 4), dtype=np.float32)
     parameters[0] = (640, 480, 1, 1 / 60)
     parameters[1] = (0.35, 0.48, 0.7, 0)
     parameters[6] = (0.55, 5, 0, 0)
-    particles = numpy.array(
+    particles = np.array(
         [
             [2, -1.24, 0, 5, 0, -1, 0, 0.035],
             [0, 2.12, 0, 5, 0, -1, 0, 0.035],
         ],
-        dtype=numpy.float32,
+        dtype=np.float32,
     )
     module = device.create_shader_module(
         code=wesl.compile_file(
@@ -67,9 +65,9 @@ def test_particle_collisions(*, cutout: bool) -> None:
     compute_pass.dispatch_workgroups(1)
     compute_pass.end()
     device.queue.submit([encoder.finish()])
-    result = numpy.frombuffer(device.queue.read_buffer(output), dtype=numpy.float32)
+    result = np.frombuffer(device.queue.read_buffer(output), dtype=np.float32)
     result = result.reshape(2, 8)
-    assert numpy.isfinite(result).all()
+    assert np.isfinite(result).all()
     assert result[0, 1] >= -1.215001
     assert result[0, 5] > 0
     if cutout:
@@ -86,27 +84,27 @@ def test_sdf_viewer(caplog: pytest.LogCaptureFixture) -> None:
     viewer = Viewer(canvas)
     try:
         viewer.paused = True
-        original = numpy.asarray(canvas.draw()).copy()
+        original = np.asarray(canvas.draw()).copy()
         viewer.cutout = False
-        filled = numpy.asarray(canvas.draw()).copy()
-        assert numpy.count_nonzero(original[:, 320:, :3] != filled[:, 320:, :3]) > 100
+        filled = np.asarray(canvas.draw()).copy()
+        assert np.count_nonzero(original[:, 320:, :3] != filled[:, 320:, :3]) > 100
         viewer.paused = False
         viewer.previous_time -= 1 / 60
         canvas.draw()
-        moving = numpy.frombuffer(
+        moving = np.frombuffer(
             viewer.renderer.device.queue.read_buffer(viewer.renderer.particles),
-            dtype=numpy.float32,
+            dtype=np.float32,
         ).copy()
         viewer.reset = True
         canvas.set_logical_size(1024, 768)
-        resized = numpy.asarray(canvas.draw())
-        reset = numpy.frombuffer(
+        resized = np.asarray(canvas.draw())
+        reset = np.frombuffer(
             viewer.renderer.device.queue.read_buffer(viewer.renderer.particles),
-            dtype=numpy.float32,
+            dtype=np.float32,
         )
         assert resized.shape == (768, 1024, 4)
-        assert numpy.isfinite(reset).all()
-        assert not numpy.array_equal(moving, reset)
+        assert np.isfinite(reset).all()
+        assert not np.array_equal(moving, reset)
         assert not [
             record for record in caplog.records if record.levelno >= logging.ERROR
         ]

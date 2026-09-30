@@ -1,7 +1,7 @@
 from math import isfinite
 from pathlib import Path
 
-import numpy
+import numpy as np
 import wesl
 import wgpu
 from numpy.typing import NDArray
@@ -9,14 +9,14 @@ from numpy.typing import NDArray
 
 def normalize(
     device: wgpu.GPUDevice,
-    values: NDArray[numpy.float32],
-    weights: NDArray[numpy.float32],
+    values: NDArray[np.float32],
+    weights: NDArray[np.float32],
     *,
-    residual: NDArray[numpy.float32] | None = None,
+    residual: NDArray[np.float32] | None = None,
     epsilon: float = 1e-6,
-) -> NDArray[numpy.float32]:
+) -> NDArray[np.float32]:
     if (
-        values.ndim != 2  # noqa: PLR2004
+        values.ndim != 2
         or weights.ndim != 1
         or values.size == 0
         or values.shape[1] != weights.size
@@ -52,7 +52,7 @@ def normalize(
         for binding, data in ((0, values), (1, residual), (2, weights)):
             if data is not None:
                 buffer = device.create_buffer_with_data(
-                    data=numpy.ascontiguousarray(data, dtype=numpy.float32),
+                    data=np.ascontiguousarray(data, dtype=np.float32),
                     usage=wgpu.BufferUsage.STORAGE,
                 )
                 buffers.append(buffer)
@@ -73,8 +73,8 @@ def normalize(
         compute_pass.dispatch_workgroups(values.shape[0])
         compute_pass.end()
         device.queue.submit([encoder.finish()])
-        return numpy.frombuffer(
-            device.queue.read_buffer(output), dtype=numpy.float32
+        return np.frombuffer(
+            device.queue.read_buffer(output), dtype=np.float32
         ).reshape(values.shape)
     finally:
         for buffer in buffers:

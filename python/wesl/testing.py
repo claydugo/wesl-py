@@ -91,7 +91,8 @@ def run_test(
 ) -> None:
     __tracebackhide__ = True
     if options is not None and not isinstance(options, TestOptions):
-        raise TypeError("options must be TestOptions or None")
+        message = "options must be TestOptions or None"
+        raise TypeError(message)
     groups = (
         {}
         if resources is None
@@ -103,7 +104,8 @@ def run_test(
         if any(
             group < 0 or group >= device.limits["max-bind-groups"] for group in layouts
         ):
-            raise ValueError("layout group index is outside the device's limits")
+            message = "layout group index is outside the device's limits"
+            raise ValueError(message)
         bindings.update(entry["binding"] for entry in layouts.get(0, []))
     result_binding = 0
     while result_binding in bindings:
@@ -134,7 +136,8 @@ def run_test(
         dict(dependencies.aliases) if isinstance(dependencies, Dependencies) else None,
     )
     if compiled is None:
-        raise ShaderTestDisabledError("WESL conditions disable this test")
+        message = "WESL conditions disable this test"
+        raise ShaderTestDisabledError(message)
     shader, entry_point, sites, overrides, result_layout = compiled
     result_buffer = device.create_buffer(
         size=result_layout.buffer_size,
@@ -194,7 +197,8 @@ def run_test(
         data = cast("memoryview", device.queue.read_buffer(result_buffer))
         result = result_layout.decode(data)
         if result.invocations < 1 or result.completed != result.invocations:
-            raise RuntimeError("shader test did not complete")
+            message = "shader test did not complete"
+            raise RuntimeError(message)
         if result.passed == 0:
             actual, expected = result.values
             raise ShaderAssertionError(

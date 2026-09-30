@@ -6,7 +6,7 @@ import wesl
 if TYPE_CHECKING:
     from pytest_regressions.ndarrays_regression import NDArraysRegressionFixture
 
-numpy = pytest.importorskip("numpy")
+np = pytest.importorskip("numpy")
 wgpu = pytest.importorskip("wgpu")
 pytest.importorskip("pytest_regressions")
 
@@ -55,13 +55,13 @@ def test_gradient(
         render_pass.draw(3)
         render_pass.end()
         wesl_device.queue.submit([encoder.finish()])
-        pixels = numpy.frombuffer(
+        pixels = np.frombuffer(
             wesl_device.queue.read_texture(
                 {"texture": target},
                 {"bytes_per_row": 128},
                 target.size,
             ),
-            dtype=numpy.float32,
+            dtype=np.float32,
         ).reshape(4, 8, 4)
         ndarrays_regression.check(
             {"pixels": pixels},

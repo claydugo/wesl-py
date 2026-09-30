@@ -15,7 +15,7 @@ def test_resource_loader_rejects_directory_cycles(tmp_path: Path) -> None:
     (tmp_path / "main.wesl").write_text("fn main() {}")
     (tmp_path / "first").symlink_to(tmp_path, target_is_directory=True)
     (tmp_path / "second").symlink_to(tmp_path, target_is_directory=True)
-    result = subprocess.run(  # noqa: S603
+    result = subprocess.run(
         [
             sys.executable,
             "-c",

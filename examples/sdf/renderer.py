@@ -1,9 +1,7 @@
-# ruff: noqa: D101, D102
-
 from pathlib import Path
 from typing import cast
 
-import numpy
+import numpy as np
 import wesl
 import wgpu
 from rendercanvas import BaseRenderCanvas
@@ -25,7 +23,7 @@ def create_shader(
 
 
 class Renderer:
-    def __init__(self, canvas: BaseRenderCanvas, parameters: numpy.ndarray) -> None:
+    def __init__(self, canvas: BaseRenderCanvas, parameters: np.ndarray) -> None:
         self.canvas = canvas
         self.device = get_default_device()
         self.context = canvas.get_wgpu_context()
@@ -105,7 +103,7 @@ class Renderer:
         )
         self.depth_texture = None
 
-    def draw(self, parameters: numpy.ndarray, *, cutout: bool) -> None:
+    def draw(self, parameters: np.ndarray, *, cutout: bool) -> None:
         width, height = self.canvas.get_physical_size()
         self.device.queue.write_buffer(self.uniforms, 0, parameters)
         if self.depth_texture is None or self.depth_texture.size[:2] != (width, height):

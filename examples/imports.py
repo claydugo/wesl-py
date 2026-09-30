@@ -25,4 +25,4 @@ with TemporaryDirectory() as temporary_directory:
         """,
         dependencies={"lygia": directory},
     )
-    print(result.wgsl)  # noqa: T201
+    print(result.wgsl)

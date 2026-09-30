@@ -458,4 +458,4 @@ def test_project_dependencies_preserve_original_diagnostics(tmp_path: Path) -> N
     (diagnostic,) = error.value.diagnostics
     assert diagnostic.filename == str(filename)
     assert diagnostic.source == source
-    assert diagnostic.line == 2  # noqa: PLR2004
+    assert diagnostic.line == 2

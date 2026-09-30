@@ -1,5 +1,3 @@
-# ruff: noqa: E402, PLR2004
-
 from pathlib import Path
 from struct import pack
 
@@ -339,7 +337,7 @@ def test_assertions_in_control_flow(
     ],
 )
 @pytest.mark.parametrize("lower", [False, True], ids=["original", "lowered"])
-def test_failures_preserve_scalar_and_vector_values(  # noqa: PLR0913
+def test_failures_preserve_scalar_and_vector_values(
     wesl_device: wgpu.GPUDevice,
     wgsl_test: Path,
     parameter_type: str,

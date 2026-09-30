@@ -1,9 +1,7 @@
-# ruff: noqa: D101, D102
-
 import math
 from time import perf_counter
 
-import numpy
+import numpy as np
 from imgui_bundle import imgui
 from rendercanvas import BaseRenderCanvas
 from wgpu.utils.imgui import ImguiRenderer
@@ -14,7 +12,7 @@ from examples.sdf.renderer import Renderer
 class Viewer:
     def __init__(self, canvas: BaseRenderCanvas) -> None:
         self.canvas = canvas
-        self.parameters = numpy.zeros((7, 4), dtype=numpy.float32)
+        self.parameters = np.zeros((7, 4), dtype=np.float32)
         self.parameters[1] = (0.35, 0.48, 0.7, 0.0)
         self.parameters[6] = (0.55, 5.0, 0.0, 0.0)
         self.renderer = Renderer(canvas, self.parameters)
@@ -49,12 +47,12 @@ class Viewer:
                 self.pointer = None
                 return
             self.orbit[0] -= (event["x"] - self.pointer[0]) * 0.008
-            self.orbit[1] = numpy.clip(
+            self.orbit[1] = np.clip(
                 self.orbit[1] + (event["y"] - self.pointer[1]) * 0.008, -0.1, 1.3
             )
             self.pointer = (event["x"], event["y"])
         elif event["event_type"] == "wheel":
-            self.orbit[2] = numpy.clip(
+            self.orbit[2] = np.clip(
                 self.orbit[2] * math.exp(event["dy"] * 0.001), 4.0, 14.0
             )
 
@@ -109,18 +107,18 @@ class Viewer:
             return
         self.parameters[0] = (width, height, self.elapsed, delta)
         yaw, pitch, distance = self.orbit
-        forward = -numpy.array(
+        forward = -np.array(
             [
                 math.sin(yaw) * math.cos(pitch),
                 math.sin(pitch),
                 math.cos(yaw) * math.cos(pitch),
             ]
         )
-        right = numpy.cross(forward, [0, 1, 0])
-        right /= numpy.linalg.norm(right)
-        self.parameters[2, :3] = numpy.array([0, 0.8, 0]) - forward * distance
+        right = np.cross(forward, [0, 1, 0])
+        right /= np.linalg.norm(right)
+        self.parameters[2, :3] = np.array([0, 0.8, 0]) - forward * distance
         self.parameters[3, :3] = right
-        self.parameters[4, :3] = numpy.cross(right, forward)
+        self.parameters[4, :3] = np.cross(right, forward)
         self.parameters[5, :3] = forward
         self.parameters[6, 2] = self.reset
         self.reset = False

@@ -478,7 +478,7 @@ def test_collection_hook_state(pytester: pytest.Pytester) -> None:
         "junit_family=xunit1",
     )
     result.assert_outcomes(skipped=1)
-    report = ET.parse(pytester.path / "results.xml")  # noqa: S314
+    report = ET.parse(pytester.path / "results.xml")
     case = report.find(".//testcase")
     assert case is not None
     assert case.attrib["file"] == "state.test.wesl"

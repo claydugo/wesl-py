@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from typing import Any
 
     import wgpu
+    from _pytest._code.code import TerminalRepr
 
     from . import Feature
     from ._project import Project
@@ -103,14 +104,13 @@ class WeslModule(pytest.Module):
                 __tracebackhide__ = True
                 from .testing import ShaderTestDisabledError, run_test
 
-                root_directory = Path(abspath(wesl_root_directory))  # noqa: PTH100
+                root_directory = Path(abspath(wesl_root_directory))
                 relative = shader_path.relative_to(root_directory)
                 parts = (*relative.parts[:-1], relative.stem.replace(".", "_"))
                 root = module_name(parts, namespace="package")
                 if root in wesl_modules:
-                    raise ValueError(
-                        "the test module is already present in wesl_modules"
-                    )
+                    message = "the test module is already present in wesl_modules"
+                    raise ValueError(message)
                 try:
                     run_test(
                         wesl_device,
@@ -162,7 +162,9 @@ class WeslTest:
     def reportinfo(self) -> tuple[Path, int, str]:
         return self.item.path, self.module.locations[self.name], self.item.name
 
-    def repr_failure(self, excinfo: pytest.ExceptionInfo[BaseException]):  # noqa: ANN201
+    def repr_failure(
+        self, excinfo: pytest.ExceptionInfo[BaseException]
+    ) -> str | TerminalRepr:
         style = self.item.config.getoption("tbstyle")
         if (
             style == "native"
@@ -316,7 +318,7 @@ def wesl_root_directory(
     _wesl_project: Project | None,
 ) -> Path:
     if directory := pytestconfig.getini("wesl_root"):
-        return Path(abspath(pytestconfig.rootpath / directory))  # noqa: PTH100
+        return Path(abspath(pytestconfig.rootpath / directory))
     return (
         request.node.path.parent
         if _wesl_project is None

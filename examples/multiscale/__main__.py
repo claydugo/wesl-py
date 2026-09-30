@@ -2,7 +2,7 @@ import argparse
 from pathlib import Path
 
 import imageio.v3 as imageio
-import numpy
+import numpy as np
 from rendercanvas.offscreen import RenderCanvas as OffscreenRenderCanvas
 
 from examples.multiscale.common import load_colony
@@ -32,6 +32,6 @@ viewer.settings.update(
 if isinstance(canvas, OffscreenRenderCanvas):
     for _ in range(3):
         frame = canvas.draw()
-    imageio.imwrite(arguments.screenshot, numpy.asarray(frame))
+    imageio.imwrite(arguments.screenshot, np.asarray(frame))
 else:
     loop.run()

@@ -16,7 +16,7 @@ types_or = ["python", "pyi", "jupyter", "markdown"]
 id = "ruff"
 name = "Ruff"
 language = "system"
-entry = "pixi run --locked -e lint ruff check --force-exclude"
+entry = "pixi run --locked -e lint ruff check --ignore-noqa --force-exclude"
 types_or = ["python", "pyi", "jupyter", "markdown"]
 
 [[repos.hooks]]

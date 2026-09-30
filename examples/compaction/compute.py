@@ -1,23 +1,24 @@
+from contextlib import ExitStack
 from pathlib import Path
 
-import numpy
+import numpy as np
 import wesl
 import wgpu
 from numpy.typing import NDArray
 
 
-def compact(  # noqa: C901
+def compact(
     device: wgpu.GPUDevice,
-    values: NDArray[numpy.uint32],
+    values: NDArray[np.uint32],
     *,
     threshold: int = 500,
     keep_below: bool = False,
-) -> NDArray[numpy.uint32]:
-    if values.ndim != 1 or values.dtype != numpy.uint32:
+) -> NDArray[np.uint32]:
+    if values.ndim != 1 or values.dtype != np.uint32:
         message = "values must be a one-dimensional uint32 array"
         raise ValueError(message)
     if values.size == 0:
-        return numpy.empty(0, dtype=numpy.uint32)
+        return np.empty(0, dtype=np.uint32)
     directory = Path(__file__).parent
     pipelines = {}
     for name, filename, select_values, constants in (
@@ -44,7 +45,6 @@ def compact(  # noqa: C901
                 "constants": constants,
             },
         )
-    buffers = []
 
     def allocate(size: int) -> wgpu.GPUBuffer:
         buffer = device.create_buffer(
@@ -53,7 +53,7 @@ def compact(  # noqa: C901
             | wgpu.BufferUsage.COPY_SRC
             | wgpu.BufferUsage.COPY_DST,
         )
-        buffers.append(buffer)
+        stack.callback(buffer.destroy)
         return buffer
 
     encoder = device.create_command_encoder()
@@ -73,9 +73,9 @@ def compact(  # noqa: C901
         compute_pass.dispatch_workgroups(count)
         compute_pass.end()
 
-    try:
+    with ExitStack() as stack:
         source = allocate(len(values) * 4)
-        device.queue.write_buffer(source, 0, numpy.ascontiguousarray(values))
+        device.queue.write_buffer(source, 0, np.ascontiguousarray(values))
         levels = []
         current = source
         count = len(values)
@@ -104,11 +104,8 @@ def compact(  # noqa: C901
         device.queue.submit([encoder.finish()])
         selected_count = device.queue.read_buffer(totals).cast("I")[0]
         if not selected_count:
-            return numpy.empty(0, dtype=numpy.uint32)
-        return numpy.frombuffer(
+            return np.empty(0, dtype=np.uint32)
+        return np.frombuffer(
             device.queue.read_buffer(output, size=selected_count * 4),
-            dtype=numpy.uint32,
+            dtype=np.uint32,
         )
-    finally:
-        for buffer in buffers:
-            buffer.destroy()

@@ -1,5 +1,3 @@
-# ruff: noqa: E402
-
 from pathlib import Path
 from struct import pack, unpack
 

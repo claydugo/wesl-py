@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 wgpu = pytest.importorskip("wgpu")
-from wesl.testing import run_test  # noqa: E402
+from wesl.testing import run_test
 
 
 @pytest.mark.gpu

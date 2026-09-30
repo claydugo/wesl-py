@@ -1,7 +1,7 @@
 import argparse
 from pathlib import Path
 
-import numpy
+import numpy as np
 import wesl
 import wgpu
 
@@ -20,18 +20,16 @@ def main() -> None:
             and adapter.info["backend_type"] == "Vulkan"
         )
     device = adapter.request_device_sync(required_features=["shader-f16"])
-    random = numpy.random.default_rng(18)
-    values = random.uniform(-1, 1, (3, 13, 17)).astype(numpy.float16)
-    weights = random.uniform(-1, 1, (7, 3)).astype(numpy.float16)
-    biases = random.uniform(-0.1, 0.1, 7).astype(numpy.float16)
-    products = (weights[:, :, None, None] * values[None]).astype(numpy.float32)
+    random = np.random.default_rng(18)
+    values = random.uniform(-1, 1, (3, 13, 17)).astype(np.float16)
+    weights = random.uniform(-1, 1, (7, 3)).astype(np.float16)
+    biases = random.uniform(-0.1, 0.1, 7).astype(np.float16)
+    products = (weights[:, :, None, None] * values[None]).astype(np.float32)
     convolution = (
-        products.cumsum(axis=1)[:, -1].astype(numpy.float16) + biases[:, None, None]
+        products.cumsum(axis=1)[:, -1].astype(np.float16) + biases[:, None, None]
     )
-    padded = numpy.pad(
-        convolution, ((0, 0), (1, 1), (1, 1)), constant_values=-numpy.inf
-    )
-    pooling = numpy.lib.stride_tricks.sliding_window_view(padded, (3, 3), axis=(1, 2))[
+    padded = np.pad(convolution, ((0, 0), (1, 1), (1, 1)), constant_values=-np.inf)
+    pooling = np.lib.stride_tricks.sliding_window_view(padded, (3, 3), axis=(1, 2))[
         :, ::2, ::2
     ].max(axis=(-1, -2))
     buffers = []
@@ -97,11 +95,11 @@ def main() -> None:
         compute.end()
     device.queue.submit([encoder.finish()])
     for buffer, expected in [(buffers[3], convolution), (buffers[4], pooling)]:
-        actual = numpy.frombuffer(device.queue.read_buffer(buffer), numpy.float16)[
+        actual = np.frombuffer(device.queue.read_buffer(buffer), np.float16)[
             : expected.size
         ].reshape(expected.shape)
-        numpy.testing.assert_allclose(actual, expected, rtol=0.002, atol=0.0005)
-    print(f"Convolution and pooling passed on {adapter.info['device']}")  # noqa: T201
+        np.testing.assert_allclose(actual, expected, rtol=0.002, atol=0.0005)
+    print(f"Convolution and pooling passed on {adapter.info['device']}")
     for buffer in buffers:
         buffer.destroy()
     device.destroy()

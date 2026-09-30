@@ -16,28 +16,30 @@ def _normalize_constant(
         try:
             integer = operator.index(value)
         except TypeError as error:
-            raise TypeError(f"{module}::{name}: expected an integer") from error
+            message = f"{module}::{name}: expected an integer"
+            raise TypeError(message) from error
         if not -(2**63) <= integer < 2**63:
-            raise ValueError(
-                f"{module}::{name}: integer is outside the signed 64-bit range"
-            )
+            message = f"{module}::{name}: integer is outside the signed 64-bit range"
+            raise ValueError(message)
         return integer
     if isinstance(value, (float, Real)):
         try:
             number = float(value)
         except OverflowError as error:
-            raise ValueError(
-                f"{module}::{name}: value is outside the finite float range"
-            ) from error
+            message = f"{module}::{name}: value is outside the finite float range"
+            raise ValueError(message) from error
         if not math.isfinite(number):
-            raise ValueError(f"{module}::{name}: value must be finite")
+            message = f"{module}::{name}: value must be finite"
+            raise ValueError(message)
         if number != value:
-            raise ValueError(f"{module}::{name}: conversion to float loses precision")
+            message = f"{module}::{name}: conversion to float loses precision"
+            raise ValueError(message)
         return number
-    raise TypeError(
+    message = (
         f"{module}::{name}: expected bool, int, or real scalar;"
         f" got {type(value).__name__}"
     )
+    raise TypeError(message)
 
 
 def add_constant_modules(
@@ -45,21 +47,24 @@ def add_constant_modules(
     constant_modules: Mapping[str, Mapping[str, SupportsFloat]],
 ) -> dict[str, str]:
     if not isinstance(constant_modules, Mapping):
-        raise TypeError("constant_modules must be a mapping or None")
+        message = "constant_modules must be a mapping or None"
+        raise TypeError(message)
     modules = dict(modules)
     for module, constants in constant_modules.items():
         if not isinstance(module, str):
-            raise TypeError("constant module names must be strings")
+            message = "constant module names must be strings"
+            raise TypeError(message)
         if module in modules:
-            raise ValueError(
-                f"{module!r} is present in both modules and constant_modules"
-            )
+            message = f"{module!r} is present in both modules and constant_modules"
+            raise ValueError(message)
         if not isinstance(constants, Mapping):
-            raise TypeError(f"{module!r}: constants must be a mapping")
+            message = f"{module!r}: constants must be a mapping"
+            raise TypeError(message)
         normalized = {}
         for name, value in constants.items():
             if not isinstance(name, str):
-                raise TypeError(f"{module!r}: constant names must be strings")
+                message = f"{module!r}: constant names must be strings"
+                raise TypeError(message)
             normalized[name] = _normalize_constant(value, module=module, name=name)
         modules[module] = constant_module(module, normalized)
     return modules

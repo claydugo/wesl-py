@@ -27,7 +27,8 @@ def load_modules(
         parts, resource, ancestors = directories.pop()
         resolved = resource.resolve() if isinstance(resource, Path) else None
         if resolved is not None and resolved in ancestors:
-            raise ValueError("resource directory contains a cycle")
+            message = "resource directory contains a cycle"
+            raise ValueError(message)
         ancestors = ancestors | {resolved} if resolved is not None else ancestors
         for child in sorted(resource.iterdir(), key=lambda child: child.name):
             if child.is_dir():
@@ -44,7 +45,8 @@ def load_modules(
             if previous is not None and (
                 module_path != previous[0] or filename.suffix == previous[1]
             ):
-                raise ValueError(f"duplicate module: {name}")
+                message = f"duplicate module: {name}"
+                raise ValueError(message)
             if previous is None or filename.suffix == ".wesl":
                 selected[name] = (module_path, filename.suffix, child)
     modules = {}

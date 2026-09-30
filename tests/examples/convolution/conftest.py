@@ -18,9 +18,9 @@ def assert_operator(
 ) -> Callable[..., None]:
     np = pytest.importorskip("numpy")
     wgpu = pytest.importorskip("wgpu")
-    from wesl.testing import run_test  # noqa: PLC0415
+    from wesl.testing import run_test
 
-    def check(  # noqa: PLR0913
+    def check(
         *,
         operation: str,
         entry_point: str,
