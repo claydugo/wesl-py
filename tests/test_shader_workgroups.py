@@ -39,9 +39,8 @@ def test_cooperative_barriers_and_builtin_parameters(
     )
 
 
-@pytest.mark.parametrize("lower", [False, True], ids=["original", "lowered"])
 def test_cooperative_parameters_do_not_shadow_globals(
-    wesl_device: wgpu.GPUDevice, *, lower: bool
+    wesl_device: wgpu.GPUDevice,
 ) -> None:
     run_test(
         wesl_device,
@@ -59,14 +58,11 @@ def test_cooperative_parameters_do_not_shadow_globals(
         """
         },
         "selected",
-        options=wesl.TestOptions(visibility=True, lower=lower),
+        options=wesl.TestOptions(visibility=True),
     )
 
 
-@pytest.mark.parametrize("lower", [False, True], ids=["original", "lowered"])
-def test_cooperative_qualified_workgroup_size(
-    wesl_device: wgpu.GPUDevice, *, lower: bool
-) -> None:
+def test_cooperative_qualified_workgroup_size(wesl_device: wgpu.GPUDevice) -> None:
     run_test(
         wesl_device,
         {
@@ -85,7 +81,6 @@ def test_cooperative_qualified_workgroup_size(
         "selected",
         options=wesl.TestOptions(
             visibility=True,
-            lower=lower,
             features=wesl.Features(flags={"enabled": True}),
         ),
     )

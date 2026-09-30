@@ -200,16 +200,13 @@ def test_external_visibility_is_optional(modifier: str) -> None:
             wesl.compile(modules, options=options)
 
 
-def test_lowering_inlines_aliases_and_constants() -> None:
-    result = wesl.compile_source(
-        "alias Number = u32; const amount = 3u; "
-        "fn value() -> Number { return amount; }",
-        options=wesl.CompileOptions(lower=True, keep=["value"]),
-    )
-    assert "alias " not in result.wgsl
-    assert "const " not in result.wgsl
-    assert "-> u32" in result.wgsl
-    assert "return 3u;" in result.wgsl
+def test_lowering_is_not_implemented() -> None:
+    with pytest.raises(NotImplementedError, match="lowering is not supported"):
+        wesl.compile_source(
+            "alias Number = u32; const amount = 3u; "
+            "fn value() -> Number { return amount; }",
+            options=wesl.CompileOptions(lower=True, keep=["value"]),
+        )
 
 
 @pytest.mark.parametrize(

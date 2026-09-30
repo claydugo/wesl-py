@@ -8,19 +8,16 @@ The reproductions use upstream APIs without the binding's compiler adapter.
 
 ## Next actions
 
-Ten defects warrant new reports: nine in wesl-rs and one in wgsl-test.
+Eight defects warrant new reports: seven in wesl-rs and one in wgsl-test.
 The getter annotation request already has a PyO3 pull request.
-Prioritize the lost initializer because it changes execution of valid input.
 
 These reports do not all block publication.
-Both wesl-rs and this binding disable lowering by default.
-The lowering defects affect callers that enable it.
+This binding does not support lowering.
+Both option classes raise `NotImplementedError` when callers request it.
 See the [release checklist](../RELEASE_CHECKLIST.md) for publication requirements.
 
 | Item | Current binding behavior | Upstream action |
 | --- | --- | --- |
-| [Lost for initializer](#lowering-drops-side-effects-in-a-for-initializer) | Lowering changes ordinary shader behavior; tests have a partial workaround | Preserve the initializer and its scope |
-| [Invalid bitcast alignment](#lowering-panics-on-an-invalid-bitcast-with-zero-alignment) | Ordinary lowering raises `PanicException`; custom result checks reject zero alignment | Reject nonnumeric bitcast operands before computing their size |
 | [Disabled visibility](#compiler-driver-integration) | The adapter honors the option | Apply the visibility option during usage analysis |
 | [Disabled imports](#compiler-driver-integration) | The adapter honors the option | Restore the documented behavior of the imports option |
 | [Qualified references](#compiler-driver-integration) | The adapter avoids a false cycle | Keep qualified references separate from local declarations |
@@ -45,84 +42,6 @@ features = ["eval"]
 ```
 
 Each Rust example is a separate `src/main.rs`, except the PyO3 example.
-
-## Lowering drops side effects in a for initializer
-
-Source: [eval/lower.rs](https://github.com/webgpu-tools/wesl-rs/blob/0303eccfafd534cc76c91eddd4b4f5c4413a1733/crates/wesl/src/eval/lower.rs).
-
-When a `for` condition lowers to `false`, lowering replaces the entire statement
-with `Statement::Void`.
-WGSL executes the initializer before it checks the condition.
-This is incorrect execution of valid input. See the [for statement specification](https://www.w3.org/TR/WGSL/#for-statement).
-
-```rust
-use wesl::syntax::{Expression, TranslationUnit};
-
-fn main() {
-    let mut module: TranslationUnit = "
-        var<private> count: u32 = 0u;
-        fn bump() { count += 1u; }
-        fn main() -> u32 {
-            for (bump(); false; ) {}
-            return count;
-        }
-    ".parse().unwrap();
-    wesl::pass::retarget_idents(&mut module);
-    wesl::pass::validate_wesl(&module).unwrap();
-    let expression: Expression = "main()".parse().unwrap();
-    let before = wesl::exec(
-        &expression, &module, Default::default(), Default::default(),
-    ).0.unwrap();
-    wesl::pass::lower(&mut module).unwrap();
-    let after = wesl::exec(
-        &expression, &module, Default::default(), Default::default(),
-    ).0.unwrap();
-    assert_eq!(before, after);
-}
-```
-
-Observed: `before` contains `U32(1)` and `after` contains `U32(0)`.
-Ordinary `wesl.compile` with `CompileOptions(lower=True)` also removes `bump()`.
-Both `CompileOptions.lower` and `TestOptions.lower` default to `False`.
-The compiler adapter does not correct this lowering defect.
-
-In [compile_test](../src/testing.rs), instrumentation moves initializers into
-enclosing blocks before lowering. It skips functions in `wgsl_test` and
-`wgsl_test::TestResult`, so this workaround has limited coverage.
-An overridden `expect` with a failing assertion in a false loop's initializer
-fails with `lower=False` but passes with `lower=True`.
-[test_assertions_in_control_flow](../tests/test_shader_assertions.py) covers initializers
-in test functions with both settings.
-
-Submit a fix that preserves the initializer and its scope.
-Cover a call initializer, a declaration with a side effect, and no initializer.
-Remove the local initializer transformation after adopting that fix and verifying
-assertion instrumentation with the control-flow tests.
-Also verify ordinary compilation and overridden assertion modules without the
-transformation. Both must preserve the initializer's side effects.
-
-## Lowering panics on an invalid bitcast with zero alignment
-
-The standard compiler panics on this source with `lower=true`, `validate=true`,
-and `keep_main=true`:
-
-```wesl
-struct Value { @align(0) member: u32 }
-fn main() -> u32 { return bitcast<u32>(Value(0u)); }
-```
-
-Both the alignment and the bitcast operand are invalid WGSL.
-Compilation must reject the source. Instead, [bitcast type evaluation](https://github.com/webgpu-tools/wesl-rs/blob/0303eccfafd534cc76c91eddd4b4f5c4413a1733/crates/wgsl-types/src/builtin/call_ty.rs)
-computes the operand's size before rejecting its nonnumeric type.
-Layout arithmetic then divides by zero.
-This reproduces through `wesl::compile` with validation enabled.
-It does not require a direct call to the low-level layout API.
-Python `compile_source` with `CompileOptions(lower=True, validate=True)` and
-`keep_main=True` raises `PanicException` instead of `CompileError`.
-
-Reject nonnumeric bitcast operands before computing their size.
-The binding's custom result checks still need to reject zero alignment.
-This narrow bitcast fix does not establish general layout validation.
 
 ## Diagnostic rendering uses different line boundaries
 
@@ -272,7 +191,7 @@ The pin uses upstream 0.5.0 at `0303eccfafd534cc76c91eddd4b4f5c4413a1733`.
 [The adapter](../src/compiler.rs) implements upstream `CompilerDriver`.
 It uses public upstream APIs.
 It calls the upstream parsing, conditional translation, usage analysis, linking,
-mangling, lowering, and validation passes. It records original sources before
+mangling, and validation passes. It records original sources before
 applying the project and test transformations.
 
 The public `CompilerDriver` API supports custom compilation passes.
@@ -383,8 +302,8 @@ assertions would require partial evaluation; it is not an existing API guarantee
 This is a binding integration limit.
 
 Cyclic types are invalid WGSL. The standard compiler rejects the tested cycles
-with validation enabled. Compilation with `lower=true` and `validate=false` can
-abort on them, as can direct low-level evaluation without validation.
+with validation enabled. Direct low-level evaluation without validation can
+abort on them.
 [Issue #157](https://github.com/webgpu-tools/wesl-rs/issues/157) already tracks a
 related crash. Keep the binding's cycle checks for `validate=False`.
 

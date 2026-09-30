@@ -259,10 +259,6 @@ The [release checklist](RELEASE_CHECKLIST.md) describes PyPI setup and publicati
 - Keep the compiler adapter for module transformations. Remove its workarounds
   as upstream resolves the [integration gaps](docs/upstream.md#compiler-driver-integration).
   Check the reproducers and removal criteria when updating the WESL pin.
-- Track the [lost initializer](docs/upstream.md#lowering-drops-side-effects-in-a-for-initializer)
-  when updating WESL. Both option classes default lowering to `False`.
-  Shader tests have a partial workaround. Ordinary compilation remains affected.
-  Verify the upstream fix before removing the local transformation.
 - Review GPU resource and ImGui context cleanup for repeated viewer use.
   The SDF viewer has no explicit teardown. Its particle buffer remains usable
   after the canvas closes while the viewer remains referenced.

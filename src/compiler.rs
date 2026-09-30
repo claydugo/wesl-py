@@ -164,10 +164,7 @@ where
                 pass::mangle(&mut module.syntax, &module.path, &self.mangler);
             }
         }
-        let mut module = pass::link(modules, self.options.strip.then_some(used_items));
-        if self.options.lower {
-            pass::lower(&mut module)?;
-        }
+        let module = pass::link(modules, self.options.strip.then_some(used_items));
         if self.options.validate {
             pass::validate_wgsl(&module)?;
         }

@@ -21,6 +21,14 @@ def compile_shader_test(wgsl_test: Path) -> partial:
     )
 
 
+def test_shader_lowering_is_not_implemented(compile_shader_test: partial) -> None:
+    with pytest.raises(NotImplementedError, match="lowering is not supported"):
+        compile_shader_test(
+            {"package::main": "@test fn selected() {}"},
+            options=wesl.TestOptions(lower=True),
+        )
+
+
 def test_shader_test_error_preserves_source_context(
     compile_shader_test: partial, wgsl_test: Path
 ) -> None:
@@ -166,7 +174,7 @@ def test_shader_assertion_type_cycles_without_validation(
             "wgsl_test::expectCustom(1, 2); }',\n"
             f"         'wgsl_test': {source!r}}},\n"
             "        'package::main', 'selected',\n"
-            "        wesl.TestOptions(validate=False, lower=True),\n"
+            "        wesl.TestOptions(validate=False),\n"
             "        {'wgsl_test': 'assertions.wesl'}, None, 0,\n"
             f"        {{'wgsl_test': {str(wgsl_test)!r}}},\n"
             "    )\n"
@@ -202,7 +210,6 @@ def test_shader_result_rejects_zero_alignment(
                 "package::main": "@test fn selected() { wgsl_test::expect(true); }",
                 "wgsl_test::TestResult": source,
             },
-            options=wesl.TestOptions(lower=True),
             filenames={"wgsl_test::TestResult": "results.wesl"},
         )
     (diagnostic,) = caught.value.diagnostics

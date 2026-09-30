@@ -112,8 +112,7 @@ The remaining `CompileOptions` fields use upstream names:
 - `condcomp=True`: Evaluate conditional translation attributes.
 - `visibility=False`: Ignore visibility restrictions. Set `True` to require
   declarations imported from external packages to be `public`.
-- `lower=False`: Enable upstream lowering when set to `True`. This build evaluates
-  constant expressions, inlines aliases, and removes unreachable code.
+- `lower=False`: Lowering is unsupported. Set `True` to raise `NotImplementedError`.
 - `validate=True`: Run upstream compiler checks.
 - `sourcemap=True`: Record source text and declaration names.
 - `mangler=ManglerKind.Escape`: Select the declaration naming scheme.
@@ -123,9 +122,6 @@ The build enables upstream evaluation. It does not enable generics.
 
 The pinned compiler has these known limitations:
 
-- `lower=True` can remove side effects from a `for` initializer when its condition
-  is always false. Keep lowering disabled for affected shaders.
-  See [the upstream reproducer](upstream.md#lowering-drops-side-effects-in-a-for-initializer).
 - Large expressions can exhaust a small caller stack on Windows.
   See the [10,000-term expression failure](https://github.com/claydugo/wesl-py/actions/runs/35526430139/job/106119676932).
 
@@ -384,7 +380,6 @@ These constants can supply constant expressions, such as `@binding` arguments.
 Use WGSL `override` declarations for values supplied during pipeline creation.
 Use `features` for `@if` conditions. Constant modules do not add numeric conditions
 to `@if`. Use source modules for explicit types, vectors, arrays, or expressions.
-Upstream lowering also applies to generated constants when `lower=True`.
 
 ## Reuse compilation settings
 
@@ -578,5 +573,5 @@ See [LICENSE](../LICENSE) for source provenance and third-party notices.
 
 The binding enables imports, conditional translation, name mangling,
 source diagnostics, and upstream validation by default. It enables evaluation
-and disables generics at build time. Lowering is available through `CompileOptions`.
+and disables generics at build time. Lowering is unsupported.
 Upstream validation does not catch every WGSL error.

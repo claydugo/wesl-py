@@ -527,7 +527,7 @@ Passing `CompileOptions` raises `TypeError`.
 | `features=Features()` | Select conditional declarations and statements. |
 | `strip=True` | Remove the declarations unused by the selected test. |
 | `visibility=False` | Load external shaders without visibility restrictions. |
-| `lower=False` | Keep aliases and constants. Set `True` to lower them. |
+| `lower=False` | Lowering is unsupported. Set `True` to raise `NotImplementedError`. |
 | `validate=True` | Run WESL validation before GPU validation. |
 
 The runner owns import resolution, conditional translation, wrapper retention,
@@ -541,7 +541,7 @@ feature configuration. For example:
 ```python
 @pytest.fixture
 def wesl_test_options(wesl_features):
-    return wesl.TestOptions(lower=True, features=wesl_features)
+    return wesl.TestOptions(strip=False, features=wesl_features)
 ```
 
 Native tests use the shared source fixtures directly.

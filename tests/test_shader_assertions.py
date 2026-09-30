@@ -2,7 +2,6 @@ from pathlib import Path
 from struct import pack
 
 import pytest
-import wesl
 
 wgpu = pytest.importorskip("wgpu")
 from wesl.testing import ShaderAssertionError, run_test
@@ -43,10 +42,7 @@ def test_assertions_pass_in_root_and_imported_functions(
     )
 
 
-@pytest.mark.parametrize("lower", [False, True], ids=["original", "lowered"])
-def test_failure_in_imported_helper(
-    wesl_device: wgpu.GPUDevice, *, lower: bool
-) -> None:
+def test_failure_in_imported_helper(wesl_device: wgpu.GPUDevice) -> None:
     source = (
         "import wgsl_test::expectEq;\nfn verify() {\n"
         "    expectEq(4294967295u, 4294967294u);\n"
@@ -63,7 +59,6 @@ def test_failure_in_imported_helper(
             },
             "failure",
             filenames={"library": "library.wesl"},
-            options=wesl.TestOptions(lower=lower),
         )
     error = captured.value
     assert error.actual == 4294967295
@@ -79,9 +74,8 @@ def test_failure_in_imported_helper(
     assert "2 of 2 assertions failed" in str(error)
 
 
-@pytest.mark.parametrize("lower", [False, True], ids=["original", "lowered"])
 def test_assertion_wrapper_avoids_parameter_collisions(
-    wesl_device: wgpu.GPUDevice, *, lower: bool
+    wesl_device: wgpu.GPUDevice,
 ) -> None:
     source = "@test fn failure() { wgsl_test::expectEq(7u, 9u); }"
     with pytest.raises(ShaderAssertionError) as captured:
@@ -100,7 +94,6 @@ def test_assertion_wrapper_avoids_parameter_collisions(
                 """,
             },
             "failure",
-            options=wesl.TestOptions(lower=lower),
         )
     assert captured.value.actual == 7
     assert captured.value.expected == 9
@@ -110,18 +103,16 @@ def test_assertion_wrapper_avoids_parameter_collisions(
 
 
 @pytest.mark.parametrize(
-    ("lower", "cooperative"),
+    "cooperative",
     [
-        pytest.param(False, False, id="single-invocation"),
-        pytest.param(False, True, id="workgroup"),
-        pytest.param(True, True, id="lowered-workgroup"),
+        pytest.param(False, id="single-invocation"),
+        pytest.param(True, id="workgroup"),
     ],
 )
 def test_result_instrumentation_preserves_layout_and_binding(
     wesl_device: wgpu.GPUDevice,
     wgsl_test: Path,
     *,
-    lower: bool,
     cooperative: bool,
 ) -> None:
     result_source = (wgsl_test / "TestResult.wesl").read_text(encoding="utf-8")
@@ -152,7 +143,6 @@ def test_result_instrumentation_preserves_layout_and_binding(
                     "wgsl_test::TestResult": result_source,
                 },
                 "failure",
-                options=wesl.TestOptions(lower=lower),
                 resources={0: [{"binding": 0, "resource": {"buffer": buffer}}]},
             )
         assert captured.value.actual == 7
@@ -196,7 +186,6 @@ def test_failure_recording_preserves_control_flow(
                 """,
             },
             "failure",
-            options=wesl.TestOptions(lower=True),
         )
     assert captured.value.actual == 4294967295
     assert captured.value.expected == 4294967294
@@ -204,7 +193,6 @@ def test_failure_recording_preserves_control_flow(
     assert captured.value.checks == 2
 
 
-@pytest.mark.parametrize("lower", [False, True], ids=["original", "lowered"])
 @pytest.mark.parametrize(
     ("statement", "checks", "failures"),
     [
@@ -248,8 +236,6 @@ def test_assertions_in_control_flow(
     statement: str,
     checks: int,
     failures: int,
-    *,
-    lower: bool,
 ) -> None:
     source = (
         "import wgsl_test::expectEq;\n"
@@ -265,7 +251,6 @@ def test_assertions_in_control_flow(
             {"package::main": source},
             "loops",
             filenames={"package::main": "control_flow.wesl"},
-            options=wesl.TestOptions(lower=lower),
         )
     error = captured.value
     assert error.checks == checks
@@ -336,7 +321,6 @@ def test_assertions_in_control_flow(
         ),
     ],
 )
-@pytest.mark.parametrize("lower", [False, True], ids=["original", "lowered"])
 def test_failures_preserve_scalar_and_vector_values(
     wesl_device: wgpu.GPUDevice,
     wgsl_test: Path,
@@ -346,7 +330,6 @@ def test_failures_preserve_scalar_and_vector_values(
     *,
     actual: bool | float | tuple[float, ...],
     expected: bool | float | tuple[float, ...],
-    lower: bool,
 ) -> None:
     source = (wgsl_test / "package.wesl").read_text(encoding="utf-8")
     with pytest.raises(ShaderAssertionError) as captured:
@@ -367,7 +350,6 @@ def test_failures_preserve_scalar_and_vector_values(
                 ),
             },
             "failure",
-            options=wesl.TestOptions(lower=lower),
         )
     assert captured.value.actual == actual
     assert captured.value.expected == expected

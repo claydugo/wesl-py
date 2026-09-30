@@ -5,7 +5,7 @@ use std::{
 
 use pyo3::{
     buffer::PyBuffer,
-    exceptions::PyValueError,
+    exceptions::{PyNotImplementedError, PyValueError},
     prelude::*,
     types::{PyMapping, PyTuple},
 };
@@ -457,11 +457,14 @@ pub(super) fn compile_test(
     dependencies: HashMap<String, PathBuf>,
     dependency_aliases: Option<HashMap<String, String>>,
 ) -> PyResult<CompiledTest> {
+    if options.lower {
+        return Err(PyNotImplementedError::new_err("lowering is not supported"));
+    }
     let modules = modules.items()?.extract::<Vec<(String, String)>>()?;
     let TestOptions {
         strip,
         visibility,
-        lower,
+        lower: _,
         validate,
         features,
     } = options;
@@ -830,16 +833,6 @@ pub(super) fn compile_test(
             let mut pending: Vec<_> = function.body.statements.iter_mut().collect();
             while let Some(statement) = pending.pop() {
                 let span = statement.span();
-                if lower
-                    && let Statement::For(repeated) = &mut **statement
-                    && let Some(initializer) = repeated.initializer.take()
-                {
-                    let repeated = std::mem::replace(&mut **statement, Statement::Void);
-                    **statement = Statement::Compound(CompoundStatement {
-                        attributes: Vec::new(),
-                        statements: vec![initializer, Spanned::new(repeated, span)],
-                    });
-                }
                 if let Statement::FunctionCall(call) = &mut **statement {
                     let name = assertions.get(&*call.call.ty.ident.name());
                     if let Some((name, _)) = name {
@@ -865,12 +858,6 @@ pub(super) fn compile_test(
             }
         }
         result.syntax.global_declarations.extend(wrappers);
-        if lower {
-            pass::retarget_idents(&mut result.syntax);
-            wesl::pass::lower(&mut result.syntax).map_err(|error| {
-                Failure::from_diagnostic(error.diagnostic().with_sourcemap(&sourcemap))
-            })?;
-        }
         let result_type = result_type.ok_or_else(|| Failure::Message("shader test result type is missing".to_owned()))?;
         let buffer_size = result_type.size_of().ok_or_else(|| Failure::Message("shader test result requires a fixed buffer size".to_owned()))?;
         Ok(Some((result.to_string(), compiled_entry, sites, overrides, TestLayout { result_type, buffer_size, cooperative })))

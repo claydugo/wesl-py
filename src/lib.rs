@@ -6,7 +6,7 @@ use std::{
 
 use pyo3::{
     create_exception,
-    exceptions::{PyException, PyValueError},
+    exceptions::{PyException, PyNotImplementedError, PyValueError},
     prelude::*,
     types::{PyMapping, PyTuple, PyType},
 };
@@ -112,12 +112,15 @@ impl TryFrom<CompileOptions<'_>> for wesl::CompileOptions {
     type Error = PyErr;
 
     fn try_from(options: CompileOptions<'_>) -> PyResult<Self> {
+        if options.lower {
+            return Err(PyNotImplementedError::new_err("lowering is not supported"));
+        }
         Ok(Self {
             imports: options.imports,
             condcomp: options.condcomp,
             visibility: options.visibility,
             strip: options.strip,
-            lower: options.lower,
+            lower: false,
             validate: options.validate,
             sourcemap: options.sourcemap,
             mangler: match options.mangler.value.as_str() {

@@ -322,7 +322,7 @@ def test_shared_features_and_independent_options(pytester: pytest.Pytester) -> N
 
         @pytest.fixture
         def wesl_test_options(wesl_features):
-            return wesl.TestOptions(lower=True, features=wesl_features)
+            return wesl.TestOptions(strip=False, features=wesl_features)
 
         @pytest.fixture
         def wesl_constants(wesl_features):
