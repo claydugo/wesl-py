@@ -40,13 +40,15 @@ Install the pre-commit and pre-push hooks:
 pixi run --locked -e lint prek install
 ```
 
-The pre-commit hook checks staged files before each Git commit.
+The pre-commit hook uses staged files to select checks before each Git commit.
 File formatters receive only the selected filenames. Rustfmt checks the crate.
-Changes to shared configuration trigger a read-only repository check.
-It applies formatting fixes. Review and stage these fixes before trying again.
+Linters check the whole repository when relevant files or configuration change.
+Shared configuration also triggers read-only checks of repository formatting.
+Formatters apply fixes. Review and stage these fixes before trying again.
 The pre-push hook runs Rust and Python type checks for relevant changes.
 It includes deleted files when selecting checks. Documentation changes skip them.
-The type check rebuilds the native extension before checking its stubs.
+Each checker reports its result separately.
+Stubtest rebuilds the native extension before checking its stubs.
 Install the hooks once per checkout. Run the command again to add the pre-push hook
 to an existing setup. Git does not copy installed hooks when cloning.
 Pixi must be on `PATH` when Git runs the hook.
@@ -134,8 +136,9 @@ It does not change files.
 It checks new files too. Tools respect `.gitignore` during file discovery.
 The `lint` environment contains no Rust toolchain or wesl-py installation.
 Pyflakes supports actionlint's Python checks.
-On macOS arm64, Pixi installs rumdl from PyPI because conda-forge has no build.
-The other platforms use conda-forge.
+Markdown checks and fixes skip macOS.
+Conda-forge has no rumdl build for Apple Silicon.
+The lint environment uses only conda dependencies.
 Dependency requirements use version ranges. `pixi.lock` records resolved versions.
 CI uses a fixed Pixi bootstrap version. The workspace declares its minimum version.
 This CI bootstrap is an exception to the package version policy.
@@ -146,8 +149,10 @@ Rust checks do not install the Python package or GPU dependencies.
 `check-types` runs ty, Pyrefly, Pyright, and native stubtest in `dev`.
 This environment includes wgpu so the type checkers can inspect its API.
 Type checks do not request a GPU adapter.
-The task rebuilds the native extension with
-`pixi reinstall --locked -e dev wesl-py` before running the checks.
+The task runs `check-ty`, `check-pyrefly`, `check-pyright`, and `check-stubs`.
+Run these tasks separately with `pixi run -e dev <task>`.
+`check-stubs` rebuilds the native extension with
+`pixi reinstall --locked -e dev wesl-py` before running stubtest.
 The type checkers check the Python API. Stubtest checks the compiled extension.
 Run `pixi run generate-stubs` after changing a native signature.
 Maturin generates stubs from PyO3's metadata with the optional `stub-gen` feature.
@@ -177,7 +182,13 @@ Local runs use offline audits unless `GH_TOKEN`, `GITHUB_TOKEN`, or
 Hook commands and file filters live in [prek.toml](prek.toml).
 Pixi supplies their tools and locks their versions in `pixi.lock`.
 The hooks use prek's `system` language because Pixi manages the environments.
-Hooks run in configuration order. Ruff formats Python blocks before rumdl runs.
+Formatters run in separate priority groups before the read-only checks.
+Ruff formats Python blocks before rumdl runs.
+Read-only hooks share priority 10 and can run concurrently.
+Pre-push runs rustfmt first, then Clippy and the static type checkers.
+Stubtest runs at priority 20 so its rebuild does not overlap these checks.
+Static type checkers use source and stubs.
+Rust changes select stubtest among the Python checks.
 
 Ruff checks Python files, type stubs, notebooks, and Python blocks in Markdown.
 Cargo denies Clippy's `all` and `pedantic` groups plus selected restriction and
@@ -249,7 +260,9 @@ The [release checklist](RELEASE_CHECKLIST.md) describes PyPI setup and publicati
   Their Pixi environments resolve on all three platforms.
   GPU execution currently runs only on Linux CI with Mesa's Vulkan adapter.
   Verify suitable adapters and display support before extending these jobs.
-- Replace the macOS rumdl PyPI dependency when conda-forge supplies an arm64 build.
+- Enable rumdl on macOS when conda-forge supplies an arm64 build.
+  The feedstock does not configure this target.
+  [Issue #4](https://github.com/conda-forge/rumdl-feedstock/issues/4) tracks it.
 - Keep the ImGui upper bound while PyPI wgpu 0.32.0 uses the removed
   `cmd_lists_count` attribute. Conda's [backend patch](https://github.com/conda-forge/wgpu-py-feedstock/blob/main/recipe/0001-Use-len-draw_data.cmd_lists-in-imgui-backend.patch)
   makes newer versions work. Verify the PyPI dependencies before changing the bound.

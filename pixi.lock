@@ -1102,8 +1102,6 @@ environments:
   lint:
     channels:
     - url: https://conda.anaconda.org/conda-forge/
-    indexes:
-    - https://pypi.org/simple
     packages:
       linux-64:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
@@ -1163,7 +1161,6 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tk-8.6.13-hbeba79b_4.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tombi-1.5.8-hc2d82ec_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zizmor-1.30.1-hc2d82ec_0.conda
-      - pypi: https://files.pythonhosted.org/packages/83/68/1f1fdd8f492b00a63df981037ab6e38f76f309d7f223e3ead1c4d67856a7/rumdl-0.2.53-py3-none-macosx_11_0_arm64.whl
       win-64:
       - conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2026.7.22-h4c7d964_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pyflakes-3.4.0-pyhd8ed1ab_0.conda
@@ -8465,8 +8462,3 @@ packages:
   - pytest>=8.2 ; extra == 'testing'
   - wgpu>=0.32,<0.33 ; extra == 'testing'
   requires_python: '>=3.12'
-- pypi: https://files.pythonhosted.org/packages/83/68/1f1fdd8f492b00a63df981037ab6e38f76f309d7f223e3ead1c4d67856a7/rumdl-0.2.53-py3-none-macosx_11_0_arm64.whl
-  name: rumdl
-  version: 0.2.53
-  sha256: 229062d9c87165ba1f4908392e33752d6d870c2514ce121297859a376c52e2ef
-  requires_python: '>=3.9'
