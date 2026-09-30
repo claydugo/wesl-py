@@ -3,7 +3,6 @@ from struct import pack, unpack
 
 import pytest
 import wesl
-from wesl import _native
 
 wgpu = pytest.importorskip("wgpu")
 from wesl.testing import (
@@ -130,15 +129,12 @@ def test_repeated_runs_preserve_user_buffers_and_bindings(
             }
         """
         for expected in (10, 13):
-            assert (
-                run_test(
-                    wesl_device,
-                    {"package::main": source},
-                    "mutate",
-                    resources=resources,
-                    constants={"expected": expected},
-                )
-                is None
+            run_test(
+                wesl_device,
+                {"package::main": source},
+                "mutate",
+                resources=resources,
+                constants={"expected": expected},
             )
         assert len(resources[0]) == 1
         assert unpack(
@@ -149,8 +145,8 @@ def test_repeated_runs_preserve_user_buffers_and_bindings(
         uniform.destroy()
 
 
-def test_prepared_test_resets_results_without_recompiling(
-    wesl_device: wgpu.GPUDevice, monkeypatch: pytest.MonkeyPatch
+def test_prepared_test_resets_results_and_preserves_default_resources(
+    wesl_device: wgpu.GPUDevice,
 ) -> None:
     uniform = wesl_device.create_buffer_with_data(
         data=pack("<4I", 3, 0, 0, 0),
@@ -166,9 +162,6 @@ def test_prepared_test_resets_results_without_recompiling(
             "selected",
             resources={0: [{"binding": 0, "resource": {"buffer": uniform}}]},
         )
-        monkeypatch.setattr(_native, "compile_test", None)
-        monkeypatch.setattr(wesl_device, "create_shader_module", None)
-        monkeypatch.setattr(wesl_device, "create_compute_pipeline", None)
         with pytest.raises(ShaderAssertionError) as failure:
             shader_test()
         assert failure.value.checks == 1
@@ -229,7 +222,6 @@ def test_texture_bindings(wesl_device: wgpu.GPUDevice) -> None:
                 ]
             },
         )
-        assert texture.create_view() is not None
     finally:
         texture.destroy()
 

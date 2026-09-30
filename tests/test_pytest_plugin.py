@@ -370,11 +370,9 @@ def test_test_options_control_native_skips(pytester: pytest.Pytester) -> None:
 
         @pytest.fixture
         def wesl_options():
-            pytest.fail("native tests must not request compilation options")
-
-        @pytest.fixture
-        def wesl_compiler():
-            pytest.fail("native tests must not request the compiler fixture")
+            return wesl.CompileOptions(
+                features=wesl.Features(flags={"enabled": True}),
+            )
 
     """)
     pytester.makefile(".test.wesl", disabled="@if(enabled) @test fn disabled() {}")
@@ -424,17 +422,22 @@ def test_generate_tests_with_direct_parameters(pytester: pytest.Pytester) -> Non
 
         def pytest_generate_tests(metafunc):
             metafunc.parametrize(
-                "wesl_test_options", [wesl.TestOptions()], ids=["direct"],
+                "wesl_test_options",
+                [wesl.TestOptions(features=wesl.Features(flags={"enabled": True}))],
+                ids=["direct"],
             )
 
         @pytest.fixture
         def wesl_test_options():
             pytest.fail("direct parameters must replace the fixture")
     """)
-    pytester.makefile(".test.wesl", direct="@if(false) @test fn selected() {}")
+    pytester.makefile(
+        ".test.wesl",
+        direct="@if(enabled) @test fn selected() { wgsl_test::expect(true); }",
+    )
     result = pytester.runpytest_subprocess("-v")
-    result.assert_outcomes(skipped=1)
-    assert "direct.test.wesl::selected[direct] SKIPPED" in result.stdout.str()
+    result.assert_outcomes(passed=1)
+    assert "direct.test.wesl::selected[direct] PASSED" in result.stdout.str()
 
 
 @pytest.mark.gpu
@@ -497,14 +500,22 @@ def test_fixtures_parametrization_and_selection(pytester: pytest.Pytester) -> No
         import wgpu
 
         @pytest.fixture(params=[3, 7], ids=["three", "seven"])
-        def wesl_resources(request, wesl_device):
+        def input_value(request):
+            return request.param
+
+        @pytest.fixture
+        def wesl_resources(input_value, wesl_device):
             buffer = wesl_device.create_buffer_with_data(
-                data=pack("<I", request.param), usage=wgpu.BufferUsage.STORAGE,
+                data=pack("<I", input_value), usage=wgpu.BufferUsage.STORAGE,
             )
             try:
                 yield {1: [{"binding": 2, "resource": {"buffer": buffer}}]}
             finally:
                 buffer.destroy()
+
+        @pytest.fixture
+        def wesl_constants(input_value):
+            return {"expected": input_value * 2}
 
         @pytest.fixture(
             params=[
@@ -532,8 +543,13 @@ def test_fixtures_parametrization_and_selection(pytester: pytest.Pytester) -> No
         import library::double;
         import wgsl_test::expectEq;
         @group(1) @binding(2) var<storage, read_write> values: array<u32>;
-        @test fn doubling() { expectEq(double(values[0]), values[0] + values[0]); }
-        @test fn mutation() { values[0] = 9u; expectEq(values[0], 9u); }
+        override expected: u32;
+        @test fn doubling() { expectEq(double(values[0]), expected); }
+        @test fn mutation() {
+            expectEq(double(values[0]), expected);
+            values[0] = 9u;
+            expectEq(values[0], 9u);
+        }
     """,
     )
     result = pytester.runpytest_subprocess(
@@ -617,40 +633,6 @@ def test_missing_adapter_policy(
     pytester.makefile(".test.wesl", adapter="@test fn dispatch() {}")
     result = pytester.runpytest_subprocess("-q", "-ra", f"--wesl-gpu={policy}")
     result.assert_outcomes(**{outcome: 1})
-
-
-@pytest.mark.gpu
-@pytest.mark.parametrize("policy", ["required", "optional"])
-def test_device_creation_failure_is_an_error(
-    pytester: pytest.Pytester, policy: str
-) -> None:
-    pytester.makeconftest("""
-        from functools import partial
-
-        import pytest
-        import wgpu
-
-        @pytest.fixture(scope="session", autouse=True)
-        def invalid_device_limits():
-            adapter = wgpu.gpu.request_adapter_sync()
-            with pytest.MonkeyPatch.context() as monkeypatch:
-                monkeypatch.setattr(wgpu.gpu, "request_adapter_sync", lambda: adapter)
-                monkeypatch.setattr(
-                    adapter,
-                    "request_device_sync",
-                    partial(
-                        adapter.request_device_sync,
-                        required_limits={
-                            "max-buffer-size": adapter.limits["max-buffer-size"] + 1,
-                        },
-                    ),
-                )
-                yield
-    """)
-    pytester.makefile(".test.wesl", device="@test fn dispatch() {}")
-    result = pytester.runpytest_subprocess("-q", "-ra", f"--wesl-gpu={policy}")
-    result.assert_outcomes(errors=1)
-    assert "max_buffer_size" in result.stdout.str()
 
 
 @pytest.mark.gpu

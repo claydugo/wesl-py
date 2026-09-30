@@ -124,6 +124,7 @@ def test_concurrent_feature_state_isolation(modules: dict[str, str]) -> None:
         results = list(executor.map(compile_feature, enabled))
     for feature, result in zip(enabled, results, strict=True):
         assert ("7u" if feature else "3u") in result
+        assert ("3u" if feature else "7u") not in result
 
 
 def test_incremental_conditional_translation() -> None:

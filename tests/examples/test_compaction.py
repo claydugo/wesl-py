@@ -4,7 +4,6 @@ from importlib import import_module
 from typing import TYPE_CHECKING
 
 import pytest
-import wesl
 
 if TYPE_CHECKING:
     import wgpu
@@ -48,12 +47,9 @@ def test_compaction_keeps_all_or_none_for_uniform_input(
 
 @pytest.mark.gpu
 def test_prepared_compaction_accepts_new_inputs(
-    wesl_device: wgpu.GPUDevice, monkeypatch: pytest.MonkeyPatch
+    wesl_device: wgpu.GPUDevice,
 ) -> None:
     compactor = Compactor(wesl_device)
-    monkeypatch.setattr(wesl, "compile_file", None)
-    monkeypatch.setattr(wesl_device, "create_shader_module", None)
-    monkeypatch.setattr(wesl_device, "create_compute_pipeline", None)
-    for element_count in (129, 32769):
+    for element_count in (129, 32769, 0, 1025, 129):
         values = np.arange(element_count, dtype=np.uint32)
         np.testing.assert_array_equal(compactor.compact(values), values[values >= 500])

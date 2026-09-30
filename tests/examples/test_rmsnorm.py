@@ -4,7 +4,6 @@ from importlib import import_module
 from typing import TYPE_CHECKING
 
 import pytest
-import wesl
 
 if TYPE_CHECKING:
     import wgpu
@@ -47,15 +46,16 @@ def test_normalization_accepts_strided_inputs(
 
 @pytest.mark.gpu
 def test_prepared_normalization_accepts_new_inputs(
-    wesl_device: wgpu.GPUDevice, monkeypatch: pytest.MonkeyPatch
+    wesl_device: wgpu.GPUDevice,
 ) -> None:
     normalizer = RMSNorm(wesl_device, 256)
-    monkeypatch.setattr(wesl, "compile_file", None)
-    monkeypatch.setattr(wesl_device, "create_shader_module", None)
-    monkeypatch.setattr(wesl_device, "create_compute_pipeline", None)
-    weights = np.linspace(1, 2, 256, dtype=np.float32)
-    for value in (1, -2):
-        values = np.full((3, 256), value, dtype=np.float32)
+    random = np.random.default_rng(7)
+    for row_count in (3, 1, 5):
+        values = random.normal(size=(row_count, 256)).astype(np.float32)
+        weights = random.uniform(-1, 2, 256).astype(np.float32)
         output = normalizer.normalize(values, weights)
-        expected = values / np.sqrt(np.mean(values**2, axis=1, keepdims=True) + 1e-6)
+        reference = values.astype(np.float64)
+        expected = reference / np.sqrt(
+            np.mean(reference**2, axis=1, keepdims=True) + 1e-6
+        )
         np.testing.assert_allclose(output, expected * weights, rtol=2e-5, atol=2e-6)

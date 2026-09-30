@@ -1,3 +1,4 @@
+import re
 import sys
 from functools import partial
 from pathlib import Path
@@ -27,6 +28,39 @@ def test_shader_lowering_is_not_implemented(compile_shader_test: partial) -> Non
             {"package::main": "@test fn selected() {}"},
             options=wesl.TestOptions(lower=True),
         )
+
+
+def test_cooperative_wrapper_preserves_other_entry_points(
+    compile_shader_test: partial,
+) -> None:
+    compiled = compile_shader_test(
+        {
+            "package::main": """
+                @compute @workgroup_size(8)
+                fn unrelated(@builtin(local_invocation_index) lane: u32) {
+                    let unused = lane;
+                }
+                @if(enabled) {
+                    @test
+                    fn selected(@builtin(local_invocation_index) lane: u32) {
+                        wgsl_test::expectEq(lane, 0u);
+                    }
+                }
+            """
+        },
+        options=wesl.TestOptions(
+            strip=False, features=wesl.Features(flags={"enabled": True})
+        ),
+    )
+    assert compiled is not None
+    shader, entry_point, _, _, _ = compiled
+    wesl.check_syntax(shader)
+    assert re.search(
+        r"@compute\s+@workgroup_size\(8\)\s+fn package_main_unrelated\("
+        r"@builtin\(local_invocation_index\) lane: u32\)",
+        shader,
+    )
+    assert f"fn {entry_point}(" in shader
 
 
 def test_shader_test_error_preserves_source_context(

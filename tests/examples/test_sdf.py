@@ -85,6 +85,10 @@ def test_sdf_viewer(caplog: pytest.LogCaptureFixture) -> None:
     try:
         viewer.paused = True
         original = np.asarray(canvas.draw()).copy()
+        initialized = np.frombuffer(
+            viewer.renderer.device.queue.read_buffer(viewer.renderer.particles),
+            dtype=np.float32,
+        ).copy()
         viewer.cutout = False
         filled = np.asarray(canvas.draw()).copy()
         assert np.count_nonzero(original[:, 320:, :3] != filled[:, 320:, :3]) > 100
@@ -95,6 +99,17 @@ def test_sdf_viewer(caplog: pytest.LogCaptureFixture) -> None:
             viewer.renderer.device.queue.read_buffer(viewer.renderer.particles),
             dtype=np.float32,
         ).copy()
+        assert not np.array_equal(moving, initialized)
+        viewer.paused = True
+        canvas.draw()
+        np.testing.assert_array_equal(
+            np.frombuffer(
+                viewer.renderer.device.queue.read_buffer(viewer.renderer.particles),
+                dtype=np.float32,
+            ),
+            moving,
+        )
+        viewer.elapsed = 0
         viewer.reset = True
         canvas.set_logical_size(1024, 768)
         resized = np.asarray(canvas.draw())
@@ -103,8 +118,7 @@ def test_sdf_viewer(caplog: pytest.LogCaptureFixture) -> None:
             dtype=np.float32,
         )
         assert resized.shape == (768, 1024, 4)
-        assert np.isfinite(reset).all()
-        assert not np.array_equal(moving, reset)
+        np.testing.assert_array_equal(reset, initialized)
         assert not [
             record for record in caplog.records if record.levelno >= logging.ERROR
         ]

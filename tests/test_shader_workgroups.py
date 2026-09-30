@@ -42,48 +42,70 @@ def test_cooperative_barriers_and_builtin_parameters(
 def test_cooperative_parameters_do_not_shadow_globals(
     wesl_device: wgpu.GPUDevice,
 ) -> None:
-    run_test(
-        wesl_device,
-        {
-            "package::main": """
-            const width = 2u;
-            @test @workgroup_size(width)
-            fn selected(
-                @builtin(local_invocation_index) selected: u32,
-                @builtin(local_invocation_id) width: vec3u,
-            ) {
-                wgsl_test::expectEq(selected, width.x);
-                wgsl_test::expect(selected < 2u);
-            }
-        """
-        },
-        "selected",
-        options=wesl.TestOptions(visibility=True),
+    output = wesl_device.create_buffer_with_data(
+        data=pack("<2I", *([0xFFFFFFFF] * 2)),
+        usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_SRC,
     )
+    try:
+        run_test(
+            wesl_device,
+            {
+                "package::main": """
+                @group(0) @binding(0)
+                var<storage, read_write> invocations: array<u32>;
+                const width = 2u;
+                @test @workgroup_size(width)
+                fn selected(
+                    @builtin(local_invocation_index) selected: u32,
+                    @builtin(local_invocation_id) width: vec3u,
+                ) {
+                    wgsl_test::expectEq(selected, width.x);
+                    invocations[selected] = width.x;
+                }
+            """
+            },
+            "selected",
+            options=wesl.TestOptions(visibility=True),
+            resources={0: [{"binding": 0, "resource": {"buffer": output}}]},
+        )
+        assert unpack("<2I", wesl_device.queue.read_buffer(output)) == (0, 1)
+    finally:
+        output.destroy()
 
 
 def test_cooperative_qualified_workgroup_size(wesl_device: wgpu.GPUDevice) -> None:
-    run_test(
-        wesl_device,
-        {
-            "package::main": """
-                @if(enabled)
-                @test @workgroup_size(package::configuration::width)
-                fn selected(
-                    @builtin(local_invocation_index)
-                    invocation: package::configuration::Index,
-                ) {
-                    wgsl_test::expect(invocation < package::configuration::width);
-                }
-            """,
-            "package::configuration": "const width = 2u; alias Index = u32;",
-        },
-        "selected",
-        options=wesl.TestOptions(
-            visibility=True,
-            features=wesl.Features(flags={"enabled": True}),
-        ),
+    output = wesl_device.create_buffer_with_data(
+        data=pack("<2I", *([0xFFFFFFFF] * 2)),
+        usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_SRC,
     )
+    try:
+        run_test(
+            wesl_device,
+            {
+                "package::main": """
+                    @group(0) @binding(0)
+                    var<storage, read_write> invocations: array<u32>;
+                    @if(enabled)
+                    @test @workgroup_size(package::configuration::width)
+                    fn selected(
+                        @builtin(local_invocation_index)
+                        invocation: package::configuration::Index,
+                    ) {
+                        invocations[invocation] = invocation;
+                    }
+                """,
+                "package::configuration": "const width = 2u; alias Index = u32;",
+            },
+            "selected",
+            options=wesl.TestOptions(
+                visibility=True,
+                features=wesl.Features(flags={"enabled": True}),
+            ),
+            resources={0: [{"binding": 0, "resource": {"buffer": output}}]},
+        )
+        assert unpack("<2I", wesl_device.queue.read_buffer(output)) == (0, 1)
+    finally:
+        output.destroy()
 
 
 def test_cooperative_three_dimensional_builtins(wesl_device: wgpu.GPUDevice) -> None:
@@ -176,33 +198,6 @@ def test_cooperative_failures_retain_counts_and_source(
     assert f"invocation: {error.invocation}" in str(error)
 
 
-def test_cooperative_wrapper_preserves_other_entry_points(
-    wesl_device: wgpu.GPUDevice,
-) -> None:
-    run_test(
-        wesl_device,
-        {
-            "package::main": """
-                import wgsl_test::expectEq;
-                @compute @workgroup_size(8)
-                fn unrelated(@builtin(local_invocation_index) lane: u32) {
-                    let unused = lane;
-                }
-                @if(enabled) {
-                    @test
-                    fn selected(@builtin(local_invocation_index) lane: u32) {
-                        expectEq(lane, 0u);
-                    }
-                }
-            """
-        },
-        "selected",
-        options=wesl.TestOptions(
-            strip=False, features=wesl.Features(flags={"enabled": True})
-        ),
-    )
-
-
 def test_cooperative_generated_names_avoid_user_declarations(
     wesl_device: wgpu.GPUDevice, wgsl_test: Path
 ) -> None:
@@ -214,24 +209,35 @@ def test_cooperative_generated_names_avoid_user_declarations(
             fn wesl_test_collect___result() {}
         }
     """
-    run_test(
-        wesl_device,
-        {
-            "package::main": """
-                import package::configuration::width as wesl_test_entry_parameter_0;
-                const wesl_test_entry_parameter_0_ = 1u;
-                @test
-                @workgroup_size(
-                    wesl_test_entry_parameter_0 * wesl_test_entry_parameter_0_
-                )
-                fn wesl_test_entry_invocation(
-                    @builtin(local_invocation_id) position: vec3u,
-                ) {
-                    wgsl_test::expect(all(position < vec3u(8u, 1u, 1u)));
-                }
-            """,
-            "package::configuration": "const width = 8u;",
-            "wgsl_test::TestResult": result_source,
-        },
-        "wesl_test_entry_invocation",
+    output = wesl_device.create_buffer_with_data(
+        data=pack("<8I", *([0xFFFFFFFF] * 8)),
+        usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_SRC,
     )
+    try:
+        run_test(
+            wesl_device,
+            {
+                "package::main": """
+                    import package::configuration::width as wesl_test_entry_parameter_0;
+                    @group(0) @binding(0)
+                    var<storage, read_write> invocations: array<u32>;
+                    const wesl_test_entry_parameter_0_ = 1u;
+                    @test
+                    @workgroup_size(
+                        wesl_test_entry_parameter_0 * wesl_test_entry_parameter_0_
+                    )
+                    fn wesl_test_entry_invocation(
+                        @builtin(local_invocation_id) position: vec3u,
+                    ) {
+                        invocations[position.x] = position.x;
+                    }
+                """,
+                "package::configuration": "const width = 8u;",
+                "wgsl_test::TestResult": result_source,
+            },
+            "wesl_test_entry_invocation",
+            resources={0: [{"binding": 0, "resource": {"buffer": output}}]},
+        )
+        assert unpack("<8I", wesl_device.queue.read_buffer(output)) == tuple(range(8))
+    finally:
+        output.destroy()
