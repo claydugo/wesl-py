@@ -472,6 +472,30 @@ layouts. An empty mapping specifies a layout with only the runner's result buffe
 The function does not read pytest fixtures.
 It runs one named `@test` function and returns `None` on success.
 
+Each `run_test()` call compiles the test and creates a compute pipeline.
+For repeated execution, `prepare_test()` accepts the same arguments and returns
+a callable:
+
+```python
+from wesl.testing import prepare_test
+
+test = prepare_test(device, modules, "selected", resources=resources)
+test()
+test(resources=replacement_resources)
+```
+
+Preparation compiles the test and creates its pipeline once.
+Each call creates a fresh result buffer and destroys it after execution.
+Omit `resources` to use the resources supplied during preparation.
+Replacement resources must use the same bindings and layout.
+The caller owns the device and resource lifetimes.
+Keep them alive while the callable uses them.
+Prepare again to change sources, options, layouts, or constants.
+Pytest prepares each shader test invocation separately.
+
+The [convolution example](../examples/convolution/README.md) prepares its compute
+pipelines and assertion callable once, then verifies multiple inputs.
+
 The function raises `ShaderAssertionError` on assertion failure and
 `ShaderTestDisabledError` when conditions disable the test.
 

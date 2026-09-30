@@ -13,6 +13,13 @@ selects the adapter.
 It creates synthetic inputs and verifies convolution and pooling with NumPy.
 Both operations use one command encoder. No weights or image files are needed.
 
+The example prepares both compute pipelines once and processes three inputs.
+It retains weights, biases, bind groups, and buffers across inputs.
+NumPy computes the references. A callable from `wesl.testing.prepare_test()`
+compares both outputs with those references on the GPU.
+The callable retains one assertion pipeline and accepts replacement resources
+for the pooling output. Each call uses a fresh assertion result buffer.
+
 The reusable shaders live in [shaders](shaders). The OWL YOLO experiment imports
 these same files from the source checkout. They are example assets, not an
 installed Python API.
@@ -24,6 +31,7 @@ installed Python API.
 | `activation.wesl` | Bias, linear output, leaky ReLU, and sigmoid |
 | `pooling.wesl` | Maximum pooling with negative-infinity padding |
 | `resize.wesl` | Nearest-neighbor integer enlargement |
+| `verify.wesl` | Compare operator outputs with NumPy references |
 
 Convolution writes binding 0. Bindings 1 through 4 contain channel segments.
 Bindings 5 and 6 contain OIHW weights and per-channel bias.

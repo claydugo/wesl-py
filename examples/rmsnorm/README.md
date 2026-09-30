@@ -37,6 +37,12 @@ Those IDs let Python specialize imported declarations after WESL renames them.
 [compute.py](compute.py) passes the feature and constants to the compiler and pipeline.
 It uses the repository as the package root, as do the other examples.
 
+Create `RMSNorm(device, column_count, residual=False, epsilon=1e-6)` once.
+Call `normalizer.normalize(values, weights, residual=None)` for each input.
+The object retains its shader and pipeline.
+The input width and residual presence must match the prepared variant.
+Construct a new object to change those settings or reload shader files.
+
 The entry point lives in [shaders](shaders).
 It imports the input and normalization operations through `package::examples::rmsnorm`.
 

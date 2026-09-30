@@ -3,9 +3,12 @@ from struct import pack, unpack
 
 import pytest
 import wesl
+from wesl import _native
 
 wgpu = pytest.importorskip("wgpu")
 from wesl.testing import (
+    ShaderAssertionError,
+    prepare_test,
     run_test,
 )
 
@@ -143,6 +146,51 @@ def test_repeated_runs_preserve_user_buffers_and_bindings(
         ) == (13,)
     finally:
         values.destroy()
+        uniform.destroy()
+
+
+def test_prepared_test_resets_results_without_recompiling(
+    wesl_device: wgpu.GPUDevice, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    uniform = wesl_device.create_buffer_with_data(
+        data=pack("<4I", 3, 0, 0, 0),
+        usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST,
+    )
+    try:
+        shader_test = prepare_test(
+            wesl_device,
+            {
+                "package::main": "@group(0) @binding(0) var<uniform> value: vec4u; "
+                "@test fn selected() { wgsl_test::expectEq(value.x, 7u); }"
+            },
+            "selected",
+            resources={0: [{"binding": 0, "resource": {"buffer": uniform}}]},
+        )
+        monkeypatch.setattr(_native, "compile_test", None)
+        monkeypatch.setattr(wesl_device, "create_shader_module", None)
+        monkeypatch.setattr(wesl_device, "create_compute_pipeline", None)
+        with pytest.raises(ShaderAssertionError) as failure:
+            shader_test()
+        assert failure.value.checks == 1
+        assert failure.value.failures == 1
+        replacement = wesl_device.create_buffer_with_data(
+            data=pack("<4I", 7, 0, 0, 0),
+            usage=wgpu.BufferUsage.UNIFORM,
+        )
+        try:
+            shader_test(
+                resources={0: [{"binding": 0, "resource": {"buffer": replacement}}]}
+            )
+        finally:
+            replacement.destroy()
+        with pytest.raises(ShaderAssertionError) as failure:
+            shader_test()
+        assert failure.value.checks == 1
+        assert failure.value.failures == 1
+        wesl_device.queue.write_buffer(uniform, 0, pack("<4I", 7, 0, 0, 0))
+        shader_test()
+        shader_test()
+    finally:
         uniform.destroy()
 
 

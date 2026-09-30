@@ -1,7 +1,7 @@
 import numpy as np
 import wgpu
 
-from .compute import normalize
+from .compute import RMSNorm
 
 
 def main() -> None:
@@ -11,7 +11,8 @@ def main() -> None:
     weights = random.uniform(0.5, 1.5, values.shape[1]).astype(np.float32)
     device = wgpu.gpu.request_adapter_sync().request_device_sync()
     try:
-        output = normalize(device, values, weights, residual=residual)
+        normalizer = RMSNorm(device, values.shape[1], residual=True)
+        output = normalizer.normalize(values, weights, residual=residual)
         combined = (values + residual).astype(np.float64)
         expected = (
             combined

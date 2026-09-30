@@ -43,7 +43,10 @@ The internal scans compile without the predicate or threshold.
 Entry points live in [shaders](shaders).
 They import the predicate through `package::examples::compaction::predicate`.
 
-Call `compact(device, values, threshold=500, keep_below=False)` to use other inputs.
+Create `Compactor(device, threshold=500, keep_below=False)` once.
+Call `compactor.compact(values)` for each input.
+The object retains its four pipelines.
+Construct a new object to change the predicate or reload shader files.
 Values use a one-dimensional NumPy array with dtype `uint32`.
 Uploads make noncontiguous views contiguous.
 The result is a one-dimensional `uint32` array. Threshold must fit u32.
