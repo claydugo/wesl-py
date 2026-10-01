@@ -60,7 +60,8 @@ See the [API reference](https://github.com/claydugo/wesl-py/blob/main/docs/api.m
 for options, library imports, and diagnostics.
 
 Standalone `compile_file()` uses the shader file's parent directory by default.
-Use `Compiler.from_project()` to share `wesl.toml` settings with pytest.
+Use `Compiler.from_project()` to share the `wesl.toml` shader root with pytest.
+Pass dependency directories explicitly.
 
 ## Test a shader
 

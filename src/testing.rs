@@ -31,7 +31,7 @@ use wgsl_parse::syntax::{
     AddressSpace, AssignmentOperator, AssignmentStatement, Attribute, BinaryExpression,
     BinaryOperator, BuiltinValue, CompoundStatement, Declaration, DeclarationKind, Expression,
     FormalParameter, Function, FunctionCall, FunctionCallStatement, GlobalDeclaration, Ident,
-    IfClause, IfStatement, ImportContent, LiteralExpression, ModulePath, NamedComponentExpression,
+    IfClause, IfStatement, LiteralExpression, ModulePath, NamedComponentExpression,
     ParenthesizedExpression, PathOrigin, Span, Spanned, Statement, StatementNode, Struct,
     StructMember, TemplateArg, TranslationUnit, TypeExpression, UnaryExpression, UnaryOperator,
     Visibility, WorkgroupSizeAttribute,
@@ -223,7 +223,7 @@ impl TestTransform {
     ) -> Result<Option<PreparedTest>, Failure> {
         let mut syntax = pass::load_module(&root, &resolver)
             .map_err(|error| Failure::from_diagnostic(wesl::error::Diagnostic::from(error)))?;
-        let mut names = test_names(&syntax, &test_name)?;
+        let mut names = test_names(&syntax, &root, &test_name)?;
         let entry_point = available_name("wesl_test_entry".to_owned(), |name| {
             names.iter().any(|used| used == name)
         });
@@ -523,7 +523,11 @@ impl TestTransform {
     }
 }
 
-fn test_names(syntax: &TranslationUnit, test_name: &str) -> Result<Vec<String>, Failure> {
+fn test_names(
+    syntax: &TranslationUnit,
+    root: &ModulePath,
+    test_name: &str,
+) -> Result<Vec<String>, Failure> {
     let mut names = Vec::new();
     let mut test_exists = false;
     for declaration in global_declarations(syntax) {
@@ -544,25 +548,11 @@ fn test_names(syntax: &TranslationUnit, test_name: &str) -> Result<Vec<String>, 
             "shader test {test_name:?} does not exist"
         )));
     }
-    let mut imports: Vec<_> = syntax
-        .imports
-        .iter()
-        .map(|import| &import.content)
-        .collect();
-    while let Some(content) = imports.pop() {
-        match content {
-            ImportContent::Item(item) => names.push(
-                item.rename
-                    .as_ref()
-                    .unwrap_or(&item.ident)
-                    .name()
-                    .to_string(),
-            ),
-            ImportContent::Collection(collection) => {
-                imports.extend(collection.iter().map(|import| &import.content));
-            }
-        }
-    }
+    names.extend(
+        pass::flatten_imports(&syntax.imports, root)
+            .into_keys()
+            .map(|ident| ident.to_string()),
+    );
     Ok(names)
 }
 
@@ -1138,7 +1128,7 @@ fn assertion_wrapper(
 
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "wesl._native")]
 #[pyfunction]
-#[pyo3(signature = (modules, root, test_name, options, filenames, root_directory, result_binding, dependencies, dependency_aliases=None))]
+#[pyo3(signature = (modules, root, test_name, options, filenames, root_directory, result_binding, dependencies))]
 pub(super) fn compile_test(
     py: Python<'_>,
     #[gen_stub(override_type(type_repr="collections.abc.Mapping[str, str]", imports=("collections.abc")))]
@@ -1152,7 +1142,6 @@ pub(super) fn compile_test(
     root_directory: Option<PathBuf>,
     result_binding: u32,
     dependencies: HashMap<String, PathBuf>,
-    dependency_aliases: Option<HashMap<String, String>>,
 ) -> PyResult<CompiledTest> {
     if options.lower {
         return Err(PyNotImplementedError::new_err("lowering is not supported"));
@@ -1168,14 +1157,7 @@ pub(super) fn compile_test(
     let features: wesl::Features = features.try_into()?;
     py.detach(move || {
         let root = module_path(&root)?;
-        let resolver = ModuleResolver::new(
-            modules,
-            filenames,
-            root_directory,
-            dependencies,
-            dependency_aliases,
-        )?;
-        let root = resolver.dependency_path(&root);
+        let resolver = ModuleResolver::new(modules, filenames, root_directory, dependencies)?;
         let Some(PreparedTest {
             transformed,
             parsed_modules,

@@ -14,7 +14,7 @@ from ._native import (
     Source,
     __version__,
 )
-from ._project import Dependencies, absolute_path, load_project
+from ._project import absolute_path, load_project
 from ._resources import LoadedModules, load_modules, module_name
 
 __all__ = [
@@ -22,7 +22,6 @@ __all__ = [
     "CompileOptions",
     "CompileResult",
     "Compiler",
-    "Dependencies",
     "Diagnostic",
     "Feature",
     "Features",
@@ -105,7 +104,7 @@ def compile(
     strip: bool | None = None,
     filenames: Mapping[str, str | os.PathLike[str]] | None = None,
     root_directory: str | os.PathLike[str] | None = None,
-    dependencies: Dependencies | Mapping[str, str | os.PathLike[str]] | None = None,
+    dependencies: Mapping[str, str | os.PathLike[str]] | None = None,
 ) -> CompileResult:
     if not isinstance(modules, Mapping):
         message = "modules must be a mapping"
@@ -113,10 +112,8 @@ def compile(
     if filenames is not None and not isinstance(filenames, Mapping):
         message = "filenames must be a mapping or None"
         raise TypeError(message)
-    if dependencies is not None and not isinstance(
-        dependencies, (Dependencies, Mapping)
-    ):
-        message = "dependencies must be Dependencies, a mapping, or None"
+    if dependencies is not None and not isinstance(dependencies, Mapping):
+        message = "dependencies must be a mapping or None"
         raise TypeError(message)
     if options is not None and not isinstance(options, CompileOptions):
         message = "options must be CompileOptions or None"
@@ -138,11 +135,6 @@ def compile(
         keep_main=options.keep_main if keep_main is None else keep_main,
         strip=options.strip if strip is None else strip,
     )
-    directories = (
-        dependencies.directories
-        if isinstance(dependencies, Dependencies)
-        else dependencies
-    )
     return _native.compile(
         modules,
         root,
@@ -155,11 +147,10 @@ def compile(
             "wgsl_test": str(Path(__file__).parent / "shaders/wgsl_test"),
             **(
                 {}
-                if directories is None
-                else {name: os.fspath(path) for name, path in directories.items()}
+                if dependencies is None
+                else {name: os.fspath(path) for name, path in dependencies.items()}
             ),
         },
-        dict(dependencies.aliases) if isinstance(dependencies, Dependencies) else None,
     )
 
 
@@ -177,7 +168,7 @@ def compile_source(
     strip: bool | None = None,
     filenames: Mapping[str, str | os.PathLike[str]] | None = None,
     root_directory: str | os.PathLike[str] | None = None,
-    dependencies: Dependencies | Mapping[str, str | os.PathLike[str]] | None = None,
+    dependencies: Mapping[str, str | os.PathLike[str]] | None = None,
 ) -> CompileResult:
     if modules is not None and not isinstance(modules, Mapping):
         message = "modules must be a mapping or None"
@@ -219,7 +210,7 @@ def compile_file(
     keep_main: bool | None = None,
     strip: bool | None = None,
     filenames: Mapping[str, str | os.PathLike[str]] | None = None,
-    dependencies: Dependencies | Mapping[str, str | os.PathLike[str]] | None = None,
+    dependencies: Mapping[str, str | os.PathLike[str]] | None = None,
 ) -> CompileResult:
     path = absolute_path(Path(filename))
     directory = (
@@ -250,9 +241,7 @@ class Compiler:
     modules: Mapping[str, str] = field(default_factory=dict)
     filenames: Mapping[str, str | os.PathLike[str]] = field(default_factory=dict)
     root_directory: str | os.PathLike[str] | None = None
-    dependencies: Dependencies | Mapping[str, str | os.PathLike[str]] = field(
-        default_factory=dict
-    )
+    dependencies: Mapping[str, str | os.PathLike[str]] = field(default_factory=dict)
 
     @classmethod
     def from_project(
@@ -276,7 +265,11 @@ class Compiler:
             root_directory=project.root_directory
             if root_directory is None
             else absolute_path(Path(root_directory)),
-            dependencies=project.load_dependencies(dependencies),
+            dependencies={}
+            if dependencies is None
+            else {
+                name: absolute_path(Path(path)) for name, path in dependencies.items()
+            },
         )
 
     def compile_source(

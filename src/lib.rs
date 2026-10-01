@@ -427,7 +427,6 @@ struct ModuleResolver {
     files: Option<FileResolver>,
     dependencies: Router,
     dependency_names: HashSet<String>,
-    dependency_aliases: Option<HashMap<String, String>>,
 }
 
 impl ModuleResolver {
@@ -436,7 +435,6 @@ impl ModuleResolver {
         filenames: HashMap<String, String>,
         root_directory: Option<PathBuf>,
         dependencies: HashMap<String, PathBuf>,
-        dependency_aliases: Option<HashMap<String, String>>,
     ) -> Result<Self, Failure> {
         let mut dependency_resolver = Router::new();
         for (name, directory) in &dependencies {
@@ -452,82 +450,40 @@ impl ModuleResolver {
             files: root_directory.map(FileResolver::new),
             dependencies: dependency_resolver,
             dependency_names: dependencies.into_keys().collect(),
-            dependency_aliases,
         };
         for (path, filename) in filenames {
-            let path = resolver.dependency_path(&module_path(&path)?);
-            if let Some(previous) = resolver.filenames.get(&path)
-                && previous != &filename
-            {
-                return Err(Failure::Message(format!(
-                    "conflicting filenames for module {path}"
-                )));
-            }
+            let path = module_path(&path)?;
             resolver.filenames.insert(path, filename);
         }
         for (path, source) in modules {
-            let path = resolver.dependency_path(&module_path(&path)?);
-            if let Ok(previous) = resolver.modules.get_module(&path)
-                && previous != source
-            {
-                return Err(Failure::Message(format!(
-                    "conflicting sources for module {path}"
-                )));
-            }
+            let path = module_path(&path)?;
             resolver.modules.add_module(path, source.into());
         }
         Ok(resolver)
-    }
-
-    fn dependency_path(&self, path: &ModulePath) -> ModulePath {
-        let (PathOrigin::Package(name), Some(aliases)) = (&path.origin, &self.dependency_aliases)
-        else {
-            return path.clone();
-        };
-        let mut canonical = String::new();
-        for component in name.split('/') {
-            if !canonical.is_empty() {
-                canonical.push('/');
-            }
-            canonical.push_str(component);
-            if let Some(alias) = aliases.get(&canonical) {
-                canonical.clone_from(alias);
-            }
-        }
-        ModulePath {
-            origin: PathOrigin::Package(canonical),
-            components: path.components.clone(),
-        }
     }
 }
 
 impl Resolver for ModuleResolver {
     fn canonical_path(&self, path: &ModulePath) -> ModulePath {
-        let path = self.dependency_path(path);
         if let PathOrigin::Package(name) = &path.origin
             && name.ends_with("/wgsl_test")
             && !self.dependency_names.contains(name)
-            && self.modules.get_module(&path).is_err()
+            && self.modules.get_module(path).is_err()
         {
             ModulePath {
                 origin: PathOrigin::Package("wgsl_test".to_owned()),
-                components: path.components,
+                components: path.components.clone(),
             }
         } else {
-            path
+            path.clone()
         }
     }
 
     fn resolve_source<'a>(&'a self, path: &ModulePath) -> Result<Cow<'a, str>, ResolveError> {
         match (self.modules.get_module(path), &self.files) {
             (Ok(source), _) => Ok(Cow::Borrowed(source)),
-            (Err(_), _) if matches!(&path.origin, PathOrigin::Package(name) if self.dependency_names.contains(name)) =>
-            {
-                let mut path = path.clone();
-                if path.components.is_empty() {
-                    path.components.push("package".to_owned());
-                }
-                self.dependencies.resolve_source(&path)
+            (Err(_), _) if matches!(&path.origin, PathOrigin::Package(name) if self.dependency_names.contains(name)) => {
+                self.dependencies.resolve_source(path)
             }
             (Err(_), Some(files)) if path.origin.is_absolute() => files.resolve_source(path),
             (Err(error), _) => Err(error),
@@ -539,11 +495,7 @@ impl Resolver for ModuleResolver {
             self.filenames.get(path).cloned()
         } else if matches!(&path.origin, PathOrigin::Package(name) if self.dependency_names.contains(name))
         {
-            let mut path = path.clone();
-            if path.components.is_empty() {
-                path.components.push("package".to_owned());
-            }
-            self.dependencies.display_name(&path)
+            self.dependencies.display_name(path)
         } else {
             self.files.as_ref()?.display_name(path)
         }
@@ -666,7 +618,7 @@ fn module_path(path: &str) -> Result<ModulePath, Failure> {
 
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "wesl._native")]
 #[pyfunction]
-#[pyo3(signature = (modules, root, options, filenames, root_directory, dependencies, dependency_aliases=None))]
+#[pyo3(signature = (modules, root, options, filenames, root_directory, dependencies))]
 fn compile(
     py: Python<'_>,
     #[gen_stub(override_type(type_repr="collections.abc.Mapping[str, str]", imports=("collections.abc")))]
@@ -677,20 +629,12 @@ fn compile(
     filenames: HashMap<String, String>,
     root_directory: Option<PathBuf>,
     dependencies: HashMap<String, PathBuf>,
-    dependency_aliases: Option<HashMap<String, String>>,
 ) -> PyResult<CompileResult> {
     let modules = modules.items()?.extract::<Vec<(String, String)>>()?;
     let options = options.try_into()?;
     py.detach(move || {
         let root = module_path(&root)?;
-        let resolver = ModuleResolver::new(
-            modules,
-            filenames,
-            root_directory,
-            dependencies,
-            dependency_aliases,
-        )?;
-        let root = resolver.dependency_path(&root);
+        let resolver = ModuleResolver::new(modules, filenames, root_directory, dependencies)?;
         let result = compiler::compile(&root, &options, &resolver, HashMap::new(), |_, _| Ok(()));
         result
             .map(CompileResult::from)
@@ -805,6 +749,16 @@ fn render_diagnostic(py: Python<'_>, diagnostic: &Diagnostic) -> String {
 
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "wesl._native")]
 #[pyfunction]
+fn project_root(py: Python<'_>, source: String) -> PyResult<String> {
+    py.detach(move || {
+        wesl::toml_cfg::WeslToml::parse_str(&source)
+            .map(|configuration| configuration.package.root.to_string_lossy().into_owned())
+            .map_err(|error| PyValueError::new_err(error.to_string()))
+    })
+}
+
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "wesl._native")]
+#[pyfunction]
 fn check_syntax(py: Python<'_>, source: String, filename: String) -> PyResult<()> {
     py.detach(move || {
         source
@@ -832,7 +786,7 @@ mod _native {
     #[pymodule_export]
     use super::{
         CompileError, CompileResult, Diagnostic, Source, check_syntax, compile, constant_module,
-        render_diagnostic,
+        project_root, render_diagnostic,
     };
 
     #[pymodule_export]

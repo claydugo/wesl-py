@@ -13,7 +13,6 @@ from . import (
     CompileError,
     CompileOptions,
     Compiler,
-    Dependencies,
     Diagnostic,
     Features,
     TestOptions,
@@ -93,7 +92,7 @@ class WeslModule(pytest.Module):
                 wesl_modules: Mapping[str, str],
                 wesl_filenames: Mapping[str, str | Path],
                 wesl_root_directory: Path,
-                _wesl_dependencies: Dependencies | Mapping[str, str | Path],
+                wesl_dependencies: Mapping[str, str | Path],
                 wesl_resources: Mapping[int, Sequence[dict[str, Any]]],
                 wesl_layouts: Mapping[int, Sequence[dict[str, Any]]] | None,
                 wesl_constants: Mapping[str, float],
@@ -120,7 +119,7 @@ class WeslModule(pytest.Module):
                         options=wesl_test_options,
                         filenames={**wesl_filenames, root: shader_path},
                         root_directory=root_directory,
-                        dependencies=_wesl_dependencies,
+                        dependencies=wesl_dependencies,
                         resources=wesl_resources,
                         layouts=wesl_layouts,
                         constants=wesl_constants,
@@ -226,14 +225,14 @@ def wesl_compiler(
     wesl_modules: Mapping[str, str],
     wesl_filenames: Mapping[str, str | Path],
     wesl_root_directory: Path,
-    _wesl_dependencies: Dependencies | Mapping[str, str | Path],
+    wesl_dependencies: Mapping[str, str | Path],
 ) -> Compiler:
     return Compiler(
         options=wesl_options,
         modules=wesl_modules,
         filenames=wesl_filenames,
         root_directory=wesl_root_directory,
-        dependencies=_wesl_dependencies,
+        dependencies=wesl_dependencies,
     )
 
 
@@ -243,19 +242,7 @@ def _wesl_project(request: pytest.FixtureRequest) -> Project | None:
 
 
 @pytest.fixture
-def _wesl_dependencies(
-    _wesl_project: Project | None,
-    wesl_dependencies: Dependencies | Mapping[str, str | Path],
-) -> Dependencies | Mapping[str, str | Path]:
-    return (
-        wesl_dependencies
-        if _wesl_project is None or isinstance(wesl_dependencies, Dependencies)
-        else _wesl_project.load_dependencies(wesl_dependencies)
-    )
-
-
-@pytest.fixture
-def wesl_dependencies() -> Dependencies | Mapping[str, str | Path]:
+def wesl_dependencies() -> Mapping[str, str | Path]:
     return {}
 
 

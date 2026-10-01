@@ -19,6 +19,7 @@ __all__ = [
     "compile_test",
     "constant_module",
     "discover_tests",
+    "project_root",
     "render_diagnostic",
 ]
 
@@ -131,7 +132,6 @@ def compile(
     dependencies: typing.Mapping[
         builtins.str, builtins.str | os.PathLike | pathlib.Path
     ],
-    dependency_aliases: typing.Mapping[builtins.str, builtins.str] | None = None,
 ) -> CompileResult: ...
 def compile_test(
     modules: collections.abc.Mapping[str, str],
@@ -144,7 +144,6 @@ def compile_test(
     dependencies: typing.Mapping[
         builtins.str, builtins.str | os.PathLike | pathlib.Path
     ],
-    dependency_aliases: typing.Mapping[builtins.str, builtins.str] | None = None,
 ) -> (
     tuple[
         builtins.str,
@@ -161,4 +160,5 @@ def constant_module(
 def discover_tests(
     source: builtins.str, filename: builtins.str
 ) -> builtins.list[tuple[builtins.str, builtins.int, builtins.int]]: ...
+def project_root(source: builtins.str) -> builtins.str: ...
 def render_diagnostic(diagnostic: Diagnostic) -> builtins.str: ...

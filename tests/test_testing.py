@@ -33,49 +33,28 @@ def test_shader_test_visibility(wesl_device: wgpu.GPUDevice) -> None:
 @pytest.mark.parametrize(
     "override", [False, True], ids=["filesystem", "virtual-override"]
 )
-def test_run_test_reuses_project_dependencies(
+def test_run_test_uses_explicit_dependencies(
     wesl_device: wgpu.GPUDevice, tmp_path: Path, *, override: bool
 ) -> None:
-    (tmp_path / "wesl.toml").write_text(
-        'edition = "2026_pre"\nroot = "."\n[dependencies]\n'
-        'alpha = { path = "common" }\nbeta = { path = "common" }\n'
-    )
     common = tmp_path / "common"
     common.mkdir()
-    (common / "wesl.toml").write_text('edition = "2026_pre"\nroot = "."\n')
     (common / "package.wesl").write_text(
         "var<private> counter: u32 = 0u; "
         "fn next() -> u32 { counter += 1u; return counter; }"
     )
-    compiler = wesl.Compiler.from_project(tmp_path)
-    (tmp_path / "wesl.toml").unlink()
-    (common / "wesl.toml").unlink()
     modules = {
         "package::main": "@test fn selected() { "
-        "wgsl_test::expectEq(alpha::next(), 1u); "
-        "wgsl_test::expectEq(beta::next(), 2u); }"
+        "wgsl_test::expectEq(common::next(), 1u); "
+        "wgsl_test::expectEq(common::next(), 2u); }"
     }
     if override:
-        modules["beta"] = (common / "package.wesl").read_text()
+        modules["common"] = (common / "package.wesl").read_text()
     run_test(
         wesl_device,
         modules,
         "selected",
-        dependencies=compiler.dependencies,
+        dependencies={"common": common},
     )
-    if override:
-        run_test(
-            wesl_device,
-            {
-                "beta::tests": "@test fn selected() { "
-                "wgsl_test::expectEq(package::next(), 1u); "
-                "wgsl_test::expectEq(package::next(), 2u); }",
-                "beta": modules["beta"],
-            },
-            "selected",
-            root="beta::tests",
-            dependencies=compiler.dependencies,
-        )
 
 
 def test_named_and_numeric_overrides(wesl_device: wgpu.GPUDevice) -> None:

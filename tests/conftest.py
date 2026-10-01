@@ -1,4 +1,5 @@
 from dataclasses import replace
+from importlib import import_module
 from importlib.util import find_spec
 from pathlib import Path
 
@@ -6,6 +7,12 @@ import pytest
 import wesl
 
 pytest_plugins = ["pytester"]
+
+
+@pytest.fixture(scope="session", autouse=True)
+def gpu_backend() -> None:
+    if find_spec("wgpu") is not None:
+        import_module("wgpu.backends.wgpu_native")
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:

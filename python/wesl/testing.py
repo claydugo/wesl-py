@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import wgpu
 
-from . import Dependencies, Diagnostic, TestOptions, _native
+from . import Diagnostic, TestOptions, _native
 
 __all__ = [
     "ShaderAssertionError",
@@ -30,7 +30,7 @@ def run_test(
     options: TestOptions | None = None,
     filenames: Mapping[str, str | PathLike[str]] | None = None,
     root_directory: str | PathLike[str] | None = None,
-    dependencies: Dependencies | Mapping[str, str | PathLike[str]] | None = None,
+    dependencies: Mapping[str, str | PathLike[str]] | None = None,
     resources: Mapping[int, Sequence[dict[str, Any]]] | None = None,
     layouts: Mapping[int, Sequence[dict[str, Any]]] | None = None,
     constants: Mapping[str, float] | None = None,
@@ -60,7 +60,7 @@ def prepare_test(
     options: TestOptions | None = None,
     filenames: Mapping[str, str | PathLike[str]] | None = None,
     root_directory: str | PathLike[str] | None = None,
-    dependencies: Dependencies | Mapping[str, str | PathLike[str]] | None = None,
+    dependencies: Mapping[str, str | PathLike[str]] | None = None,
     resources: Mapping[int, Sequence[dict[str, Any]]] | None = None,
     layouts: Mapping[int, Sequence[dict[str, Any]]] | None = None,
     constants: Mapping[str, float] | None = None,
@@ -86,11 +86,6 @@ def prepare_test(
     result_binding = 0
     while result_binding in bindings:
         result_binding += 1
-    directories = (
-        dependencies.directories
-        if isinstance(dependencies, Dependencies)
-        else dependencies
-    )
     compiled = _native.compile_test(
         modules,
         root,
@@ -105,11 +100,10 @@ def prepare_test(
             "wgsl_test": str(Path(__file__).parent / "shaders/wgsl_test"),
             **(
                 {}
-                if directories is None
-                else {name: fspath(path) for name, path in directories.items()}
+                if dependencies is None
+                else {name: fspath(path) for name, path in dependencies.items()}
             ),
         },
-        dict(dependencies.aliases) if isinstance(dependencies, Dependencies) else None,
     )
     if compiled is None:
         message = "WESL conditions disable this test"

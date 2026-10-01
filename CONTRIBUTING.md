@@ -97,12 +97,9 @@ GPU checks use additional environments:
 - Generated WGSL: `pixi run -e gpu python -m pytest tests/test_compute.py -q`
 - Shader executor and pytest plugin: `pixi run -e testing python -m pytest
   tests/test_testing.py tests/test_pytest_plugin.py tests/shaders -q`
-- Oldest supported pytest series: `pixi run -e testing-oldest python -m pytest
-  tests/test_pytest_plugin.py -q`
 
 The `gpu` environment adds NumPy and wgpu-py.
 The `testing` environment also includes the example dependencies and pytest plugins.
-The `testing-oldest` environment checks pytest 8.2.x.
 These tests accept hardware and software WebGPU adapters.
 Each [example](examples/README.md) documents its own test command.
 See the [testing examples](tests/examples/testing/README.md) for snapshot updates

@@ -19,7 +19,10 @@ def test_resource_loader_rejects_directory_cycles(tmp_path: Path) -> None:
         [
             sys.executable,
             "-c",
-            "import sys, wesl; wesl.load_modules(sys.argv[1], namespace='package')",
+            (
+                "import sys, wesl; from pathlib import Path; "
+                "wesl.load_modules(Path(sys.argv[1]), namespace='package')"
+            ),
             str(tmp_path),
         ],
         cwd=tmp_path,

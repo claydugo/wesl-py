@@ -24,15 +24,15 @@ def test_collect_without_gpu_dependencies(pytester: pytest.Pytester) -> None:
         test_prefix="@test fn ignored() {}",
         suffix_test="@test fn ignored() {}",
     )
-    result = pytester.runpytest_subprocess("--collect-only", "-q")
+    result = pytester.runpytest_inprocess("--collect-only", "-q")
     result.stdout.fnmatch_lines(
         ["math.test.wesl::first", "math.test.wesl::second", "*2 tests collected*"]
     )
     assert result.ret == 0
-    result = pytester.runpytest_subprocess("--collect-only", "-q", "-m", "not gpu")
+    result = pytester.runpytest_inprocess("--collect-only", "-q", "-m", "not gpu")
     result.stdout.fnmatch_lines(["*2 deselected*"])
     assert result.ret == pytest.ExitCode.NO_TESTS_COLLECTED
-    result = pytester.runpytest_subprocess("--collect-only", "-q", "noise.wesl")
+    result = pytester.runpytest_inprocess("--collect-only", "-q", "noise.wesl")
     result.stdout.fnmatch_lines(["noise.wesl::ignored", "*1 test collected*"])
     assert result.ret == 0
 
@@ -80,36 +80,27 @@ def test_compile(wesl_compiler, wesl_features):
         "shaders/main.wesl", features=wesl_features
     )
 """)
-    result = pytester.runpytest_subprocess("shaders", "-q")
+    result = pytester.runpytest_inprocess("shaders", "-q")
     result.assert_outcomes(passed=4)
 
 
 @pytest.mark.gpu
-@pytest.mark.parametrize("resolved", [False, True], ids=["directories", "snapshot"])
 def test_dependency_fixture_overrides_missing_manifest_paths(
     pytester: pytest.Pytester,
-    *,
-    resolved: bool,
 ) -> None:
     pytester.makefile(
         ".toml",
         wesl='edition = "2026_pre"\nroot = "shaders"\n'
         '[dependencies]\nlibrary = { path = "unavailable" }\n',
     )
-    pytester.makeconftest(f"""
+    pytester.makeconftest("""
         from pathlib import Path
         import pytest
-        import wesl
 
         @pytest.fixture
         def wesl_dependencies():
             directory = Path(__file__).parent
-            dependencies = {{"library": directory / "replacement"}}
-            if {resolved!r}:
-                return wesl.Compiler.from_project(
-                    directory, dependencies=dependencies
-                ).dependencies
-            return dependencies
+            return {"library": directory / "replacement"}
     """)
     shaders = pytester.path / "shaders"
     shaders.mkdir()
@@ -127,12 +118,12 @@ def test_compile(wesl_compiler):
     (shaders / "main.wesl").write_text(
         "@compute @workgroup_size(1) fn main() { let value = library::value(); }"
     )
-    result = pytester.runpytest_subprocess("shaders", "-q")
+    result = pytester.runpytest_inprocess("shaders", "-q")
     result.assert_outcomes(passed=2)
 
 
 @pytest.mark.gpu
-def test_shader_tests_share_transitive_dependency_state(
+def test_shader_tests_use_explicit_dependency_scopes(
     pytester: pytest.Pytester,
 ) -> None:
     pytester.makeconftest("""
@@ -142,8 +133,14 @@ def test_shader_tests_share_transitive_dependency_state(
 
         @pytest.fixture
         def wesl_dependencies(wesl_dependencies):
+            directory = Path(__file__).parent
             return MappingProxyType({
-                **wesl_dependencies, "extra": Path(__file__).parent / "common"
+                **wesl_dependencies,
+                "alpha": directory / "alpha",
+                "beta": directory / "beta",
+                "alpha/common": directory / "common",
+                "beta/common": directory / "common",
+                "extra": directory / "common",
             })
     """)
     pytester.makefile(
@@ -172,16 +169,16 @@ def test_shader_tests_share_transitive_dependency_state(
         ".test.wesl",
         shared_state="@test fn shared_state() { "
         "wgsl_test::expectEq(alpha::value(), 1u); "
-        "wgsl_test::expectEq(beta::value(), 2u); "
+        "wgsl_test::expectEq(beta::value(), 1u); "
         "wgsl_test::expectEq(extra::next(), 1u); }",
     )
-    result = pytester.runpytest_subprocess("shared_state.test.wesl", "-q")
+    result = pytester.runpytest_inprocess("shared_state.test.wesl", "-q")
     result.assert_outcomes(passed=1)
 
 
 def test_malformed_shader_fails_collection(pytester: pytest.Pytester) -> None:
     pytester.makefile(".test.wesl", invalid="@test fn broken(")
-    result = pytester.runpytest_subprocess("--collect-only", "-q")
+    result = pytester.runpytest_inprocess("--collect-only", "-q")
     result.assert_outcomes(errors=1)
     result.stdout.fnmatch_lines(["*invalid.test.wesl*"])
 
@@ -207,7 +204,7 @@ def test_symlink_root_preserves_relative_imports(pytester: pytest.Pytester) -> N
     )
     (shaders / "nested/math.test.wesl").symlink_to(source)
     (pytester.path / "linked").symlink_to(shaders, target_is_directory=True)
-    result = pytester.runpytest_subprocess("linked", "-q")
+    result = pytester.runpytest_inprocess("linked", "-q")
     result.assert_outcomes(passed=1)
 
 
@@ -295,7 +292,7 @@ def test_compiler_without_gpu_dependencies(pytester: pytest.Pytester) -> None:
             assert diagnostic.filename == str(Path("generated/broken.wesl"))
             assert diagnostic.source == "fn value() -> u32 { return ; ) }"
     """)
-    result = pytester.runpytest_subprocess("-v")
+    result = pytester.runpytest_inprocess("-v")
     result.assert_outcomes(passed=6)
     result.stdout.fnmatch_lines(["*test_file[[]disabled] PASSED*"])
     result.stdout.fnmatch_lines(["*test_file[[]enabled] PASSED*"])
@@ -349,7 +346,7 @@ def test_shared_features_and_independent_options(pytester: pytest.Pytester) -> N
             assert expected in shader.wgsl
             assert not shader.sources
     """)
-    result = pytester.runpytest_subprocess("-v")
+    result = pytester.runpytest_inprocess("-v")
     result.assert_outcomes(passed=4)
     result.stdout.fnmatch_lines(
         ["*shared.test.wesl::selected[[]off] PASSED*", "*selected[[]on] PASSED*"],
@@ -376,7 +373,7 @@ def test_test_options_control_native_skips(pytester: pytest.Pytester) -> None:
 
     """)
     pytester.makefile(".test.wesl", disabled="@if(enabled) @test fn disabled() {}")
-    result = pytester.runpytest_subprocess("-q")
+    result = pytester.runpytest_inprocess("-q")
     result.assert_outcomes(skipped=1)
 
 
@@ -400,7 +397,7 @@ def test_setup_plan_does_not_execute_fixtures(pytester: pytest.Pytester) -> None
         ".test.wesl",
         plan="@test fn enabled() {} @if(false) @test fn disabled() {}",
     )
-    result = pytester.runpytest_subprocess("--setup-plan", "-q")
+    result = pytester.runpytest_inprocess("--setup-plan", "-q")
     assert result.ret == 0
     result.stdout.fnmatch_lines(
         [
@@ -435,7 +432,7 @@ def test_generate_tests_with_direct_parameters(pytester: pytest.Pytester) -> Non
         ".test.wesl",
         direct="@if(enabled) @test fn selected() { wgsl_test::expect(true); }",
     )
-    result = pytester.runpytest_subprocess("-v")
+    result = pytester.runpytest_inprocess("-v")
     result.assert_outcomes(passed=1)
     assert "direct.test.wesl::selected[direct] PASSED" in result.stdout.str()
 
@@ -472,7 +469,7 @@ def test_collection_hook_state(pytester: pytest.Pytester) -> None:
             yield wesl.TestOptions()
     """)
     pytester.makefile(".test.wesl", state="@if(false) @test fn disabled() {}")
-    result = pytester.runpytest_subprocess(
+    result = pytester.runpytest_inprocess(
         "-q",
         "-k",
         "configured_shader",
@@ -489,79 +486,6 @@ def test_collection_hook_state(pytester: pytest.Pytester) -> None:
     property_element = report.find(".//property[@name='shader']")
     assert property_element is not None
     assert property_element.attrib["value"] == "configured"
-
-
-@pytest.mark.gpu
-def test_fixtures_parametrization_and_selection(pytester: pytest.Pytester) -> None:
-    pytester.makeconftest("""
-        from struct import pack
-        import pytest
-        import wesl
-        import wgpu
-
-        @pytest.fixture(params=[3, 7], ids=["three", "seven"])
-        def input_value(request):
-            return request.param
-
-        @pytest.fixture
-        def wesl_resources(input_value, wesl_device):
-            buffer = wesl_device.create_buffer_with_data(
-                data=pack("<I", input_value), usage=wgpu.BufferUsage.STORAGE,
-            )
-            try:
-                yield {1: [{"binding": 2, "resource": {"buffer": buffer}}]}
-            finally:
-                buffer.destroy()
-
-        @pytest.fixture
-        def wesl_constants(input_value):
-            return {"expected": input_value * 2}
-
-        @pytest.fixture(
-            params=[
-                None,
-                {1: [{
-                    "binding": 2,
-                    "visibility": wgpu.ShaderStage.COMPUTE,
-                    "buffer": {"type": "storage"},
-                }]},
-            ],
-            ids=["auto", "explicit"],
-        )
-        def wesl_layouts(request):
-            return request.param
-
-        @pytest.fixture
-        def wesl_modules():
-            return {
-                "library": "fn double(value: u32) -> u32 { return value * 2u; }"
-            }
-    """)
-    pytester.makefile(
-        ".test.wesl",
-        math="""
-        import library::double;
-        import wgsl_test::expectEq;
-        @group(1) @binding(2) var<storage, read_write> values: array<u32>;
-        override expected: u32;
-        @test fn doubling() { expectEq(double(values[0]), expected); }
-        @test fn mutation() {
-            expectEq(double(values[0]), expected);
-            values[0] = 9u;
-            expectEq(values[0], 9u);
-        }
-    """,
-    )
-    result = pytester.runpytest_subprocess(
-        "-v", "math.test.wesl::doubling", "-k", "seven"
-    )
-    result.assert_outcomes(passed=2, deselected=2)
-    assert {line.split()[0] for line in result.stdout.lines if " PASSED " in line} == {
-        "math.test.wesl::doubling[seven-auto]",
-        "math.test.wesl::doubling[seven-explicit]",
-    }
-    result = pytester.runpytest_subprocess("-q", "-m", "wesl")
-    result.assert_outcomes(passed=8)
 
 
 @pytest.mark.gpu
@@ -594,7 +518,7 @@ def test_skip_xfail_and_conditional_fixtures(pytester: pytest.Pytester) -> None:
         @test fn unavailable() { expect(false); }
     """,
     )
-    result = pytester.runpytest_subprocess("-q")
+    result = pytester.runpytest_inprocess("-q")
     result.assert_outcomes(passed=1, skipped=3, xfailed=2)
 
 
@@ -609,30 +533,9 @@ def test_missing_gpu_dependency_policy(
     pytester: pytest.Pytester, policy: str, outcome: str
 ) -> None:
     pytester.makefile(".test.wesl", adapter="@test fn dispatch() {}")
-    result = pytester.runpytest_subprocess("-q", "-ra", f"--wesl-gpu={policy}")
+    result = pytester.runpytest_inprocess("-q", "-ra", f"--wesl-gpu={policy}")
     result.assert_outcomes(**{outcome: 1})
     assert "install wesl-py[testing] to run shader tests" in result.stdout.str()
-
-
-@pytest.mark.gpu
-@pytest.mark.skipif(sys.platform != "linux", reason="requires the Vulkan loader")
-@pytest.mark.parametrize(
-    ("policy", "outcome"), [("required", "errors"), ("optional", "skipped")]
-)
-def test_missing_adapter_policy(
-    pytester: pytest.Pytester, policy: str, outcome: str
-) -> None:
-    pytester.makeconftest("""
-        import os
-        from pathlib import Path
-
-        os.environ["WGPU_BACKEND_TYPE"] = "Vulkan"
-        os.environ["VK_DRIVER_FILES"] = str(Path(__file__).parent / "missing-icd.json")
-        os.environ["VK_ICD_FILENAMES"] = str(Path(__file__).parent / "missing-icd.json")
-    """)
-    pytester.makefile(".test.wesl", adapter="@test fn dispatch() {}")
-    result = pytester.runpytest_subprocess("-q", "-ra", f"--wesl-gpu={policy}")
-    result.assert_outcomes(**{outcome: 1})
 
 
 @pytest.mark.gpu
@@ -655,7 +558,7 @@ def test_shader_names_do_not_register_hooks(pytester: pytest.Pytester) -> None:
             @test fn normal() { wgsl_test::expect(true); }
         """,
     )
-    result = pytester.runpytest_subprocess("-q")
+    result = pytester.runpytest_inprocess("-q")
     result.assert_outcomes(passed=12)
 
 
@@ -688,5 +591,5 @@ def test_autouse_fixtures_run_before_test_options(pytester: pytest.Pytester) -> 
             }
         """,
     )
-    result = pytester.runpytest_subprocess("-q")
+    result = pytester.runpytest_inprocess("-q")
     result.assert_outcomes(passed=1)

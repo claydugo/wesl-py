@@ -34,7 +34,7 @@ def test_failure_reports_and_junit(
     )
     if workers:
         pytest.importorskip("xdist")
-    result = pytester.runpytest_subprocess(
+    result = pytester.runpytest_inprocess(
         "-q",
         f"--tb={style}",
         "--color=yes",
@@ -108,7 +108,7 @@ def test_failure_chaining(
         ".test.wesl",
         failure="@test fn failing() { wgsl_test::expect(false); }",
     )
-    result = pytester.runpytest_subprocess("-q", "--junitxml=results.xml")
+    result = pytester.runpytest_inprocess("-q", "--junitxml=results.xml")
     result.assert_outcomes(failed=1)
     assert ("RuntimeError: shader input failed" in result.stdout.str()) is cause_visible
     assert "shader assertion note" in result.stdout.str()

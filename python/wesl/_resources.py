@@ -1,4 +1,3 @@
-import os
 from importlib.resources.abc import Traversable
 from pathlib import Path, PurePosixPath
 from typing import NamedTuple
@@ -13,10 +12,8 @@ def module_name(parts: tuple[str, ...], *, namespace: str) -> str:
     return namespace if parts == ("package",) else namespace + "::" + "::".join(parts)
 
 
-def load_modules(
-    directory: str | os.PathLike[str] | Traversable, *, namespace: str
-) -> LoadedModules:
-    root = Path(directory) if isinstance(directory, (str, os.PathLike)) else directory
+def load_modules(directory: Traversable, *, namespace: str) -> LoadedModules:
+    root = directory
     if not root.is_dir():
         raise NotADirectoryError(str(root))
     selected: dict[str, tuple[tuple[str, ...], str, Traversable]] = {}

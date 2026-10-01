@@ -68,7 +68,8 @@ Passing invocations cannot overwrite a failure. Returning from the test still
 records that invocation's results.
 
 Imports resolve through the existing WESL compiler.
-Each test uses the nearest ancestor `wesl.toml` for its root and path dependencies.
+Each test uses the nearest ancestor `wesl.toml` for its shader root.
+Register dependency directories through the `wesl_dependencies` fixture.
 Use `Compiler.from_project()` to load these settings outside pytest.
 Without a manifest, the default package root is the test file's parent directory.
 Configure a project root in `wesl.toml`:
@@ -378,9 +379,8 @@ The plugin provides these fixtures:
 - `wesl_layouts`: `None` for automatic layouts, or a mapping of groups to layout
   entries
 - `wesl_modules`: Empty mapping of additional WESL modules
-- `wesl_dependencies`: Directory overrides for the nearest manifest, or a
-  `Dependencies` snapshot that supplies the complete graph. Defaults to an empty
-  mapping
+- `wesl_dependencies`: Explicit mapping of package names to shader directories.
+  Defaults to an empty mapping
 - `wesl_filenames`: Empty mapping of module names to source filenames
 - `wesl_features`: Default `Features`, shared by both options fixtures
 - `wesl_options`: `CompileOptions` for `wesl_compiler`, using `wesl_features`
@@ -393,10 +393,8 @@ Override fixtures in `conftest.py`. Parametrized fixtures produce separate shade
 test cases with normal pytest IDs. Use `pytest_collection_modifyitems` to attach
 skip, xfail, or project markers. Collected WESL tests carry `wesl` and `gpu` markers.
 
-The plugin resolves directory overrides once per test. Python compilation and
-native shader tests use the same dependency snapshot. Return
-`Compiler.from_project(...).dependencies` from `wesl_dependencies` to reuse an
-existing snapshot.
+Python compilation and native shader tests use the same `wesl_dependencies` mapping.
+Manifest dependency entries configure editors. They do not register Python imports.
 
 The `gpu` marker includes hardware and software adapters.
 A software adapter runs shaders on the CPU.
@@ -445,7 +443,7 @@ def run_test(
     options: wesl.TestOptions | None = None,
     filenames: Mapping[str, str | PathLike[str]] | None = None,
     root_directory: str | PathLike[str] | None = None,
-    dependencies: (wesl.Dependencies | Mapping[str, str | PathLike[str]] | None) = None,
+    dependencies: Mapping[str, str | PathLike[str]] | None = None,
     resources: Mapping[int, Sequence[dict[str, Any]]] | None = None,
     layouts: Mapping[int, Sequence[dict[str, Any]]] | None = None,
     constants: Mapping[str, float] | None = None,
@@ -458,7 +456,7 @@ def run_test(
 `test_name` names a test function in the `root` module.
 `root`, `filenames`, `root_directory`, and `dependencies` use the
 [compilation conventions](api.md#compile-strings-and-files).
-Pass `compiler.dependencies` to reuse a project compiler's package graph.
+Pass `compiler.dependencies` to reuse its explicit directory mapping.
 Pass `compiler.root_directory` separately when the test imports project files.
 
 `resources` maps bind-group numbers to entry lists, as described

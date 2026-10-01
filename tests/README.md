@@ -13,7 +13,7 @@ compute dispatch, rendering, and snapshots.
 | [test_constants.py](test_constants.py) | Convert Python scalars to WESL constants. Reject lossy values. Scope each injection to one call. |
 | [test_sources.py](test_sources.py) | Resolve files and virtual modules. Preserve source records and dependency scopes. |
 | [test_resources.py](test_resources.py) | Load directories and ZIP resources. Select WESL over WGSL. Reject aliases and directory cycles. |
-| [test_project.py](test_project.py) | Load manifests. Preserve dependency identity, scoped overrides, and manifest snapshots. |
+| [test_project.py](test_project.py) | Parse manifests upstream. Load shader roots and explicit dependency directories. |
 | [test_diagnostics.py](test_diagnostics.py) | Preserve errors, byte spans, Unicode positions, and diagnostic ownership. |
 | [test_threading.py](test_threading.py) | Match version metadata. Preserve the GIL state and import without GPU packages. Compile shader tests concurrently without mixing diagnostics. |
 | [upstream.rs](upstream.rs) | Compare emitted WGSL directly with the pinned Rust compiler. |
@@ -30,7 +30,7 @@ pixi run -e test python -m pytest tests/test_compile.py tests/test_sources.py -q
 | --- | --- |
 | [test_compute.py](test_compute.py) | Execute injected constants in resource bindings, workgroup sizes, and typed expressions. |
 | [test_shader_compilation.py](test_shader_compilation.py) | Transform native shader tests. Preserve error locations. Reject invalid assertion layouts without a GPU. |
-| [test_testing.py](test_testing.py) | Run shader tests with options, project dependencies, buffer and texture bindings. Preserve resources across calls. |
+| [test_testing.py](test_testing.py) | Run shader tests with options, explicit dependencies, buffer and texture bindings. Preserve resources across calls. |
 | [test_shader_assertions.py](test_shader_assertions.py) | Preserve assertion values, component order, source locations, and counts through instrumentation. |
 | [test_shader_workgroups.py](test_shader_workgroups.py) | Execute cooperative barriers. Record every invocation in three dimensions. Preserve failure counts and builtin arguments. |
 | [test_shader_errors.py](test_shader_errors.py) | Render shader failures without requesting a device. Handle invalid spans and Unicode line breaks. |
@@ -44,7 +44,6 @@ pixi run -e testing python -m pytest \
   tests/test_pytest_plugin.py tests/test_pytest_reporting.py -q
 ```
 
-Use `-e testing-oldest` for the same command to verify pytest 8.2.
 Use `-e test` for `test_pytest_plugin.py` to exercise missing dependencies.
 These environments cover different contracts. A skip does not verify a contract.
 

@@ -205,10 +205,8 @@ The [imports example](../examples/imports.py) fetches an upstream module and
 compiles a shader that imports it.
 
 `compile`, `compile_source`, and `compile_file` also accept `dependencies`.
-Pass a mapping of package names to directory paths, or a `Dependencies` value
-from `Compiler.from_project()`. Relative directory paths use the working directory.
-Construct `Dependencies(directories)` to copy a directory mapping and fix its
-relative paths at construction. Both forms use the same import scopes.
+Pass a mapping of package names to shader directories.
+Relative directory paths use the working directory.
 The binding routes imports through upstream `Router` and `FileResolver`.
 It reads files on demand, with `.wesl` preferred over `.wgsl`.
 
@@ -220,42 +218,25 @@ Entries in `modules` override files.
 
 Each compilation reads the current sources. The binding does not download libraries.
 
-For a WESL project, put the root and dependency paths in `wesl.toml`:
+Use `wesl.toml` to set the project shader root:
 
 ```toml
 edition = "2026_pre"
 root = "shaders"
-
-[dependencies]
-library = { path = "../library" }
 ```
 
-The root and dependency paths are relative to the manifest that declares them.
-The default root is `shaders`. Each path dependency must contain its own `wesl.toml`.
-Its manifest supplies its root and dependencies. Transitive dependencies retain
-their package scopes. Cyclic path dependencies raise `ValueError`.
-
-Imports can use the package's declared dependencies and the bundled `wgsl_test`.
-References to the same manifest share one package instance and its shader state.
-A scoped override such as `alpha/common` replaces that dependency for `alpha`.
-Other packages keep their declared dependency. Different scoped overrides create
-separate package instances.
-Directory overrides can supply their own children through entries such as
-`alpha/common/settings`. The loader does not read manifests from overridden directories.
-
-The loader supports the `2026_pre` edition and explicit path dependencies.
-Package-manager dependencies and `dependencies = "auto"` raise `NotImplementedError`.
+`Compiler.from_project()` finds the nearest ancestor manifest.
+Upstream `WeslToml` parses the manifest and supplies the root.
+The default root is `shaders`. Relative roots use the manifest directory.
+Pass dependencies explicitly through the constructor's `dependencies` mapping.
+The binding does not load manifest dependencies or deduplicate package instances.
+Two package names remain distinct even when they point to the same directory.
+Use one package name when callers must share shader state and bindings.
 
 Manifest `include` and `exclude` patterns do not filter explicitly requested imports
 or pytest collection.
 
 `compile()`, `compile_source()`, and `compile_file()` do not discover manifests.
-Use `Compiler.from_project()` to supply project settings.
-Its `dependencies` is an immutable `Dependencies` value with resolved directories
-and package aliases. Pass this value to another compiler or `run_test()` to retain
-package scopes and shared state. It is not a mapping; `dict()` raises `TypeError`.
-Supply directory overrides to `Compiler.from_project(..., dependencies=...)`
-when constructing the graph.
 
 Named libraries can also use `modules`:
 
@@ -299,10 +280,6 @@ Neither falls back to a virtual module named `common`.
 These keys identify virtual modules. Virtual module mappings do not define a
 package dependency graph or deduplicate package instances.
 Use `dependencies` to register directories for named libraries.
-With a project dependency graph, module overrides follow package aliases.
-An override through either alias replaces the same module and preserves shared state.
-This also applies to `constant_modules` and `filenames`.
-Conflicting sources or filename labels for aliases of the same module raise `ValueError`.
 
 ## Supply constants
 
@@ -402,11 +379,9 @@ result = compiler.compile_file("main.wesl")
 ```
 
 This constructor raises `FileNotFoundError` if it finds no manifest.
-It accepts the same settings as `Compiler`, with `dependencies` limited to a
-mapping of directory overrides. Explicit settings override the manifest.
-It stores the project settings for subsequent compilation.
-The constructor resolves the root directory, relative overrides, and all manifests
-once. Its `dependencies` holds the resulting `Dependencies` snapshot.
+It accepts the same settings as `Compiler`.
+An explicit `root_directory` overrides the manifest root.
+The constructor reads one manifest and fixes the root and explicit dependency paths.
 Construct a new compiler to pick up manifest changes.
 Each compilation reads current shader contents from the stored directories.
 `Compiler.compile_file()` uses these settings without searching for another manifest.
@@ -443,7 +418,7 @@ Source records support equality, hashing, and pickle.
 
 ## Package resources
 
-Use `load_modules()` for local files and installed Python resources.
+Use `load_modules()` for installed Python resources.
 This example assumes your installed `shader_library.shaders` package contains
 `blur.wesl` with a function named `apply` that takes no arguments:
 
@@ -461,8 +436,9 @@ result = wesl.compile_source(
 )
 ```
 
-`load_modules(directory, *, namespace)` accepts a directory path or a
-`Traversable` resource collection. It returns `LoadedModules(modules, filenames)`.
+`load_modules(directory, *, namespace)` accepts a `Traversable` resource collection.
+This includes the `Path` objects returned by `importlib.resources.files()`.
+It returns `LoadedModules(modules, filenames)`.
 Relative file paths become names within the explicit namespace.
 The top-level `package.wesl` or `package.wgsl` supplies the namespace's root module.
 The loader skips `*.test.wesl` files. Pytest collects those files separately.

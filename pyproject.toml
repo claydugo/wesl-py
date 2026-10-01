@@ -23,7 +23,7 @@ wesl = "wesl.pytest_plugin"
 
 [project.optional-dependencies]
 testing = [
-  "pytest>=8.2",
+  "pytest>=9.1",
   "wgpu>=0.32,<0.33",
 ]
 

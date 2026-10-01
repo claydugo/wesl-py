@@ -33,7 +33,7 @@ MACOSX_DEPLOYMENT_TARGET = "11.0"
 delvewheel = "*"
 
 [feature.test.dependencies]
-pytest = ">=8.2"
+pytest = ">=9.1"
 
 [feature.gpu.dependencies]
 numpy = ">=1.26"
@@ -102,9 +102,6 @@ wesl-py = { path = ".", editable = true, extras = ["testing"] }
 pytest-regressions = ">=2.5"
 pytest-xdist = ">=3.6"
 
-[feature.pytest-oldest.dependencies]
-pytest = ">=8.2,<8.3"
-
 [environments]
 default = { features = ["build"], solve-group = "default" }
 test = { features = ["build", "test"], solve-group = "default" }
@@ -113,7 +110,6 @@ examples = { features = ["build", "gpu", "examples"], solve-group = "default" }
 dev = { features = ["build", "dev", "test"], solve-group = "default" }
 lint = { features = ["lint"], no-default-feature = true }
 testing = { features = ["build", "test", "gpu", "examples", "testing"], solve-group = "default" }
-testing-oldest = { features = ["build", "test", "gpu", "testing", "pytest-oldest"] }
 
 [environments.rust]
 features = ["rust"]

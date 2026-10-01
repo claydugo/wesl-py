@@ -205,7 +205,6 @@ def test_compile_file_does_not_discover_manifests(tmp_path: Path) -> None:
     assert result.modules == ("package::main", "package::helper")
     assert "7u" in result.wgsl
     assert wesl.compile_file(filename, dependencies={}) == result
-    assert wesl.compile_file(filename, dependencies=wesl.Dependencies({})) == result
 
 
 def test_directory_dependencies_follow_imports_and_reload(tmp_path: Path) -> None:
@@ -297,7 +296,7 @@ def test_directory_dependencies_preserve_scoped_overrides(tmp_path: Path) -> Non
     ],
     ids=["qualified-name", "alias", "grouped-alias"],
 )
-def test_dependency_mappings_and_snapshots_use_the_same_scopes(
+def test_dependency_mappings_use_upstream_scopes(
     tmp_path: Path, source: str, *, sourcemap: bool
 ) -> None:
     library = tmp_path / "library"
@@ -309,16 +308,12 @@ def test_dependency_mappings_and_snapshots_use_the_same_scopes(
     shader = "@compute @workgroup_size(1) fn main() { let value = library::value(); }"
     options = wesl.CompileOptions(sourcemap=sourcemap)
     directories = {"library": library, "common": common}
-    for dependencies in (directories, wesl.Dependencies(directories)):
-        with pytest.raises(wesl.CompileError, match="common"):
-            wesl.compile_source(shader, options=options, dependencies=dependencies)
+    with pytest.raises(wesl.CompileError, match="common"):
+        wesl.compile_source(shader, options=options, dependencies=directories)
     directories["library/common"] = common
     result = wesl.compile_source(shader, options=options, dependencies=directories)
     assert "7u" in result.wgsl
     assert set(result.modules) == {"package::main", "library", "library/common"}
-    assert result == wesl.compile_source(
-        shader, options=options, dependencies=wesl.Dependencies(directories)
-    )
 
 
 def test_source_records_preserve_text_and_filenames(tmp_path: Path) -> None:
