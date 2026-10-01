@@ -128,7 +128,7 @@ Its environment uses conda dependencies and needs no Rust or wesl-py installatio
 Markdown checks skip macOS because conda-forge has no rumdl build for Apple Silicon.
 Dependencies use version ranges. `pixi.lock` records resolved versions.
 CI pins Pixi separately from the workspace minimum.
-Validate new Pixi releases before updating all four setup steps.
+Validate new Pixi releases before updating all five setup steps.
 Dependabot's seven-day cooldown covers Actions, not Pixi.
 `check-rust` runs rustfmt and Clippy in `rust`.
 It needs no wesl-py or GPU dependencies.
@@ -139,7 +139,9 @@ Run individual checks with `pixi run -e dev <task>`:
 `check-stubs` rebuilds the native extension with
 `pixi reinstall --locked -e dev wesl-py` before running stubtest.
 Run `pixi run generate-stubs` after changing a native signature.
-Maturin generates stubs from PyO3 metadata with the optional `stub-gen` feature.
+`pyo3-stub-gen` generates stubs from Rust declarations.
+The `stub-gen` feature enables the generator binary.
+Declare types that PyO3 erases with `gen_stub` attributes.
 `pixi run format` applies Ruff, rustfmt, Tombi, and automatic rumdl fixes.
 Use `pixi run -e lint prek run --all-files` to exercise the commit hooks explicitly.
 Use `pixi run -e lint prek run --stage pre-push --all-files` for the push hooks.

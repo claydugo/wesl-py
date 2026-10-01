@@ -449,7 +449,7 @@ def test_project_dependencies_preserve_original_diagnostics(tmp_path: Path) -> N
     (tmp_path / "library/wesl.toml").write_text('edition = "2026_pre"\nroot = "."\n')
     filename = tmp_path / "library/package.wesl"
     source = "fn value() -> u32 {\n  return missing;\n}"
-    filename.write_text(source)
+    filename.write_text(source, newline="\n")
     compiler = wesl.Compiler.from_project(tmp_path)
     with pytest.raises(wesl.CompileError, match="missing") as error:
         compiler.compile_source(

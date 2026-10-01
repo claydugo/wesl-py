@@ -136,14 +136,14 @@ impl Example {
 Observed: `cargo check` rejects `signature` on `getter`.
 PyO3 supports explicit return annotations on ordinary functions.
 Returning an erased `PyTuple` or `PyAny` loses element or concrete-type information.
-The [stub script](../scripts/generate_stubs.py) restores tuple types for
+The Rust `gen_stub` attributes declare tuple types for
 `CompileResult.modules`, `CompileResult.entry_points`, and `TestResult.values`.
 
 [PR #5738](https://github.com/PyO3/pyo3/pull/5738) is open and implements getter
 and setter signatures with tests.
 This is a tracked feature request. It needs no new report.
-Follow that PR. Once a release includes it, annotate the native getters and remove
-these three corrections after verifying the generated stubs.
+Follow that PR when evaluating PyO3 introspection as a replacement for
+`pyo3-stub-gen`.
 
 ## The bundled assertion protocol loses integer precision
 

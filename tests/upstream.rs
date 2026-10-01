@@ -2,16 +2,16 @@
     unused_crate_dependencies,
     reason = "The integration test loads the extension from Python"
 )]
+#![expect(
+    clippy::panic_in_result_fn,
+    reason = "Test assertions report differences while setup errors propagate"
+)]
 
 use pyo3::{prelude::*, types::PyDict};
 use wesl::{CompileOptions, Feature, Features, resolver::VirtualResolver};
 use wgsl_parse::syntax::ModulePath;
 
 #[test]
-#[expect(
-    clippy::panic_in_result_fn,
-    reason = "Test assertions report differences while setup errors propagate"
-)]
 fn compilation_matches_upstream() -> Result<(), Box<dyn std::error::Error>> {
     Python::initialize();
     Python::attach(|py| -> Result<(), Box<dyn std::error::Error>> {

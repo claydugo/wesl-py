@@ -1,3 +1,12 @@
+#![expect(
+    clippy::too_many_arguments,
+    reason = "Python bindings accept compiler settings and source inputs"
+)]
+#![expect(
+    clippy::struct_excessive_bools,
+    reason = "Compiler options mirror the Python API and upstream compiler flags"
+)]
+
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap, HashSet},
@@ -22,6 +31,7 @@ use wgsl_parse::{
     syntax::{GlobalDeclaration, ImportStatement, ModulePath, PathOrigin, TranslationUnit},
 };
 
+#[deny(clippy::too_many_arguments, clippy::struct_excessive_bools)]
 mod compiler;
 mod testing;
 
@@ -31,6 +41,42 @@ create_exception!(
     PyException,
     "A syntax or compilation failure. The diagnostics attribute is a tuple of Diagnostic values."
 );
+
+pyo3_stub_gen::inventory::submit! {
+    pyo3_stub_gen::type_info::PyClassInfo {
+        struct_id: std::any::TypeId::of::<CompileError>,
+        pyclass_name: "CompileError",
+        module: Some("wesl._native"),
+        doc: "",
+        getters: &[],
+        setters: &[],
+        bases: &[<PyException as pyo3_stub_gen::PyStubType>::type_output],
+        has_eq: false,
+        has_ord: false,
+        has_hash: false,
+        has_str: false,
+        subclass: true,
+    }
+}
+
+pyo3_stub_gen::inventory::submit! {
+    pyo3_stub_gen::type_info::PyMethodsInfo {
+        struct_id: std::any::TypeId::of::<CompileError>,
+        attrs: &[pyo3_stub_gen::type_info::MemberInfo {
+            name: "diagnostics",
+            r#type: || pyo3_stub_gen::TypeInfo::unqualified("tuple[Diagnostic, ...]"),
+            doc: "",
+            default: None,
+            deprecated: None,
+        }],
+        getters: &[],
+        setters: &[],
+        methods: &[],
+        file: file!(),
+        line: line!(),
+        column: column!(),
+    }
+}
 
 #[derive(FromPyObject)]
 struct Feature {
@@ -140,6 +186,7 @@ impl TryFrom<CompileOptions<'_>> for wesl::CompileOptions {
     }
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "wesl._native")]
 #[pyclass(frozen, eq, hash, module = "wesl")]
 #[derive(PartialEq, Eq, Hash)]
 #[doc = "An immutable error value with optional source information and a UTF-8 byte range."]
@@ -159,6 +206,7 @@ struct Diagnostic {
     span: Option<(usize, usize)>,
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl Diagnostic {
     #[new]
@@ -233,6 +281,7 @@ impl Diagnostic {
     }
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "wesl._native")]
 #[pyclass(frozen, eq, hash, get_all, from_py_object, module = "wesl")]
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct Source {
@@ -240,6 +289,7 @@ struct Source {
     filename: Option<String>,
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl Source {
     #[new]
@@ -256,6 +306,7 @@ impl Source {
     }
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "wesl._native")]
 #[pyclass(frozen, eq, module = "wesl")]
 #[derive(PartialEq, Eq)]
 struct CompileResult {
@@ -267,6 +318,7 @@ struct CompileResult {
     sources: BTreeMap<String, Source>,
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl CompileResult {
     #[new]
@@ -285,11 +337,13 @@ impl CompileResult {
     }
 
     #[getter]
+    #[gen_stub(override_return_type(type_repr = "tuple[str, ...]"))]
     fn modules<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
         PyTuple::new(py, &self.modules)
     }
 
     #[getter]
+    #[gen_stub(override_return_type(type_repr = "tuple[str, ...]"))]
     fn entry_points<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
         PyTuple::new(py, &self.entry_points)
     }
@@ -323,6 +377,50 @@ impl CompileResult {
     }
 }
 
+impl From<wesl::CompileResult> for CompileResult {
+    fn from(result: wesl::CompileResult) -> Self {
+        Self {
+            wgsl: result.to_string(),
+            modules: result
+                .modules
+                .iter()
+                .map(|module| module.path.to_string())
+                .collect(),
+            sources: result
+                .modules
+                .iter()
+                .filter_map(|module| {
+                    let module = &module.path;
+                    let text = result.sourcemap.source(module)?;
+                    Some((
+                        module.to_string(),
+                        Source {
+                            text: text.to_owned(),
+                            filename: result.sourcemap.display_name(module).map(str::to_owned),
+                        },
+                    ))
+                })
+                .collect(),
+            entry_points: result
+                .syntax
+                .global_declarations
+                .iter()
+                .filter_map(|declaration| match &**declaration {
+                    GlobalDeclaration::Function(function)
+                        if function
+                            .attributes
+                            .iter()
+                            .any(|attribute| attribute.is_entry_point()) =>
+                    {
+                        Some(function.ident.to_string())
+                    }
+                    _ => None,
+                })
+                .collect(),
+        }
+    }
+}
+
 struct ModuleResolver {
     modules: VirtualResolver<'static>,
     filenames: HashMap<ModulePath, String>,
@@ -333,6 +431,54 @@ struct ModuleResolver {
 }
 
 impl ModuleResolver {
+    fn new(
+        modules: Vec<(String, String)>,
+        filenames: HashMap<String, String>,
+        root_directory: Option<PathBuf>,
+        dependencies: HashMap<String, PathBuf>,
+        dependency_aliases: Option<HashMap<String, String>>,
+    ) -> Result<Self, Failure> {
+        let mut dependency_resolver = Router::new();
+        for (name, directory) in &dependencies {
+            let path = module_path(name)?;
+            if !path.origin.is_package() || !path.components.is_empty() {
+                return Err(Failure::Path(name.clone()));
+            }
+            dependency_resolver.mount_resolver(path, FileResolver::new(directory));
+        }
+        let mut resolver = Self {
+            modules: VirtualResolver::new(),
+            filenames: HashMap::new(),
+            files: root_directory.map(FileResolver::new),
+            dependencies: dependency_resolver,
+            dependency_names: dependencies.into_keys().collect(),
+            dependency_aliases,
+        };
+        for (path, filename) in filenames {
+            let path = resolver.dependency_path(&module_path(&path)?);
+            if let Some(previous) = resolver.filenames.get(&path)
+                && previous != &filename
+            {
+                return Err(Failure::Message(format!(
+                    "conflicting filenames for module {path}"
+                )));
+            }
+            resolver.filenames.insert(path, filename);
+        }
+        for (path, source) in modules {
+            let path = resolver.dependency_path(&module_path(&path)?);
+            if let Ok(previous) = resolver.modules.get_module(&path)
+                && previous != source
+            {
+                return Err(Failure::Message(format!(
+                    "conflicting sources for module {path}"
+                )));
+            }
+            resolver.modules.add_module(path, source.into());
+        }
+        Ok(resolver)
+    }
+
     fn dependency_path(&self, path: &ModulePath) -> ModulePath {
         let (PathOrigin::Package(name), Some(aliases)) = (&path.origin, &self.dependency_aliases)
         else {
@@ -518,20 +664,15 @@ fn module_path(path: &str) -> Result<ModulePath, Failure> {
     Ok(module)
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "wesl._native")]
 #[pyfunction]
-#[pyo3(signature = (modules: "collections.abc.Mapping[str, str]", root, options: "wesl.CompileOptions", filenames, root_directory, dependencies, dependency_aliases=None))]
-#[expect(
-    clippy::too_many_arguments,
-    reason = "The binding accepts compiler settings and Python source inputs."
-)]
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep compiler setup and result conversion together."
-)]
+#[pyo3(signature = (modules, root, options, filenames, root_directory, dependencies, dependency_aliases=None))]
 fn compile(
     py: Python<'_>,
+    #[gen_stub(override_type(type_repr="collections.abc.Mapping[str, str]", imports=("collections.abc")))]
     modules: &Bound<'_, PyMapping>,
     root: String,
+    #[gen_stub(override_type(type_repr="wesl.CompileOptions", imports=("wesl")))]
     options: CompileOptions<'_>,
     filenames: HashMap<String, String>,
     root_directory: Option<PathBuf>,
@@ -542,96 +683,29 @@ fn compile(
     let options = options.try_into()?;
     py.detach(move || {
         let root = module_path(&root)?;
-        let mut dependency_resolver = Router::new();
-        for (name, directory) in &dependencies {
-            let path = module_path(name)?;
-            if !path.origin.is_package() || !path.components.is_empty() {
-                return Err(Failure::Path(name.clone()));
-            }
-            dependency_resolver.mount_resolver(path, FileResolver::new(directory));
-        }
-        let mut resolver = ModuleResolver {
-            modules: VirtualResolver::new(),
-            filenames: HashMap::new(),
-            files: root_directory.map(FileResolver::new),
-            dependencies: dependency_resolver,
-            dependency_names: dependencies.into_keys().collect(),
+        let resolver = ModuleResolver::new(
+            modules,
+            filenames,
+            root_directory,
+            dependencies,
             dependency_aliases,
-        };
-        for (path, filename) in filenames {
-            let path = resolver.dependency_path(&module_path(&path)?);
-            if let Some(previous) = resolver.filenames.get(&path)
-                && previous != &filename
-            {
-                return Err(Failure::Message(format!(
-                    "conflicting filenames for module {path}"
-                )));
-            }
-            resolver.filenames.insert(path, filename);
-        }
-        for (path, source) in modules {
-            let path = resolver.dependency_path(&module_path(&path)?);
-            if let Ok(previous) = resolver.modules.get_module(&path)
-                && previous != source
-            {
-                return Err(Failure::Message(format!(
-                    "conflicting sources for module {path}"
-                )));
-            }
-            resolver.modules.add_module(path, source.into());
-        }
+        )?;
         let root = resolver.dependency_path(&root);
         let result = compiler::compile(&root, &options, &resolver, HashMap::new(), |_, _| Ok(()));
         result
-            .map(|result| CompileResult {
-                wgsl: result.to_string(),
-                modules: result
-                    .modules
-                    .iter()
-                    .map(|module| module.path.to_string())
-                    .collect(),
-                sources: result
-                    .modules
-                    .iter()
-                    .filter_map(|module| {
-                        let module = &module.path;
-                        let text = result.sourcemap.source(module)?;
-                        Some((
-                            module.to_string(),
-                            Source {
-                                text: text.to_owned(),
-                                filename: result.sourcemap.display_name(module).map(str::to_owned),
-                            },
-                        ))
-                    })
-                    .collect(),
-                entry_points: result
-                    .syntax
-                    .global_declarations
-                    .iter()
-                    .filter_map(|declaration| match &**declaration {
-                        GlobalDeclaration::Function(function)
-                            if function
-                                .attributes
-                                .iter()
-                                .any(|attribute| attribute.is_entry_point()) =>
-                        {
-                            Some(function.ident.to_string())
-                        }
-                        _ => None,
-                    })
-                    .collect(),
-            })
+            .map(CompileResult::from)
             .map_err(|error| Failure::from_diagnostic(error.diagnostic()))
     })
     .map_err(|failure| failure.into_pyerr(py))
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "wesl._native")]
 #[pyfunction]
-#[pyo3(signature = (module, constants: "collections.abc.Mapping[str, bool | int | float]"))]
+#[pyo3(signature = (module, constants))]
 fn constant_module(
     py: Python<'_>,
     module: String,
+    #[gen_stub(override_type(type_repr="collections.abc.Mapping[str, bool | int | float]", imports=("collections.abc")))]
     constants: &Bound<'_, PyMapping>,
 ) -> PyResult<String> {
     #[derive(FromPyObject)]
@@ -679,6 +753,7 @@ fn constant_module(
     .map_err(|failure| failure.into_pyerr(py))
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "wesl._native")]
 #[pyfunction]
 fn render_diagnostic(py: Python<'_>, diagnostic: &Diagnostic) -> String {
     py.detach(move || {
@@ -728,6 +803,7 @@ fn render_diagnostic(py: Python<'_>, diagnostic: &Diagnostic) -> String {
     })
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "wesl._native")]
 #[pyfunction]
 fn check_syntax(py: Python<'_>, source: String, filename: String) -> PyResult<()> {
     py.detach(move || {
@@ -744,6 +820,10 @@ fn check_syntax(py: Python<'_>, source: String, filename: String) -> PyResult<()
 }
 
 #[pymodule]
+#[expect(
+    non_upper_case_globals,
+    reason = "The Python attribute is named __version__"
+)]
 mod _native {
     use pyo3::{prelude::*, types::PyTuple};
 
@@ -756,10 +836,6 @@ mod _native {
     };
 
     #[pymodule_export]
-    #[expect(
-        non_upper_case_globals,
-        reason = "The Python attribute is named __version__"
-    )]
     const __version__: &str = env!("CARGO_PKG_VERSION");
 
     #[pymodule_init]
@@ -770,3 +846,9 @@ mod _native {
             .setattr("diagnostics", PyTuple::empty(module.py()))
     }
 }
+
+pyo3_stub_gen::define_stub_info_gatherer!(stub_info);
+
+pyo3_stub_gen::module_variable!("wesl._native", "__version__", String);
+
+pyo3_stub_gen::export_verbatim!("wesl._native", "__version__");

@@ -40,7 +40,7 @@ fn main(@location(0) color: vec4f) -> @location(0) vec4f {
 }
 ```
 
-Compile with output clamping enabled:
+Enable a shader feature at compile time:
 
 ```python
 import wesl

@@ -20,8 +20,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, macos-26, windows-2025]
+        include:
+          - runner: ubuntu-24.04
+            environments: lint rust dev test
+          - runner: macos-26
+            environments: rust test
+          - runner: windows-2025
+            environments: rust test
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -29,23 +36,30 @@ jobs:
       - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e
         with:
           pixi-version: v0.80.0
-          environments: lint rust dev test
+          environments: ${{ matrix.environments }}
           locked: true
       - run: pixi run --locked lint
+        if: runner.os == 'Linux'
         env:
           GH_TOKEN: ${{ github.token }}
       - run: pixi run --locked check-rust
       - run: pixi run --locked check-types
+        if: runner.os == 'Linux'
       - run: pixi run --locked generate-stubs
+        if: runner.os == 'Linux'
       - run: git diff --exit-code -- python/wesl/_native.pyi
+        if: runner.os == 'Linux'
       - run: pixi run --locked -e test cargo test --locked --test upstream
-      - run: pixi run --locked -e test python -m pytest tests/test_check_syntax.py -q
+        env:
+          DYLD_FALLBACK_LIBRARY_PATH: ${{ github.workspace }}/.pixi/envs/test/lib
       - run: pixi run --locked -e test python -m pytest tests/test_threading.py tests/test_compile.py::test_concurrent_feature_state_isolation tests/test_diagnostics.py::test_concurrent_diagnostics_remain_independent -q
       - run: pixi run --locked check-dependencies
+        if: runner.os == 'Linux'
 
   sdist:
     name: Build source distribution
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -108,20 +122,11 @@ jobs:
           path: dist/*.tar.gz
           if-no-files-found: error
 
-  wheel:
-    name: Build wheels / ${{ matrix.target }}
+  wheel-linux:
+    name: Build wheels / x86_64-unknown-linux-gnu
     needs: sdist
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-          - runner: macos-26
-            target: aarch64-apple-darwin
-          - runner: windows-2025
-            target: x86_64-pc-windows-msvc
-    runs-on: ${{ matrix.runner }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -141,13 +146,11 @@ jobs:
           mkdir source
           tar -xf sdist/*.tar.gz -C source --strip-components=1
       - name: Read locked build tool versions
-        if: runner.os == 'Linux'
         id: build-tools
         run: |
           echo "rust=$(pixi run --locked -e artifacts rustc --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
           echo "maturin=$(pixi run --locked -e artifacts maturin --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
-      - if: runner.os == 'Linux'
-        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
+      - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
         with:
           maturin-version: v${{ steps.build-tools.outputs.maturin }}
           rust-toolchain: ${{ steps.build-tools.outputs.rust }}
@@ -155,8 +158,84 @@ jobs:
           manylinux: "2_28"
           working-directory: source
           args: --release --locked --out ../dist -i python3.12
-      - if: runner.os != 'Linux'
-        run: pixi run --locked -e artifacts maturin build --manifest-path source/Cargo.toml --release --locked --out dist -i python
+      - run: pixi run --locked -e artifacts twine check --strict dist/*.whl
+      - name: Check wheel contents
+        shell: bash
+        run: pixi run --locked -e artifacts check-wheel-contents --config pyproject.toml dist/*.whl
+      - name: Audit Python ABI
+        shell: bash
+        run: pixi run --locked -e artifacts abi3audit --strict --summary dist/*-cp312-abi3-*.whl
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        with:
+          python-version: "3.12"
+          activate-environment: true
+      - name: Install wheel
+        shell: bash
+        run: uv pip install pytest dist/*-cp312-abi3-*.whl
+      - run: uv pip check
+      - name: Test wheel installation
+        shell: bash
+        run: |
+          python - <<'PY'
+          import sys
+          from importlib.metadata import version
+          from importlib.util import find_spec
+          from pathlib import Path
+          import wesl
+
+          assert wesl.__version__ == version("wesl-py")
+          assert Path(wesl.__file__).is_relative_to(sys.prefix)
+          assert Path(wesl.__file__).with_name("py.typed").is_file()
+          assert Path(wesl.__file__).with_name("_native.pyi").is_file()
+          assert "wgpu" not in sys.modules
+          assert "fn main(" in wesl.compile_source("@compute @workgroup_size(1) fn main() {}").wgsl
+          shader = wesl.compile_source(
+              "import wgsl_test::expect; @compute @workgroup_size(1) fn main() { expect(true); }"
+          )
+          assert "wgsl_test" in shader.modules
+          assert find_spec("maturin") is None
+          PY
+      - name: Test Python API
+        run: python -m pytest tests --ignore=tests/examples -q
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: wheel-x86_64-unknown-linux-gnu
+          path: dist/*.whl
+          if-no-files-found: error
+
+  wheel:
+    name: Build wheels / ${{ matrix.target }}
+    needs: sdist
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-26
+            target: aarch64-apple-darwin
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e
+        with:
+          pixi-version: v0.80.0
+          environments: artifacts
+          locked: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: sdist
+          path: sdist
+      - name: Extract source archive
+        shell: bash
+        run: |
+          mkdir source
+          tar -xf sdist/*.tar.gz -C source --strip-components=1
+      - run: pixi run --locked -e artifacts maturin build --manifest-path source/Cargo.toml --release --locked --out dist -i python
       - name: Repair macOS wheels
         if: runner.os == 'macOS'
         shell: bash
@@ -209,7 +288,7 @@ jobs:
           assert find_spec("maturin") is None
           PY
       - name: Test Python API
-        run: python -m pytest tests -q
+        run: python -m pytest tests --ignore=tests/examples -q
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
@@ -218,9 +297,10 @@ jobs:
           if-no-files-found: error
 
   test-wheel:
-    needs: wheel
+    needs: wheel-linux
     name: Test Linux / Python ${{ matrix.python }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -239,12 +319,13 @@ jobs:
           activate-environment: true
       - run: uv pip install pytest dist/*-cp312-abi3-*.whl
       - run: uv pip check
-      - run: python -m pytest tests -q
+      - run: python -m pytest tests --ignore=tests/examples -q
 
   compute:
     name: Test GPU integration
-    needs: wheel
+    needs: wheel-linux
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
       WGPU_BACKEND_TYPE: Vulkan
       VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.json
@@ -265,7 +346,7 @@ jobs:
           wheels=(dist/*-cp312-abi3-*.whl)
           uv pip install pytest "${wheels[0]}[testing]"
       - name: Install shader test dependencies
-        run: uv pip install numpy pytest-regressions pytest-xdist
+        run: uv pip install numpy pytest-xdist
       - run: uv pip check
       - name: Install Mesa Vulkan driver
         run: |
@@ -274,7 +355,7 @@ jobs:
       - name: Test Python API and GPU integration
         env:
           XDG_RUNTIME_DIR: ${{ runner.temp }}
-        run: python -m pytest tests -q
+        run: python -m pytest tests --ignore=tests/examples -q
       - name: Install oldest supported pytest series
         run: uv pip install 'pytest>=8.2,<8.3'
       - name: Test oldest supported pytest series
@@ -285,6 +366,7 @@ jobs:
   examples:
     name: Test examples
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
       WGPU_BACKEND_TYPE: Vulkan
       VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.json

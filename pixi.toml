@@ -87,9 +87,13 @@ rumdl = ">=0.2.53,<0.3"
 [feature.lint.target.win-64.dependencies]
 rumdl = ">=0.2.53,<0.3"
 
+[feature.lint.target.osx-arm64.tasks]
+rumdl = "true"
+
 [feature.lint.tasks]
-format = "ruff format . && python scripts/run_rumdl.py check --fix . && tombi format && pixi run --locked -e rust cargo fmt --all"
-lint = "ruff check --ignore-noqa . && ruff format --check . && python scripts/run_rumdl.py check . && tombi format --check && tombi lint --error-on-warnings && actionlint && zizmor --strict-collection --no-progress ."
+format = "ruff format . && pixi run --locked -e lint rumdl check --fix . && tombi format && pixi run --locked -e rust cargo fmt --all"
+lint = "ruff check --ignore-noqa . && ruff format --check . && pixi run --locked -e lint rumdl check . && tombi format --check && tombi lint --error-on-warnings && actionlint && zizmor --strict-collection --no-progress ."
+rumdl = "rumdl"
 
 [feature.testing.pypi-dependencies]
 wesl-py = { path = ".", editable = true, extras = ["testing"] }
@@ -123,7 +127,7 @@ dependencies = { python = ">=3.12,<3.13" }
 
 [tasks]
 test = { cmd = "cargo test --locked && python -m pytest", default-environment = "testing" }
-generate-stubs = { cmd = "python scripts/generate_stubs.py && ruff check --ignore-noqa --fix --ignore E501 python/wesl/_native.pyi && ruff format python/wesl/_native.pyi", default-environment = "dev" }
+generate-stubs = { cmd = "cargo run --locked --features stub-gen --bin generate-stubs && ruff check --ignore-noqa --fix --config \"lint.extend-safe-fixes = ['PYI021', 'PYI029']\" --ignore E501 python/wesl/_native.pyi && ruff format python/wesl/_native.pyi", default-environment = "dev" }
 
 [tasks.check-types]
 depends-on = [
