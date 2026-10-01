@@ -12,43 +12,27 @@ Graphics and compute examples require a WebGPU adapter.
 | [Residual RMSNorm](rmsnorm/README.md) | Select input logic and resource bindings through a feature flag. | `pixi run -e gpu python -m examples.rmsnorm` | Numerical verification |
 | [Stable compaction (advanced)](compaction/README.md) | Share a predicate across a hierarchical scan and scatter. | `pixi run -e gpu python -m examples.compaction` | Exact verification |
 
-Start with the SDF playground.
-Change the surface while particles bounce off it.
-One distance function defines the rendered surface and its collisions.
-The tunnel feature compiles into both shaders from the same scene module.
+Start with SDF for graphics or RMSNorm for compute.
+RMSNorm and compaction generate their inputs and need no window.
 
-Continue with multiscale fluorescence for image processing across multiple passes.
-One convolution serves both image axes and both Gaussian scales.
-A WESL feature selects the filter direction.
-The viewer downloads and caches a sample microscopy TIFF on first use.
+Multiscale fluorescence downloads and caches a microscopy TIFF on first use.
 See [the sample image](imaging/README.md) for its source and channels.
 
 The [imports example](imports.py) downloads one module from a pinned Lygia revision.
 It registers a temporary directory with `dependencies={"lygia": directory}`.
-The shader imports `lygia::math::mod289::mod289` and compiles to ordinary WGSL.
-This example needs internet access but no GPU or optional dependencies:
-
-```bash
-pixi run python examples/imports.py
-```
-
-RMSNorm and compaction generate their own inputs and run without a window.
-Start with RMSNorm for compute. Compaction adds a hierarchy of GPU passes.
+It needs internet access but no GPU or optional dependencies.
 
 The Pixi `examples` environment provides the graphics and image dependencies.
-The repository's `wesl.toml` sets the repository root as the shader root.
-The examples and tests share that root and import modules through
-`package::examples`. The examples pass the same root to `compile_file()`.
+Examples and tests use the repository root for imports through `package::examples`.
+Both `wesl.toml` and calls to `compile_file()` set this root.
 
 Each example's README includes its verification command.
 
 ## Shader tests
 
-The [testing examples](../tests/examples/testing/README.md) use pytest without
-an interactive window.
-They cover compilation, native WESL tests, compute dispatch, and fragment images.
-The tour also covers resources from Python fixtures, a texture shared between
-compute and rendering, stored baselines, and an explicit failure demo.
+The [testing examples](../tests/examples/testing/README.md) cover compilation,
+WESL assertions, compute, rendering, and snapshots without a window.
+They include Python fixtures, shared textures, and a failure demo.
 
 ```bash
 pixi run -e testing python -m pytest tests/examples/testing -v

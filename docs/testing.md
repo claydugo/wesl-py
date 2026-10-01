@@ -3,18 +3,16 @@
 `wesl-py` provides a pytest plugin and bundles assertion shaders from the WESL project's
 [wgsl-test](https://github.com/webgpu-tools/wesl-js/tree/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test).
 Pytest loads the plugin automatically and collects `*.test.wesl` files.
-The optional `testing` extra installs pytest and wgpu-py for execution.
-The base package can collect tests if your environment already provides pytest.
-Compilation and collection need no GPU.
+The `testing` extra installs pytest and wgpu-py.
+The base package can collect tests when pytest is installed.
+Compilation and collection need no GPU. Execution requires a WebGPU adapter.
 
-The executor does not import NumPy. The current PyPI dependency chain still
-installs NumPy through wgpu-py's dependency on rendercanvas.
+The executor needs no NumPy, but wgpu-py's rendercanvas dependency installs it.
 
-For now, use the
+Use the
 [checkout setup](../CONTRIBUTING.md#set-up-a-checkout) and the `testing` environment.
-After the first PyPI release, install `wesl-py[testing]` with your environment manager.
 See [installation](../README.md#installation) for commands and requirements.
-The first test requires no `conftest.py` or manual plugin registration.
+No `conftest.py` or manual plugin registration is required.
 
 ## WESL tests
 
@@ -33,9 +31,9 @@ fn addition() {
 ```
 
 ```bash
-pixi run python -m pytest shaders/math.test.wesl::addition
-pixi run python -m pytest shaders --collect-only
-pixi run python -m pytest shaders -k addition --junitxml=results.xml
+pixi run -e testing python -m pytest shaders/math.test.wesl::addition
+pixi run -e testing python -m pytest shaders --collect-only
+pixi run -e testing python -m pytest shaders -k addition --junitxml=results.xml
 ```
 
 A test function has no return value or shader stage attribute.

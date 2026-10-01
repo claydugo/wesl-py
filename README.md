@@ -2,33 +2,24 @@
 
 Python bindings for the [Rust WESL compiler](https://github.com/webgpu-tools/wesl-rs).
 WESL adds imports and conditional compilation to WGSL.
-Compile shaders from Python, or run WESL tests with pytest.
-Compilation needs no GPU.
+Run shader tests with pytest. Compilation needs no GPU.
 
 ## Installation
 
 Requires Python 3.12 or later.
-The package is not published on PyPI. For now, install from a
+The package is not published on PyPI. Install from a
 [checkout](https://github.com/claydugo/wesl-py/blob/main/CONTRIBUTING.md#set-up-a-checkout).
-After publication, install with your environment manager:
-
-| Tool | Compile shaders | Run shader tests |
-| --- | --- | --- |
-| pip | `python -m pip install wesl-py` | `python -m pip install "wesl-py[testing]"` |
-| uv | `uv add wesl-py` | `uv add "wesl-py[testing]"` |
-| Pixi | `pixi add --pypi wesl-py` | `pixi add --pypi "wesl-py[testing]"` |
 
 The distribution name is `wesl-py`; import it as `wesl`.
 Wheels target Linux x86-64 with glibc 2.28 or later, macOS arm64, and Windows x86-64.
-Wheel installation does not require Rust.
-Source builds require Rust 1.97.1 or later, a native linker, and access to the
-pinned Rust dependencies.
+Wheels need no Rust toolchain. Source builds require Rust 1.97.1 or later
+and a native linker.
 See [CONTRIBUTING.md](https://github.com/claydugo/wesl-py/blob/main/CONTRIBUTING.md)
 for development setup.
 
 ## Compile a shader
 
-Put a reusable function in `shaders/exposure.wesl`:
+Save as `shaders/exposure.wesl`:
 
 ```wesl
 fn apply_exposure(color: vec3f, stops: f32) -> vec3f {
@@ -61,32 +52,18 @@ result = wesl.compile_file(
 print(result.wgsl)
 ```
 
-Pass `result.wgsl` to your renderer. With an existing wgpu-py device, call
-`device.create_shader_module(code=result.wgsl)`. The GPU runtime validates the WGSL.
+Pass `result.wgsl` to your renderer, such as
+`device.create_shader_module(code=result.wgsl)` in wgpu-py.
+The GPU runtime validates the WGSL.
 Use `compile_source()` for a string or `compile()` for a mapping of modules.
 See the [API reference](https://github.com/claydugo/wesl-py/blob/main/docs/api.md)
 for options, library imports, and diagnostics.
 
-For a project with multiple shader directories, add `wesl.toml` at the project root:
-
-```toml
-edition = "2026_pre"
-root = "shaders"
-```
-
-Load the manifest with `Compiler.from_project()`:
-
-```python
-compiler = wesl.Compiler.from_project(".")
-result = compiler.compile_file("main.wesl", features={"clamp_output": True})
-```
-
-Pytest discovers this manifest and uses the same import root.
 Standalone `compile_file()` uses the shader file's parent directory by default.
+Use `Compiler.from_project()` to share `wesl.toml` settings with pytest.
 
 ## Test a shader
 
-Install the `testing` extra as shown above.
 Save this as `shaders/math.test.wesl`:
 
 ```wesl
@@ -98,12 +75,15 @@ fn addition() {
 }
 ```
 
-Run `python -m pytest shaders -q` in your environment.
-With uv or Pixi, prefix this command with `uv run` or `pixi run`.
-The pytest plugin collects `@test` functions and reports failures at the shader
-file and line.
-The package includes assertion shaders. Execution requires a hardware or
-software WebGPU adapter.
+Run from the checkout:
+
+```bash
+pixi run --locked -e testing python -m pytest shaders -q
+```
+
+The plugin collects `@test` functions and reports failures at the shader file
+and line. Assertion shaders are bundled.
+Execution requires a hardware or software WebGPU adapter.
 See the [shader testing guide](https://github.com/claydugo/wesl-py/blob/main/docs/testing.md)
 for Python fixtures, compute tests, and image comparisons.
 

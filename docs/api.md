@@ -36,11 +36,10 @@ Omit `keep` to use the stored selection. Pass `keep=None` to select entry points
 Pass `keep=[]` to select no root declarations.
 The other keyword overrides use `None` to retain the stored setting.
 
-`CompileOptions` holds the upstream compiler options.
-The shader runner accepts `TestOptions` instead.
+`CompileOptions` is a mutable dataclass of upstream compiler options.
+The shader runner uses `TestOptions`.
 See [shader test options](testing.md#fixtures-and-pytest-behavior).
-It is a mutable dataclass with keyword arguments.
-Omit `options` to use the defaults below.
+Both accept only keyword arguments. Omit `options` for the defaults below.
 Visibility checks default to `False` so existing external shaders remain usable.
 Upstream defaults visibility checks to `True`.
 
@@ -49,11 +48,11 @@ Mappings use the default policy, `Feature.Disable`.
 `CompileOptions.features` and `TestOptions.features` hold `Features` instances.
 A call-level feature setting replaces the stored setting without merging flags.
 
-`Features()` holds the conditional translation settings in a mutable dataclass.
-Its default policy is `Feature.Disable`. Its flag dictionary starts empty.
+`Features()` is a mutable dataclass with an empty flag dictionary.
+Its default policy is `Feature.Disable`.
 The four policies are `Feature.Enable`, `Feature.Disable`, `Feature.Keep`,
 and `Feature.Error`. Each policy can apply to the default or an individual flag.
-The `flags` mapping also accepts booleans, as upstream does.
+The `flags` mapping also accepts booleans.
 Annotate a reusable flag dictionary as `dict[str, bool | wesl.Feature]`.
 
 `Feature.Keep` preserves unresolved conditions for a later compilation.
@@ -73,13 +72,11 @@ Compilation copies the settings into Rust before it releases the GIL.
 The compile boundary checks field types.
 
 `Feature` and `ManglerKind` are Python enums.
-`CompileOptions`, `Features`, `Feature`, and `ManglerKind` support pickle.
-Applications can pass these values to process workers.
+Both enums, `CompileOptions`, and `Features` support pickle for process workers.
 
 The retention options follow
 [wesl-rs `CompileOptions`](https://github.com/webgpu-tools/wesl-rs/blob/0303eccfafd534cc76c91eddd4b4f5c4413a1733/crates/wesl/src/frontend.rs).
-`keep_main` and `mangle_main` refer to the root module.
-They do not refer to a function named `main`.
+`keep_main` and `mangle_main` refer to the root module, not a function named `main`.
 
 - `strip=True`: Keep selected root declarations and their dependencies.
 - `strip=False`: Preserve all declarations in each loaded module and resolve
@@ -99,9 +96,7 @@ A root with only unused helpers produces empty WGSL under the default options.
 Use `compile_source(source, keep=["answer"])` to retain a helper and its dependencies.
 Use `keep_main=True` to retain all active root declarations, or `strip=False`
 to disable stripping.
-The compiler loads modules when declarations depend on them. It does not scan
-every file in a package.
-The compiler uses upstream usage analysis to load dependencies.
+Upstream usage analysis loads modules as dependencies, without scanning the package.
 
 Set `mangle_main=True` to rename root declarations as well as imported declarations.
 Selections always use original names, independent of mangling.

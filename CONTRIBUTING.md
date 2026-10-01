@@ -1,19 +1,16 @@
 # Contributing
 
-Bug reports, documentation fixes, examples, and code contributions are welcome.
-If you want to try wesl-py, start with the [README](README.md) and
-[examples](examples/README.md).
+Start with the [README](README.md) and [examples](examples/README.md).
+Bug reports, documentation, examples, and code contributions are welcome.
 
 ## Report a problem or suggest a change
 
 Open an [issue](https://github.com/claydugo/wesl-py/issues) with a small example,
 what you expect, and what happens instead.
-For a bug, include the error output, your Python and wesl-py versions, and your
-OS.
-For a GPU failure, also include the adapter and backend.
+Include errors, Python and wesl-py versions, and your OS.
+For GPU failures, include the adapter and backend.
 
-Questions about unclear documentation are useful reports too.
-For a larger change, an issue is a good place to discuss the approach first.
+Report unclear documentation too. Discuss larger changes in an issue first.
 
 ## Set up a checkout
 
@@ -40,18 +37,15 @@ Install the pre-commit and pre-push hooks:
 pixi run --locked -e lint prek install
 ```
 
-The pre-commit hook uses staged files to select checks before each Git commit.
-File formatters receive only the selected filenames. Rustfmt checks the crate.
-Linters check the whole repository when relevant files or configuration change.
-Shared configuration also triggers read-only checks of repository formatting.
-Formatters apply fixes. Review and stage these fixes before trying again.
-The pre-push hook runs Rust and Python type checks for relevant changes.
-It includes deleted files when selecting checks. Documentation changes skip them.
-Each checker reports its result separately.
-Stubtest rebuilds the native extension before checking its stubs.
-Install the hooks once per checkout. Run the command again to add the pre-push hook
-to an existing setup. Git does not copy installed hooks when cloning.
-Pixi must be on `PATH` when Git runs the hook.
+Pre-commit formats selected files and the Rust crate.
+Linters check the repository when relevant files or configuration change.
+Shared configuration triggers read-only formatting checks.
+Review and stage formatter fixes before retrying.
+Pre-push runs Rust and Python type checks for relevant changes, including deletions.
+Documentation changes skip these checks.
+Stubtest rebuilds the extension before checking its stubs.
+Install hooks once per checkout, or again to add pre-push to an existing setup.
+Git needs Pixi on `PATH` to run them.
 For Jujutsu changes, run `pixi run lint`, `pixi run check-rust`, and
 `pixi run check-types` explicitly.
 
@@ -69,7 +63,6 @@ pixi reinstall --locked -e test wesl-py
 ```
 
 Replace `test` with `gpu`, `testing`, or `dev` when working in those environments.
-The default environment also contains the editable extension.
 
 ## Find the code
 
@@ -87,8 +80,7 @@ See the [API reference](docs/api.md) for compiler behavior and
 
 ## Verify your change
 
-Run the tests that cover the behavior you change.
-For a compiler change, for example:
+Run tests for the behavior you change. For compilation:
 
 ```bash
 pixi run -e test python -m pytest tests/test_compile.py -q
@@ -111,17 +103,15 @@ GPU checks use additional environments:
 The `gpu` environment adds NumPy and wgpu-py.
 The `testing` environment also includes the example dependencies and pytest plugins.
 The `testing-oldest` environment checks pytest 8.2.x.
-It does not require the first patch release in that series.
 These tests accept hardware and software WebGPU adapters.
 Each [example](examples/README.md) documents its own test command.
 See the [testing examples](tests/examples/testing/README.md) for snapshot updates
 and [viewer checks](#viewer-checks) for example UI changes.
 
-The WESL tests exercise the SDF example's production functions.
-The Python tests verify the executor and its failure reports.
-The assertion syntax follows the upstream
+WESL tests exercise SDF functions. Python tests verify execution and reports.
+Assertions follow the upstream
 [wgsl-test API](https://github.com/webgpu-tools/wesl-js/blob/main/packages/wgsl-test/API.md).
-Execution uses wgpu-py. It does not require Node.js or the JavaScript test runner.
+Execution uses wgpu-py and needs no Node.js.
 
 For code changes, run the style, Rust, and type checks:
 
@@ -133,69 +123,57 @@ pixi run check-types
 
 `lint` checks Python, Markdown, TOML, and GitHub configuration.
 It does not change files.
-It checks new files too. Tools respect `.gitignore` during file discovery.
-The `lint` environment contains no Rust toolchain or wesl-py installation.
-Pyflakes supports actionlint's Python checks.
-Markdown checks and fixes skip macOS.
-Conda-forge has no rumdl build for Apple Silicon.
-The lint environment uses only conda dependencies.
-Dependency requirements use version ranges. `pixi.lock` records resolved versions.
-CI uses a fixed Pixi bootstrap version. The workspace declares its minimum version.
-This CI bootstrap is an exception to the package version policy.
-Update all four setup steps together after validating a new Pixi release.
-Dependabot's seven-day cooldown covers Action updates, not this bootstrap version.
-`check-rust` runs rustfmt and Clippy in the separate `rust` environment.
-Rust checks do not install the Python package or GPU dependencies.
+It includes new files and respects `.gitignore`.
+Its environment uses conda dependencies and needs no Rust or wesl-py installation.
+Markdown checks skip macOS because conda-forge has no rumdl build for Apple Silicon.
+Dependencies use version ranges. `pixi.lock` records resolved versions.
+CI pins Pixi separately from the workspace minimum.
+Validate new Pixi releases before updating all four setup steps.
+Dependabot's seven-day cooldown covers Actions, not Pixi.
+`check-rust` runs rustfmt and Clippy in `rust`.
+It needs no wesl-py or GPU dependencies.
 `check-types` runs ty, Pyrefly, Pyright, and native stubtest in `dev`.
-This environment includes wgpu so the type checkers can inspect its API.
-Type checks do not request a GPU adapter.
-The task runs `check-ty`, `check-pyrefly`, `check-pyright`, and `check-stubs`.
-Run these tasks separately with `pixi run -e dev <task>`.
+It needs no GPU adapter.
+Run individual checks with `pixi run -e dev <task>`:
+`check-ty`, `check-pyrefly`, `check-pyright`, or `check-stubs`.
 `check-stubs` rebuilds the native extension with
 `pixi reinstall --locked -e dev wesl-py` before running stubtest.
-The type checkers check the Python API. Stubtest checks the compiled extension.
 Run `pixi run generate-stubs` after changing a native signature.
-Maturin generates stubs from PyO3's metadata with the optional `stub-gen` feature.
-Normal builds do not include the stub generator.
+Maturin generates stubs from PyO3 metadata with the optional `stub-gen` feature.
 `pixi run format` applies Ruff, rustfmt, Tombi, and automatic rumdl fixes.
-It succeeds after applying fixes unless a tool reports an unresolved issue.
 Use `pixi run -e lint prek run --all-files` to exercise the commit hooks explicitly.
 Use `pixi run -e lint prek run --stage pre-push --all-files` for the push hooks.
 Rustfmt uses the Rust 2024 style.
-rumdl enables all rules, including opt-in rules, and respects `.gitignore`.
-Its configuration lives in `pyproject.toml`. Headings use sentence case.
-Code blocks allow 88 columns to match Ruff. Prose uses 80 columns.
+`pyproject.toml` enables all rumdl rules.
+Use sentence case for headings, 80 columns for prose, and 88 for code blocks.
 
-Tombi uses the project configuration in `pyproject.toml`.
-All three general lint rules are errors. Schema validation uses strict mode.
-Tombi checks also fail on warnings, including schema deprecations.
-Its hooks check `.toml` files. Cargo owns the generated `Cargo.lock` format.
+Tombi reads `pyproject.toml`. Its general lint rules are errors.
+Schema validation uses strict mode.
+Checks fail on warnings, including schema deprecations.
+Hooks check `.toml` files. Cargo formats `Cargo.lock`.
 Actionlint enables all checks, including its ShellCheck and Pyflakes integrations.
 Its [configuration](.github/actionlint.yaml) rejects undeclared `vars` references.
 Zizmor uses the default `regular` persona in CI and hooks.
 Use `--persona auditor` for manual security reviews.
 The release workflow suppresses `self-repository` until Actionlint accepts
 GitHub's `$/` syntax for reusable workflows.
-CI provides a GitHub token so Zizmor can also run online audits.
-Local runs use offline audits unless `GH_TOKEN`, `GITHUB_TOKEN`, or
+CI supplies a GitHub token for online Zizmor audits.
+Local audits run offline unless `GH_TOKEN`, `GITHUB_TOKEN`, or
 `ZIZMOR_GITHUB_TOKEN` is set.
 Hook commands and file filters live in [prek.toml](prek.toml).
-Pixi supplies their tools and locks their versions in `pixi.lock`.
-The hooks use prek's `system` language because Pixi manages the environments.
-Formatters run in separate priority groups before the read-only checks.
-Ruff formats Python blocks before rumdl runs.
-Read-only hooks share priority 10 and can run concurrently.
-Pre-push runs rustfmt first, then Clippy and the static type checkers.
-Stubtest runs at priority 20 so its rebuild does not overlap these checks.
-Static type checkers use source and stubs.
-Rust changes select stubtest among the Python checks.
+Hooks use prek's `system` language with Pixi environments.
+Formatters run in separate priority groups.
+Read-only checks run concurrently at priority 10.
+Ruff formats Python blocks before rumdl.
+Pre-push runs rustfmt before Clippy and static type checks of source and stubs.
+Stubtest runs at priority 20 to avoid overlapping its rebuild with these checks.
+Rust changes also select stubtest.
 
 Ruff checks Python files, type stubs, notebooks, and Python blocks in Markdown.
 Cargo denies Clippy's `all` and `pedantic` groups plus selected restriction and
 nursery lints.
 See [Cargo.toml](Cargo.toml) and [clippy.toml](clippy.toml) for the rules and
 complexity limits.
-The binding uses `expect` attributes with reasons for its argument count and length.
 
 Run these additional checks when the change affects the corresponding area:
 
@@ -208,14 +186,12 @@ Run these additional checks when the change affects the corresponding area:
 - Rust dependencies: `pixi run check-dependencies` runs Machete against the binding
   manifest and Cargo-deny for licenses and RustSec advisories.
 
-`pixi run test` runs all Rust tests and one pytest session over `tests/`, including
-examples, shader tests, and snapshots. It selects the `testing` environment.
-Use the targeted commands above while working on a change.
+`pixi run test` runs all Rust, Python, and shader tests in `testing`.
+Use targeted commands while working on a change.
 For prose-only changes, verify links and commands in the affected documentation.
 
 ### Viewer checks
 
-GPU tests require a WebGPU adapter. Hardware and software adapters both work.
 Linux CI selects Vulkan and uses Mesa's software adapter.
 Viewer tests render offscreen:
 
@@ -241,16 +217,13 @@ Describe the problem, the resulting behavior, and the checks you run.
 Keep the change focused. Include a regression test when fixing a behavior defect.
 Update the relevant guide or example when changing the public API.
 
-The [CI workflow](.github/workflows/artifacts.yml) runs development checks and
-verifies built packages.
-Source checks and editable installations run on Linux, macOS, and Windows.
-It tests Python 3.12 wheels on Linux, macOS, and Windows.
-Linux also tests those wheels on Python 3.13, 3.14, and 3.15.
-The `artifacts` environment includes `check-wheel-contents`.
-CI runs it on every wheel after platform repairs, alongside Twine and ABI checks.
-Its project configuration requires the files from `python/wesl` in each wheel.
-It excludes local extension builds and bytecode from that source comparison.
-W102 is disabled because wheels add compiled extensions and repaired libraries.
+The [CI workflow](.github/workflows/artifacts.yml) checks source, editable installs,
+and Python 3.12 wheels on Linux, macOS, and Windows.
+Linux also tests wheels on Python 3.13, 3.14, and 3.15.
+CI checks repaired wheels with `check-wheel-contents`, Twine, and ABI checks.
+`check-wheel-contents` is available in `artifacts`.
+It requires the files from `python/wesl`, excluding local builds and bytecode.
+W102 is disabled to allow compiled extensions and repaired libraries.
 Installation checks verify native imports, type information, and bundled shaders.
 The [release checklist](RELEASE_CHECKLIST.md) describes PyPI setup and publication.
 
@@ -284,19 +257,16 @@ The repository manifest sets the shared shader root.
 Directory fixtures keep example parameters local.
 The root configuration uses importlib mode so test filenames can repeat.
 
-The pytest plugin delegates parametrization to pytest's collection hook.
-It keeps each collected item and its plugin state.
-It attaches WESL reporting methods to the item.
-Pytest controls fixture setup, including autouse fixtures.
-The runner checks conditional tests after fixture setup.
-The plugin tests cover the oldest supported and current pytest series.
+Pytest controls parametrization and fixture setup, including autouse fixtures.
+The plugin preserves collected items and their state, then adds WESL reporting.
+The runner evaluates test conditions after fixture setup.
+Tests cover the oldest supported and current pytest series.
 
-The `pytest_generate_tests` hook exposes each shader callable during collection.
-The collector then removes it from the synthetic module.
-This prevents shader names from becoming Python hooks during subsequent collection.
+`pytest_generate_tests` exposes shader callables during collection.
+The collector then removes them to prevent shader names from becoming Python hooks.
 
 The plugin returns [custom failure strings](https://docs.pytest.org/en/stable/example/nonpython.html)
-through `repr_failure`. These strings preserve shader locations in terminal,
-JUnit, and xdist reports. Keep the regression tests for these reports.
-Pytest controls presentation. The plugin does not use private traceback classes.
+through `repr_failure` to preserve locations in terminal, JUnit, and xdist reports.
+Keep the regression tests.
+The plugin leaves presentation to pytest and uses no private traceback classes.
 Chained exceptions use the item's original `repr_failure` to retain their causes.
