@@ -2,6 +2,7 @@ use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap, HashSet},
     path::PathBuf,
+    sync::Arc,
 };
 
 use pyo3::{
@@ -152,9 +153,7 @@ struct Diagnostic {
     #[pyo3(get)]
     #[doc = "The display filename, or None when unavailable."]
     filename: Option<String>,
-    #[pyo3(get)]
-    #[doc = "The original source text, or None when unavailable."]
-    source: Option<String>,
+    source: Option<Arc<str>>,
     #[pyo3(get)]
     #[doc = "The UTF-8 byte range (start, end), with an exclusive end, or None."]
     span: Option<(usize, usize)>,
@@ -175,7 +174,7 @@ impl Diagnostic {
             message,
             module,
             filename,
-            source,
+            source: source.map(Arc::from),
             span,
         }
     }
@@ -188,6 +187,12 @@ impl Diagnostic {
             self.filename.as_deref().into_pyobject(py)?.repr()?,
             self.span.into_pyobject(py)?.repr()?,
         ))
+    }
+
+    #[getter]
+    #[doc = "The original source text, or None when unavailable."]
+    fn source(&self) -> Option<&str> {
+        self.source.as_deref()
     }
 
     #[getter]
@@ -220,7 +225,7 @@ impl Diagnostic {
                 &self.message,
                 &self.module,
                 &self.filename,
-                &self.source,
+                self.source.as_deref(),
                 self.span,
             )
                 .into_pyobject(py)?,
@@ -468,7 +473,7 @@ impl Failure {
                     .as_ref()
                     .map(ToString::to_string),
                 filename: diagnostic.detail.display_name,
-                source: diagnostic.detail.source,
+                source: diagnostic.detail.source.map(Arc::from),
                 span,
             }),
             rendered,
@@ -576,7 +581,7 @@ fn compile(
             resolver.modules.add_module(path, source.into());
         }
         let root = resolver.dependency_path(&root);
-        let result = compiler::compile(&root, &options, &resolver, |_, _| Ok(()));
+        let result = compiler::compile(&root, &options, &resolver, HashMap::new(), |_, _| Ok(()));
         result
             .map(|result| CompileResult {
                 wgsl: result.to_string(),

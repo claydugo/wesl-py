@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
+    sync::Arc,
 };
 
 use pyo3::{
@@ -551,6 +552,7 @@ pub(super) fn compile_test(
         while names.contains(&entry_point) {
             entry_point.push('_');
         }
+        let root_syntax = syntax.clone();
         if let Err(error) = pass::condcomp(&mut syntax, &features) {
             return Err(Failure::from_diagnostic(error.diagnostic().with_source(
                 resolver.resolve_source(&root)
@@ -628,7 +630,7 @@ pub(super) fn compile_test(
             mangle_main: true,
             features,
             ..Default::default()
-        }, &resolver, |path, syntax| transformed.apply(path, syntax));
+        }, &resolver, HashMap::from([(root.clone(), root_syntax), (result_module.clone(), result_syntax)]), |path, syntax| transformed.apply(path, syntax));
         let mut result = result.map_err(|error| Failure::from_diagnostic(error.diagnostic()))?;
         let sourcemap = result.sourcemap.take();
         let mut assertions = HashMap::new();
@@ -722,6 +724,48 @@ pub(super) fn compile_test(
             Failure::Message("shader test result is missing".to_owned())
         })?;
         let mut sites = Vec::new();
+        let mut sources = HashMap::new();
+        let mut referenced_assertions = HashSet::new();
+        for declaration in &mut result.syntax.global_declarations {
+            let GlobalDeclaration::Function(function) = &mut **declaration else {
+                continue;
+            };
+            let Some(wesl::sourcemap::SourceMapEntry { path: module, .. }) = sourcemap.item(&function.ident.name()) else {
+                continue;
+            };
+            if module == &assertion_module || module == &result_module {
+                continue;
+            }
+            let mut pending: Vec<_> = function.body.statements.iter_mut().collect();
+            while let Some(statement) = pending.pop() {
+                let span = statement.span();
+                if let Statement::FunctionCall(call) = &mut **statement {
+                    let name = assertions.get(&*call.call.ty.ident.name());
+                    if let Some((name, _)) = name {
+                        referenced_assertions.insert(call.call.ty.ident.name().to_string());
+                        let range = span.range();
+                        sites.push(Diagnostic {
+                            message: name.clone(),
+                            module: Some(module.to_string()),
+                            filename: sourcemap.display_name(module).map(str::to_owned),
+                            source: sources.entry(module.clone()).or_insert_with(|| {
+                                sourcemap.source(module).map(Arc::<str>::from)
+                            }).as_ref().map(Arc::clone),
+                            span: Some((range.start, range.end)),
+                        });
+                        let site = u32::try_from(sites.len())
+                            .map_err(|error| Failure::Message(error.to_string()))?;
+                        let wrapper_name = format!("{}_wesl_test", call.call.ty.ident.name());
+                        call.call.ty.ident = Ident::new(wrapper_name);
+                        call.call.arguments.push(Spanned::new(
+                            Expression::Literal(LiteralExpression::U32(site)), span,
+                        ));
+                    }
+                    continue;
+                }
+                pending.extend(Visit::<StatementNode>::visit_mut(&mut **statement));
+            }
+        }
         let mut wrappers = Vec::new();
         for declaration in &mut result.syntax.global_declarations {
             let GlobalDeclaration::Function(function) = &mut **declaration else {
@@ -764,6 +808,9 @@ pub(super) fn compile_test(
                                 .with_sourcemap(&sourcemap)
                         )),
                     };
+                    if !referenced_assertions.contains(&*function.ident.name()) {
+                        continue;
+                    }
                     let call = Statement::FunctionCall(FunctionCallStatement {
                         attributes: Vec::new(),
                         call: FunctionCall {
@@ -828,33 +875,6 @@ pub(super) fn compile_test(
                     }
                     wrappers.push(wrapper.into());
                 }
-                continue;
-            }
-            let mut pending: Vec<_> = function.body.statements.iter_mut().collect();
-            while let Some(statement) = pending.pop() {
-                let span = statement.span();
-                if let Statement::FunctionCall(call) = &mut **statement {
-                    let name = assertions.get(&*call.call.ty.ident.name());
-                    if let Some((name, _)) = name {
-                        let range = span.range();
-                        sites.push(Diagnostic {
-                            message: name.clone(),
-                            module: Some(module.to_string()),
-                            filename: sourcemap.display_name(module).map(str::to_owned),
-                            source: sourcemap.source(module).map(str::to_owned),
-                            span: Some((range.start, range.end)),
-                        });
-                        let site = u32::try_from(sites.len())
-                            .map_err(|error| Failure::Message(error.to_string()))?;
-                        let wrapper_name = format!("{}_wesl_test", call.call.ty.ident.name());
-                        call.call.ty.ident = Ident::new(wrapper_name);
-                        call.call.arguments.push(Spanned::new(
-                            Expression::Literal(LiteralExpression::U32(site)), span,
-                        ));
-                    }
-                    continue;
-                }
-                pending.extend(Visit::<StatementNode>::visit_mut(&mut **statement));
             }
         }
         result.syntax.global_declarations.extend(wrappers);

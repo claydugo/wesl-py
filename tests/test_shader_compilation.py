@@ -286,3 +286,25 @@ def test_conditional_non_test_definition(
 def test_requires_test_attribute(compile_shader_test: partial) -> None:
     with pytest.raises(ValueError, match="does not exist"):
         compile_shader_test({"package::main": "fn helper() {}"}, test_name="helper")
+
+
+def test_assertion_wrappers_only_include_referenced_functions(
+    compile_shader_test: partial,
+) -> None:
+    source = (
+        "@test fn selected() { wgsl_test::expect(true); wgsl_test::expect(false); }"
+    )
+    compiled = compile_shader_test(
+        {
+            "package::main": source,
+            "wgsl_test": "fn expect(value: bool) {} fn expectUnused(value: bool) {}",
+        },
+        options=wesl.TestOptions(strip=False),
+    )
+    assert compiled is not None
+    shader, _, sites, _, _ = compiled
+    wesl.check_syntax(shader)
+    assert shader.count("fn _1wgsl_test_expect_wesl_test(") == 1
+    assert "fn _1wgsl_test_expectUnused(" in shader
+    assert "_1wgsl_test_expectUnused_wesl_test" not in shader
+    assert [site.source for site in sites] == [source, source]

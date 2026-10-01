@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use wesl::{
     CompileOptions, CompileResult, Error, Mangler, Resolver,
@@ -16,6 +16,7 @@ struct Driver<'a, Transform> {
     options: &'a CompileOptions,
     resolver: &'a dyn Resolver,
     mangler: &'a dyn Mangler,
+    parsed_modules: HashMap<ModulePath, TranslationUnit>,
     transform: Transform,
 }
 
@@ -39,16 +40,35 @@ where
                 .filter_map(SyntaxNode::ident)
                 .collect())
         } else if let Some(keep) = &self.options.keep {
+            if keep.len() <= 1 {
+                return keep
+                    .iter()
+                    .map(|name| {
+                        module
+                            .global_declarations
+                            .iter()
+                            .filter_map(SyntaxNode::ident)
+                            .find(|ident| *ident.name() == *name)
+                            .ok_or_else(|| {
+                                UsageError::NotFound(self.main_path.clone(), name.clone()).into()
+                            })
+                    })
+                    .collect();
+            }
+            let mut declarations = HashMap::new();
+            for ident in module
+                .global_declarations
+                .iter()
+                .filter_map(SyntaxNode::ident)
+            {
+                let name = ident.name().to_string();
+                declarations.entry(name).or_insert(ident);
+            }
             keep.iter()
                 .map(|name| {
-                    module
-                        .global_declarations
-                        .iter()
-                        .filter_map(SyntaxNode::ident)
-                        .find(|ident| *ident.name() == *name)
-                        .ok_or_else(|| {
-                            UsageError::NotFound(self.main_path.clone(), name.clone()).into()
-                        })
+                    declarations.get(name).cloned().ok_or_else(|| {
+                        UsageError::NotFound(self.main_path.clone(), name.clone()).into()
+                    })
                 })
                 .collect()
         } else {
@@ -109,7 +129,14 @@ where
     }
 
     fn load_module(&mut self, path: &ModulePath) -> Result<TranslationUnit, Error> {
-        let mut module = pass::load_module(path, &self.resolver)?;
+        let mut module = if let Some(module) = self.parsed_modules.remove(path) {
+            if self.options.sourcemap {
+                self.resolver.resolve_source(path)?;
+            }
+            module
+        } else {
+            pass::load_module(path, &self.resolver)?
+        };
         if let PathOrigin::Package(namespace) = &path.origin {
             for import in &mut module.imports {
                 if import.path.is_none()
@@ -176,6 +203,7 @@ pub(super) fn compile(
     main_path: &ModulePath,
     options: &CompileOptions,
     resolver: &impl Resolver,
+    parsed_modules: HashMap<ModulePath, TranslationUnit>,
     transform: impl FnMut(&ModulePath, &mut TranslationUnit) -> Result<(), Error>,
 ) -> Result<CompileResult, Error> {
     let mangler = Box::<dyn Mangler>::from(options.mangler);
@@ -185,6 +213,7 @@ pub(super) fn compile(
         options,
         resolver: if options.sourcemap { &mapper } else { resolver },
         mangler: if options.sourcemap { &mapper } else { &mangler },
+        parsed_modules,
         transform,
     }
     .compile();

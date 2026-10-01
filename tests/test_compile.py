@@ -56,6 +56,14 @@ def test_keep_rejects_unknown_and_disabled_declarations(
         wesl.compile_source(source, options=wesl.CompileOptions(keep=keep))
 
 
+def test_keep_selects_multiple_declarations_with_repeated_names() -> None:
+    result = wesl.compile_source(
+        "fn first() {} fn second() {} fn unused() {}",
+        keep=["second", "first", "second"],
+    )
+    assert set(re.findall(r"fn (\w+)\(", result.wgsl)) == {"first", "second"}
+
+
 @pytest.mark.parametrize(
     "features",
     [
