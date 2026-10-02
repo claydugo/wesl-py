@@ -61,7 +61,7 @@ def test_keep_selects_multiple_declarations_with_repeated_names() -> None:
         "fn first() {} fn second() {} fn unused() {}",
         keep=["second", "first", "second"],
     )
-    assert set(re.findall(r"fn (\w+)\(", result.wgsl)) == {"first", "second"}
+    assert sorted(re.findall(r"fn (\w+)\(", result.wgsl)) == ["first", "second"]
 
 
 @pytest.mark.parametrize(
@@ -104,9 +104,9 @@ def test_module_keys_and_root_reject_invalid_paths(path: str) -> None:
 def test_missing_modules_never_use_the_filesystem(tmp_path: Path) -> None:
     (tmp_path / "main.wesl").write_text("fn main() {}")
     (tmp_path / "helper.wesl").write_text("fn value() -> u32 { return 1u; }")
-    with chdir(tmp_path), pytest.raises(wesl.CompileError):
+    with chdir(tmp_path), pytest.raises(wesl.CompileError, match="module not found"):
         wesl.compile({})
-    with chdir(tmp_path), pytest.raises(wesl.CompileError):
+    with chdir(tmp_path), pytest.raises(wesl.CompileError, match="module not found"):
         wesl.compile(
             {
                 "package::main": """
@@ -152,7 +152,7 @@ def test_incremental_conditional_translation() -> None:
     assert "@if(enabled)" not in partial.wgsl
     assert "@if(pending)" in partial.wgsl
     assert partial.entry_points == ("main",)
-    complete = wesl.compile_source(partial.wgsl)
+    complete = wesl.compile_source(partial.wgsl, strip=False)
     assert "@if" not in complete.wgsl
     assert "deferred" not in complete.wgsl
     preserved = wesl.compile_source(
@@ -247,6 +247,7 @@ def test_disabled_imports_preserve_the_root_entry_point() -> None:
         options=wesl.CompileOptions(imports=False),
     )
     assert "fn main(" in result.wgsl
+    assert result.entry_points == ("main",)
 
 
 @pytest.mark.parametrize(

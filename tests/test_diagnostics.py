@@ -87,7 +87,7 @@ def test_missing_root_does_not_fabricate_metadata() -> None:
 
 @pytest.mark.parametrize("module", ["package::main", "package::helper"])
 def test_compiler_eof_spans_are_zero_width(module: str) -> None:
-    source = "fn café(  \n"
+    source = "fn café(  \u2028"
     modules = {"package::main": "import package::helper::main; fn entry() { main(); }"}
     modules[module] = source
     with pytest.raises(wesl.CompileError) as caught:
@@ -143,13 +143,13 @@ def test_diagnostics_are_immutable_values() -> None:
     ids=["lf", "crlf", "cr", "vertical-tab", "form-feed", "nel", "line", "paragraph"],
 )
 def test_diagnostic_positions_use_unicode_columns(line_break: str) -> None:
-    source = f"fn café() {{{line_break}    let café = 1u;{line_break}}}"
+    source = f"fn café() {{{line_break}    let café = café;{line_break}}}"
     start = source.encode().rindex(b"caf\xc3\xa9")
     diagnostic = wesl.Diagnostic(
-        "failed", source=source, span=(start, len(source.encode()))
+        "failed", source=source, span=(start, start + len("café".encode()))
     )
-    assert (diagnostic.line, diagnostic.column) == (2, 9)
-    assert (diagnostic.end_line, diagnostic.end_column) == (3, 2)
+    assert (diagnostic.line, diagnostic.column) == (2, 16)
+    assert (diagnostic.end_line, diagnostic.end_column) == (2, 20)
 
 
 @pytest.mark.parametrize(

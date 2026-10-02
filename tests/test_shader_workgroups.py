@@ -22,6 +22,7 @@ def test_cooperative_barriers_and_builtin_parameters(
                 var<workgroup> values: array<u32, 32>;
                 @test @workgroup_size(width)
                 fn cooperative(@builtin(local_invocation_index) lane: u32) {
+                    expectEq(width, 32u);
                     values[lane] = lane + 1u;
                     workgroupBarrier();
                     expectEq(values[(lane + 1u) % width], (lane + 1u) % width + 1u);

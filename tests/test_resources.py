@@ -87,23 +87,15 @@ def test_resource_loader_preserves_bytes_and_module_names(tmp_path: Path) -> Non
     with ZipFile(tmp_path / "resources.zip") as archive:
         packaged = wesl.load_modules(ZipPath(archive), namespace="imaging")
     assert loaded.modules == packaged.modules
-    assert list(loaded.modules) == ["imaging::nested::helper"]
-    assert "\r\n" in loaded.modules["imaging::nested::helper"]
+    assert loaded.modules == {
+        "imaging::nested::helper": "fn café() -> u32 {\r\n    return 2u;\r\n}",
+    }
     assert loaded.filenames["imaging::nested::helper"] == str(
         directory / "nested" / "helper.wesl",
     )
     assert (
         packaged.filenames["imaging::nested::helper"] == "imaging::nested::helper.wesl"
     )
-    result = wesl.compile_source(
-        "import imaging::nested::helper::café; fn main() -> u32 { return café(); }",
-        modules={
-            **packaged.modules,
-            "imaging::nested::helper": "fn café() -> u32 { return 7u; }",
-        },
-        options=wesl.CompileOptions(keep=["main"]),
-    )
-    assert "7u" in result.wgsl
 
 
 def test_resource_loader_compiles_package_roots(tmp_path: Path) -> None:

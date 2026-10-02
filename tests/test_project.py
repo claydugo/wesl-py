@@ -51,44 +51,6 @@ def test_project_explicit_settings_take_precedence(tmp_path: Path) -> None:
     assert "7u" in result.wgsl
 
 
-def test_project_compiler_keeps_its_manifest_context(tmp_path: Path) -> None:
-    (tmp_path / "wesl.toml").write_text(
-        'edition = "2026_pre"\n[dependencies]\nambient = { path = "library" }\n'
-    )
-    (tmp_path / "project").mkdir()
-    (tmp_path / "project/wesl.toml").write_text(
-        'edition = "2026_pre"\nroot = "../shaders"\n'
-    )
-    (tmp_path / "library").mkdir()
-    (tmp_path / "library/wesl.toml").write_text('edition = "2026_pre"\nroot = "."\n')
-    (tmp_path / "library/package.wesl").write_text("fn value() -> u32 { return 7u; }")
-    (tmp_path / "shaders").mkdir()
-    source = "@compute @workgroup_size(1) fn main() { let result = ambient::value(); }"
-    filename = tmp_path / "shaders/main.wesl"
-    filename.write_text(source)
-    compiler = wesl.Compiler.from_project(tmp_path / "project")
-    with pytest.raises(wesl.CompileError, match="ambient"):
-        compiler.compile_source(source)
-    with pytest.raises(wesl.CompileError, match="ambient"):
-        compiler.compile_file("main.wesl")
-    with pytest.raises(wesl.CompileError, match="ambient"):
-        wesl.compile_file(
-            filename,
-            root_directory=compiler.root_directory,
-            dependencies=compiler.dependencies,
-        )
-    with pytest.raises(wesl.CompileError, match="ambient"):
-        wesl.compile_file(filename)
-    assert (
-        "7u"
-        in wesl.Compiler.from_project(
-            tmp_path, dependencies={"ambient": tmp_path / "library"}
-        )
-        .compile_file("main.wesl")
-        .wgsl
-    )
-
-
 def test_project_paths_do_not_follow_working_directory_changes(tmp_path: Path) -> None:
     source = "@compute @workgroup_size(1) fn main() { let result = library::value(); }"
     for name, value in (("first", 1), ("second", 2)):

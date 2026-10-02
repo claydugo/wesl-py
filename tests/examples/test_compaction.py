@@ -50,6 +50,6 @@ def test_prepared_compaction_accepts_new_inputs(
     wesl_device: wgpu.GPUDevice,
 ) -> None:
     compactor = Compactor(wesl_device)
-    for element_count in (129, 32769, 0, 1025, 129):
-        values = np.arange(element_count, dtype=np.uint32)
+    for element_count, offset in ((129, 0), (32769, 0), (0, 0), (1025, 0), (129, 500)):
+        values = np.arange(element_count, dtype=np.uint32) + offset
         np.testing.assert_array_equal(compactor.compact(values), values[values >= 500])

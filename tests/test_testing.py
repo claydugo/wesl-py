@@ -42,13 +42,17 @@ def test_run_test_uses_explicit_dependencies(
         "var<private> counter: u32 = 0u; "
         "fn next() -> u32 { counter += 1u; return counter; }"
     )
+    expected = 11 if override else 1
     modules = {
         "package::main": "@test fn selected() { "
-        "wgsl_test::expectEq(common::next(), 1u); "
-        "wgsl_test::expectEq(common::next(), 2u); }"
+        f"wgsl_test::expectEq(common::next(), {expected}u); "
+        f"wgsl_test::expectEq(common::next(), {expected + 1}u); }}"
     }
     if override:
-        modules["common"] = (common / "package.wesl").read_text()
+        modules["common"] = (
+            "var<private> counter: u32 = 10u; "
+            "fn next() -> u32 { counter += 1u; return counter; }"
+        )
     run_test(
         wesl_device,
         modules,

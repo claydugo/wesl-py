@@ -46,6 +46,9 @@ pytestmark = pytest.mark.gpu
         pytest.param(
             "direct", 5, 7, [3], 6, 3, 1, 1, 2, "reference", id="spatial-sigmoid"
         ),
+        pytest.param(
+            "tiled", 5, 7, [3], 19, 3, 1, 1, 0, "reference", id="spatial-reduction-tail"
+        ),
     ],
 )
 def test_convolution_matches_numpy(
@@ -162,10 +165,53 @@ def test_convolution_matches_numpy(
 
 
 @pytest.mark.parametrize(
+    ("wide_activation", "expected"),
+    [
+        pytest.param(False, 0.0, id="narrow-activation"),
+        pytest.param(True, 0.00006103515625, id="wide-activation"),
+    ],
+)
+def test_convolution_activation_override(
+    assert_operator: Callable[..., None], expected: float, *, wide_activation: bool
+) -> None:
+    values = np.array([[[8.0078125]]], dtype=np.float16)
+    assert_operator(
+        operation="convolution",
+        entry_point="tiled",
+        payloads=[
+            values,
+            values,
+            values,
+            values,
+            np.array([[[[8.0078125]]]], dtype=np.float16),
+            np.array([-64.125], dtype=np.float16),
+        ],
+        expected=np.array([[[expected]]], dtype=np.float16),
+        constants={
+            0: 1,
+            1: 1,
+            2: 1,
+            3: 1,
+            4: 1,
+            5: 1,
+            6: 0,
+            7: 0,
+            8: 1,
+            9: 0,
+            10: 0,
+            11: True,
+            12: wide_activation,
+        },
+        workgroups=(1, 1, 1),
+        tolerance=(0.0, 0.0),
+    )
+
+
+@pytest.mark.parametrize(
     ("height", "width", "channels", "kernel", "stride", "padding"),
     [
         pytest.param(5, 7, 3, 2, 2, 0, id="pool-stride-tail"),
-        pytest.param(5, 7, 3, 13, 1, 6, id="pool-thirteen"),
+        pytest.param(17, 19, 3, 13, 1, 6, id="pool-thirteen"),
     ],
 )
 def test_pooling_matches_numpy(
@@ -209,7 +255,7 @@ def test_resize_matches_numpy(
     assert_operator: Callable[..., None],
 ) -> None:
     random = np.random.default_rng(51)
-    height, width, channels, scale = 3, 5, 2, 2
+    height, width, channels, scale = 7, 11, 2, 2
     values = random.normal(size=(channels, height, width)).astype(np.float16)
     expected = values.repeat(scale, axis=1).repeat(scale, axis=2)
     payloads = [values]

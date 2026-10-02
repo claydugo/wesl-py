@@ -48,6 +48,8 @@ def test_compilation_and_shader_tests_share_project_settings(
         pytester.makefile(".toml", wesl='edition = "2026_pre"\nroot = "shaders"\n')
     shaders = pytester.path / "shaders"
     shaders.mkdir()
+    tests = shaders / "nested" if manifest else shaders
+    tests.mkdir(exist_ok=True)
     (shaders / "exposure.wesl").write_text(
         "@if(enabled) fn exposure() -> u32 { return 7u; } "
         "@else fn exposure() -> u32 { return 3u; }"
@@ -56,11 +58,10 @@ def test_compilation_and_shader_tests_share_project_settings(
         "import package::exposure::exposure; "
         "@compute @workgroup_size(1) fn main() { let result = exposure(); }"
     )
-    (shaders / "exposure.test.wesl").write_text(
+    (tests / "exposure.test.wesl").write_text(
         "import package::exposure::exposure; "
-        "@test fn result() { "
-        "@if(enabled) wgsl_test::expectEq(exposure(), 7u); "
-        "@else wgsl_test::expectEq(exposure(), 3u); }"
+        "override expected: u32; "
+        "@test fn result() { wgsl_test::expectEq(exposure(), expected); }"
     )
     pytester.makeconftest("""
         import pytest
@@ -68,8 +69,12 @@ def test_compilation_and_shader_tests_share_project_settings(
         @pytest.fixture(params=[False, True])
         def wesl_features(request):
             return {"enabled": request.param}
+
+        @pytest.fixture
+        def wesl_constants(wesl_features):
+            return {"expected": 7 if wesl_features["enabled"] else 3}
     """)
-    (shaders / "test_compile.py").write_text("""
+    (tests / "test_compile.py").write_text("""
 import wesl
 
 def test_compile(wesl_compiler, wesl_features):

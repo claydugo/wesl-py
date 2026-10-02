@@ -12,9 +12,9 @@ def test_imported_feature(wesl_compiler: wesl.Compiler) -> None:
     assert ("clamp(" in shader.wgsl) == wesl_compiler.options.features.flags["clamped"]
 
 
-def test_invalid_shader(wesl_compiler: wesl.Compiler) -> None:
+def test_invalid_shader() -> None:
     with pytest.raises(wesl.CompileError) as caught:
-        wesl_compiler.compile_source(
+        wesl.compile_source(
             "@compute @workgroup_size(1) fn main() { let value = ; }",
             filename="invalid.wesl",
         )

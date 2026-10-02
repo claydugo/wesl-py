@@ -50,8 +50,8 @@ def test_enhancement_matches_gaussian_reference(case: str, sigma: float) -> None
             )
         references.append(reference)
     expected = channels.copy()
-    expected[1:] = np.clip(channels[1:] + 2 * (references[0] - references[1]), 0, 1)
-    buffers = enhance(channels, sigma, 2.0)
+    expected[1:] = np.clip(channels[1:] + 1.5 * (references[0] - references[1]), 0, 1)
+    buffers = enhance(channels, sigma, 1.5)
     _, fine, coarse, output = buffers
     try:
         for buffer, reference in zip((fine, coarse), references, strict=True):

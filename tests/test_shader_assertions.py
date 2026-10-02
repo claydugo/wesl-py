@@ -74,6 +74,60 @@ def test_failure_in_imported_helper(wesl_device: wgpu.GPUDevice) -> None:
     assert "2 of 2 assertions failed" in str(error)
 
 
+@pytest.mark.parametrize(
+    "assertions",
+    [
+        pytest.param(
+            "wgsl_test::expectWithin(value, 1.0, 0.0, 0.0); "
+            "wgsl_test::expectWithin(1.0, value, 0.0, 0.0);",
+            id="scalar",
+        ),
+        pytest.param(
+            "wgsl_test::expectWithinVec2(vec2f(1.0, value), vec2f(1.0), 0.0, 0.0); "
+            "wgsl_test::expectWithinVec2(vec2f(1.0), vec2f(1.0, value), 0.0, 0.0);",
+            id="vec2f",
+        ),
+        pytest.param(
+            "wgsl_test::expectWithinVec3("
+            "vec3f(1.0, 1.0, value), vec3f(1.0), 0.0, 0.0); "
+            "wgsl_test::expectWithinVec3("
+            "vec3f(1.0), vec3f(1.0, 1.0, value), 0.0, 0.0);",
+            id="vec3f",
+        ),
+        pytest.param(
+            "wgsl_test::expectWithinVec4(vec4f(1.0, 1.0, 1.0, value), "
+            "vec4f(1.0), 0.0, 0.0); "
+            "wgsl_test::expectWithinVec4(vec4f(1.0), "
+            "vec4f(1.0, 1.0, 1.0, value), 0.0, 0.0);",
+            id="vec4f",
+        ),
+    ],
+)
+def test_tolerance_assertions_reject_nan(
+    wesl_device: wgpu.GPUDevice, assertions: str
+) -> None:
+    buffer = wesl_device.create_buffer_with_data(
+        data=pack("<f", float("nan")), usage=wgpu.BufferUsage.STORAGE
+    )
+    try:
+        with pytest.raises(ShaderAssertionError) as captured:
+            run_test(
+                wesl_device,
+                {
+                    "package::main": (
+                        "@group(0) @binding(0) var<storage, read> value: f32; "
+                        f"@test fn failure() {{ {assertions} }}"
+                    ),
+                },
+                "failure",
+                resources={0: [{"binding": 0, "resource": {"buffer": buffer}}]},
+            )
+        assert captured.value.failures == 2
+        assert captured.value.checks == 2
+    finally:
+        buffer.destroy()
+
+
 def test_assertion_wrapper_avoids_parameter_collisions(
     wesl_device: wgpu.GPUDevice,
 ) -> None:
@@ -116,6 +170,9 @@ def test_result_instrumentation_preserves_layout_and_binding(
     cooperative: bool,
 ) -> None:
     result_source = (wgsl_test / "TestResult.wesl").read_text(encoding="utf-8")
+    assert "@binding(0)" in result_source
+    assert "passed: u32,\n  failCount: u32," in result_source
+    assert "expected: vec4f," in result_source
     result_source = (
         result_source.replace("@binding(0)", "@binding(\n0\n)")
         .replace("passed: u32,\n  failCount: u32,", "failCount: u32,\n  passed: u32,")
@@ -332,6 +389,7 @@ def test_failures_preserve_scalar_and_vector_values(
     expected: bool | float | tuple[float, ...],
 ) -> None:
     source = (wgsl_test / "package.wesl").read_text(encoding="utf-8")
+    assert f": {parameter_type}" in source
     with pytest.raises(ShaderAssertionError) as captured:
         run_test(
             wesl_device,

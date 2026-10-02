@@ -53,10 +53,15 @@ def test_multiscale_analysis_views(caplog: pytest.LogCaptureFixture) -> None:
         viewer.settings["maximum_brightfield"] = 0.9
         viewer.settings["process"] = True
         before = np.asarray(canvas.draw()).copy()
+        assert before[500, 1260, :3].min() > 200
         viewer.weights[1:3] = 0
         viewer.settings["color"] = True
         after = np.asarray(canvas.draw())
-        np.testing.assert_array_equal(before[68:944, 952:1576], after[68:944, 952:1576])
+        left, top, width, height = map(int, viewer.viewports[1].rect)
+        np.testing.assert_array_equal(
+            before[top : top + height, left : left + width],
+            after[top : top + height, left : left + width],
+        )
         assert before[500, 600, :3].sum() > 0
         np.testing.assert_array_equal(after[500, 600, :3], [0, 0, 0])
         assert not [

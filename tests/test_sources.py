@@ -56,15 +56,27 @@ def test_compile_source_returns_emitted_names_and_dependencies() -> None:
 def test_named_package_local_imports_allow_package_visibility(
     *, visibility: bool
 ) -> None:
-    result = wesl.compile_source(
-        "@compute @workgroup_size(1) fn main() { library::value(); }",
-        modules={
-            "library": "import package::helper::value as helper; "
-            "public fn value() { helper(); }",
-            "library::helper": "fn value() {}",
-        },
-        options=wesl.CompileOptions(visibility=visibility),
-    )
+    try:
+        result = wesl.compile_source(
+            "@compute @workgroup_size(1) fn main() { library::value(); }",
+            modules={
+                "library": "import package::helper::value as helper; "
+                "public fn value() { helper(); }",
+                "library::helper": "fn value() {}",
+            },
+            options=wesl.CompileOptions(visibility=visibility),
+        )
+    except wesl.CompileError:
+        assert visibility
+        with pytest.raises(
+            wesl.CompileError,
+            match=(
+                "`library::helper::value` is declared with `package` visibility, "
+                "but another declaration imports it with `public` visibility"
+            ),
+        ):
+            raise
+        raise
     assert "fn library_helper_value(" in result.wgsl
 
 

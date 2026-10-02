@@ -37,6 +37,7 @@ package_omit = [".*", "__pycache__", "*.pyc", "*.pyo", "*.so", "*.pyd"]
 ignore = ["W102"]
 
 [tool.maturin]
+editable-profile = "dev"
 locked = true
 module-name = "wesl._native"
 python-source = "python"

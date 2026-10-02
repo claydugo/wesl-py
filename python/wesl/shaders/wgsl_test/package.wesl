@@ -35,7 +35,7 @@ public fn expectEq(actual: u32, expected: u32) {
 public fn expectWithin(actual: f32, expected: f32, relTol: f32, absTol: f32) {
   let diff = abs(actual - expected);
   let tolerance = max(absTol, relTol * max(abs(actual), abs(expected)));
-  if (diff > tolerance) {
+  if (!(diff <= tolerance)) {
     recordFailure(vec4f(actual, 0.0, 0.0, 0.0), vec4f(expected, 0.0, 0.0, 0.0));
   }
 }
@@ -47,7 +47,7 @@ public fn expectNear(actual: f32, expected: f32) {
 public fn expectWithinVec2(actual: vec2f, expected: vec2f, relTol: f32, absTol: f32) {
   let diff = abs(actual - expected);
   let tolerance = max(vec2f(absTol), relTol * max(abs(actual), abs(expected)));
-  if (any(diff > tolerance)) {
+  if (!all(diff <= tolerance)) {
     recordFailure(vec4f(actual, 0.0, 0.0), vec4f(expected, 0.0, 0.0));
   }
 }
@@ -59,7 +59,7 @@ public fn expectNearVec2(actual: vec2f, expected: vec2f) {
 public fn expectWithinVec3(actual: vec3f, expected: vec3f, relTol: f32, absTol: f32) {
   let diff = abs(actual - expected);
   let tolerance = max(vec3f(absTol), relTol * max(abs(actual), abs(expected)));
-  if (any(diff > tolerance)) {
+  if (!all(diff <= tolerance)) {
     recordFailure(vec4f(actual, 0.0), vec4f(expected, 0.0));
   }
 }
@@ -71,7 +71,7 @@ public fn expectNearVec3(actual: vec3f, expected: vec3f) {
 public fn expectWithinVec4(actual: vec4f, expected: vec4f, relTol: f32, absTol: f32) {
   let diff = abs(actual - expected);
   let tolerance = max(vec4f(absTol), relTol * max(abs(actual), abs(expected)));
-  if (any(diff > tolerance)) {
+  if (!all(diff <= tolerance)) {
     recordFailure(actual, expected);
   }
 }

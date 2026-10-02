@@ -40,7 +40,13 @@ def test_constant_modules_preserve_inputs_and_source_metadata() -> None:
         "public const enabled = true;",
     }
     assert result.sources["package::config"].filename == "generated.wesl"
-    assert list(modules) == ["package::main"]
+    assert modules == {
+        "package::main": (
+            "import package::config::{width, scale, enabled}; "
+            "@if(selected) @compute @workgroup_size(width) fn main() { "
+            "let value: f32 = scale; let selected = enabled; }"
+        ),
+    }
     assert constant_modules["package::config"] is constants
     assert constants == {"width": 64, "scale": 1.0, "enabled": True}
     assert filenames == {"package::config": "generated.wesl"}

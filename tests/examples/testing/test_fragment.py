@@ -8,6 +8,7 @@ wgpu = pytest.importorskip("wgpu")
 
 
 @pytest.mark.gpu
+@pytest.mark.parametrize("wesl_features", [wesl.Features()], ids=["unconditional"])
 @pytest.mark.parametrize(
     ("horizontal_scale", "vertical_scale"),
     [(1, 1), (2, 1), (1, 2)],
@@ -28,7 +29,7 @@ def test_tinted_image(
         dtype=np.uint8,
     )
     pixels = pixels.repeat(vertical_scale, axis=0).repeat(horizontal_scale, axis=1)
-    multiplier = np.array([0.5, 0.75, 0.25, 1], dtype=np.float32)
+    multiplier = np.array([0.5, 0.75, 0.25, 0.5], dtype=np.float32)
     with ExitStack() as stack:
         texture = wesl_device.create_texture(
             size=(2 * horizontal_scale, 2 * vertical_scale, 1),

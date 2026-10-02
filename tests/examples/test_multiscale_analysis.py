@@ -34,7 +34,7 @@ def test_foreground_correlation() -> None:
     channels[0] = 1
     channels[0, 3:16, 7:30] = 0.5
     channels[1, 3:16, 7:30] = np.linspace(0.2, 0.8, 23)
-    channels[2, 3:16, 7:30] = 1 - channels[1, 3:16, 7:30]
+    channels[2, 3:16, 7:30] = 0.5 + 0.25 * np.sin(np.linspace(0, 4 * np.pi, 23))
     source = device.create_buffer_with_data(
         data=channels, usage=wgpu.BufferUsage.STORAGE
     )
@@ -63,7 +63,7 @@ def test_foreground_correlation() -> None:
         variance[0][foreground] * variance[1][foreground]
     )
     np.testing.assert_allclose(actual[:, :, 0][foreground], expected, atol=1e-4)
-    np.testing.assert_allclose(actual[:, :, 0][foreground], -1, atol=1e-4)
+    assert np.any(expected > -0.99)
     np.testing.assert_array_equal(actual[:, :, 1], foreground)
     np.testing.assert_array_equal(actual[~foreground], 0)
 
