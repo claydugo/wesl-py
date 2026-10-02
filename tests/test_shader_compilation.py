@@ -185,6 +185,33 @@ def test_shader_assertion_types_preserve_source_context(
     assert diagnostic.span == (source.index("fn expectCustom"), len(source))
 
 
+def test_shader_result_evaluates_layout_constants(
+    compile_shader_test: partial, wgsl_test: Path
+) -> None:
+    source = (wgsl_test / "TestResult.wesl").read_text(encoding="utf-8")
+    source = source.replace(
+        "expected: vec4f,",
+        "@align(alignment) @size(alignment) expected: vec4f, extra: array<u32, count>,",
+    )
+    source += """
+        const alignment = base * 2;
+        const count = base / 16;
+        const base = 32;
+        const unrelated = 1 / 0;
+        const_assert false;
+    """
+    compiled = compile_shader_test(
+        {
+            "package::main": "@test fn selected() { wgsl_test::expect(true); }",
+            "wgsl_test::TestResult": source,
+        },
+        options=wesl.TestOptions(strip=False),
+    )
+    assert compiled is not None
+    _, _, _, _, layout = compiled
+    assert layout.buffer_size == 192
+
+
 @pytest.mark.parametrize(
     "declarations",
     [
@@ -192,8 +219,15 @@ def test_shader_assertion_types_preserve_source_context(
         "alias Value = Other; alias Other = Value;",
         "alias Value = array<Value, 2>;",
         "struct Value { child: Value }",
+        "alias Value = array<u32, count>; const count = other; const other = count;",
     ],
-    ids=["self-alias", "mutual-alias", "array-alias", "recursive-struct"],
+    ids=[
+        "self-alias",
+        "mutual-alias",
+        "array-alias",
+        "recursive-struct",
+        "layout-constant-cycle",
+    ],
 )
 def test_shader_assertion_type_cycles_without_validation(
     pytester: pytest.Pytester, wgsl_test: Path, declarations: str

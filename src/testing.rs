@@ -940,6 +940,10 @@ fn assertion_type(
         })
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Type resolution checks cycles, evaluates layout constants, and verifies alignment"
+)]
 fn resolve_assertion_type(
     value_type: &TypeExpression,
     context: &mut Context<'_>,
@@ -947,15 +951,30 @@ fn resolve_assertion_type(
     let mut pending = vec![(value_type, false)];
     let mut active = HashSet::new();
     let mut checked = HashSet::new();
+    let mut constants = Vec::new();
     while let Some((ty, exiting)) = pending.pop() {
         let name = ty.ident.name().to_string();
         if exiting {
             active.remove(&name);
+            if let Some(
+                declaration @ GlobalDeclaration::Declaration(Declaration {
+                    kind: DeclarationKind::Const,
+                    ..
+                }),
+            ) = context.source().user_decl(&name)
+            {
+                constants.push(declaration.clone());
+            }
             continue;
         }
         pending.extend(Visit::<TypeExpression>::visit(ty).map(|child| (child, false)));
         if let Some(
-            declaration @ (GlobalDeclaration::TypeAlias(_) | GlobalDeclaration::Struct(_)),
+            declaration @ (GlobalDeclaration::TypeAlias(_)
+            | GlobalDeclaration::Struct(_)
+            | GlobalDeclaration::Declaration(Declaration {
+                kind: DeclarationKind::Const,
+                ..
+            })),
         ) = context.source().user_decl(&name)
         {
             if active.contains(&name) {
@@ -972,6 +991,9 @@ fn resolve_assertion_type(
                 );
             }
         }
+    }
+    for constant in constants {
+        constant.exec(context)?;
     }
     let resolved_type = ty_eval_ty(value_type, context)?;
     let mut pending = vec![&resolved_type];

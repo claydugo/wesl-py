@@ -225,6 +225,37 @@ def test_result_instrumentation_preserves_layout_and_binding(
         buffer.destroy()
 
 
+def test_result_layout_constants_preserve_failure_values(
+    shader_runner: partial, wgsl_test: Path
+) -> None:
+    source = (wgsl_test / "TestResult.wesl").read_text(encoding="utf-8")
+    source = source.replace(
+        "expected: vec4f,",
+        "@align(alignment) @size(alignment) expected: vec4f, extra: array<u32, count>,",
+    )
+    source += """
+        const alignment = base * 2;
+        const count = base / 16;
+        const base = 32;
+    """
+    with pytest.raises(ShaderAssertionError) as captured:
+        shader_runner(
+            {
+                "package::main": """
+                    @test fn failure() {
+                        wgsl_test::expectEq(4294967295u, 4294967294u);
+                    }
+                """,
+                "wgsl_test::TestResult": source,
+            },
+            "failure",
+        )
+    assert captured.value.actual == 4294967295
+    assert captured.value.expected == 4294967294
+    assert captured.value.failures == 1
+    assert captured.value.checks == 1
+
+
 def test_failure_recording_preserves_control_flow(
     shader_runner: partial,
 ) -> None:
