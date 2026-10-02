@@ -9,6 +9,63 @@ pytest.importorskip("imgui_bundle")
 
 
 @pytest.mark.gpu
+def test_enhancement_reuses_buffers() -> None:
+    viewer_module = import_module("examples.multiscale.viewer")
+    canvas = import_module("rendercanvas.offscreen").RenderCanvas(size=(1600, 960))
+    channels = np.random.default_rng(42).random((3, 19, 37), dtype=np.float32)
+    colors = np.zeros((3, 256, 4), dtype=np.float32)
+    colors[:, :, 3] = 1
+    try:
+        viewer = viewer_module.Viewer(
+            canvas, channels, colors, ["Brightfield", "GFP", "RFP"]
+        )
+        source, fine, coarse, output = (
+            viewer.source,
+            viewer.fine,
+            viewer.coarse,
+            viewer.enhanced,
+        )
+        viewer.gui_renderer.render()
+        prepared = np.asarray(canvas.draw()).copy()
+        np.testing.assert_array_equal(prepared, np.asarray(canvas.draw()))
+        viewer.settings["strength"] = 0.0
+        viewer.settings["process"] = True
+        canvas.draw()
+        assert viewer.fine is fine
+        assert viewer.coarse is coarse
+        actual = np.frombuffer(
+            viewer.renderer.device.queue.read_buffer(output), dtype=np.float32
+        ).reshape(channels.shape)
+        np.testing.assert_array_equal(actual, channels)
+        viewer.settings["sigma"] = 0.7
+        viewer.settings["strength"] = 1.5
+        viewer.settings["process"] = True
+        canvas.draw()
+        assert viewer.source is source
+        assert viewer.enhanced is output
+        assert viewer.fine is not fine
+        assert viewer.coarse is not coarse
+        expected_buffers = import_module("examples.multiscale.compute").enhance(
+            channels, 0.7, 1.5
+        )
+        try:
+            np.testing.assert_array_equal(
+                np.frombuffer(
+                    viewer.renderer.device.queue.read_buffer(output), dtype=np.float32
+                ),
+                np.frombuffer(
+                    viewer.renderer.device.queue.read_buffer(expected_buffers[-1]),
+                    dtype=np.float32,
+                ),
+            )
+        finally:
+            for buffer in expected_buffers:
+                buffer.destroy()
+    finally:
+        canvas.close()
+
+
+@pytest.mark.gpu
 def test_multiscale_analysis_views(caplog: pytest.LogCaptureFixture) -> None:
     coordinates_y, coordinates_x = np.indices((19, 37), dtype=np.float32)
     channels = np.array(
@@ -19,8 +76,8 @@ def test_multiscale_analysis_views(caplog: pytest.LogCaptureFixture) -> None:
     colors[:, :, 3] = 1
     colors[1, :, 1] = np.linspace(0, 1, 256)
     colors[2, :, 0] = np.linspace(0, 1, 256)
-    canvas = import_module("rendercanvas.offscreen").RenderCanvas(size=(1600, 960))
     viewer_module = import_module("examples.multiscale.viewer")
+    canvas = import_module("rendercanvas.offscreen").RenderCanvas(size=(1600, 960))
     try:
         viewer = viewer_module.Viewer(
             canvas, channels, colors, ["Brightfield", "GFP", "RFP"]
@@ -53,17 +110,20 @@ def test_multiscale_analysis_views(caplog: pytest.LogCaptureFixture) -> None:
         viewer.settings["maximum_brightfield"] = 0.9
         viewer.settings["process"] = True
         before = np.asarray(canvas.draw()).copy()
-        assert before[500, 1260, :3].min() > 200
+        left, top, width, height = map(int, viewer.viewports[1].rect)
+        assert before[top + height // 2, left + width // 2, :3].min() > 200
         viewer.weights[1:3] = 0
         viewer.settings["color"] = True
         after = np.asarray(canvas.draw())
-        left, top, width, height = map(int, viewer.viewports[1].rect)
         np.testing.assert_array_equal(
             before[top : top + height, left : left + width],
             after[top : top + height, left : left + width],
         )
-        assert before[500, 600, :3].sum() > 0
-        np.testing.assert_array_equal(after[500, 600, :3], [0, 0, 0])
+        left, top, width, height = map(int, viewer.viewports[0].rect)
+        assert before[top + height // 2, left + width // 2, :3].sum() > 0
+        np.testing.assert_array_equal(
+            after[top + height // 2, left + width // 2, :3], [0, 0, 0]
+        )
         assert not [
             record for record in caplog.records if record.levelno >= logging.ERROR
         ]

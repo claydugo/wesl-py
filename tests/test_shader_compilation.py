@@ -66,12 +66,15 @@ def test_cooperative_wrapper_preserves_other_entry_points(
 def test_shader_test_error_preserves_source_context(
     compile_shader_test: partial, wgsl_test: Path
 ) -> None:
-    source = "fn fail() {\n    let café = 1u;\n    let item = missing;\n}\n"
-    source += (
-        (wgsl_test / "TestResult.wesl")
-        .read_text(encoding="utf-8")
-        .replace("fn initTestResult() {", "fn initTestResult() { fail();")
+    result_source = (wgsl_test / "TestResult.wesl").read_text(encoding="utf-8")
+    result_source, replacement_count = re.subn(
+        r"\bfn\s+initTestResult\s*\(\s*\)\s*\{",
+        "fn initTestResult() { fail();",
+        result_source,
     )
+    assert replacement_count == 1
+    source = "fn fail() {\n    let café = 1u;\n    let item = missing;\n}\n"
+    source += result_source
     with pytest.raises(wesl.CompileError) as caught:
         compile_shader_test(
             {
@@ -235,9 +238,11 @@ def test_shader_result_rejects_zero_alignment(
     compile_shader_test: partial, wgsl_test: Path, member: str
 ) -> None:
     source = (wgsl_test / "TestResult.wesl").read_text(encoding="utf-8")
-    source = "struct Nested { @align(0) value: u32 }\n" + source.replace(
-        "struct TestResult {", f"struct TestResult {{ {member}"
+    source, replacement_count = re.subn(
+        r"\bstruct\s+TestResult\s*\{", f"struct TestResult {{ {member}", source
     )
+    assert replacement_count == 1
+    source = "struct Nested { @align(0) value: u32 }\n" + source
     with pytest.raises(wesl.CompileError, match="nonzero alignment") as caught:
         compile_shader_test(
             {
@@ -304,7 +309,7 @@ def test_assertion_wrappers_only_include_referenced_functions(
     assert compiled is not None
     shader, _, sites, _, _ = compiled
     wesl.check_syntax(shader)
-    assert shader.count("fn _1wgsl_test_expect_wesl_test(") == 1
-    assert "fn _1wgsl_test_expectUnused(" in shader
-    assert "_1wgsl_test_expectUnused_wesl_test" not in shader
+    assert len(re.findall(r"\bfn \w*expect_wesl_test\(", shader)) == 1
+    assert re.search(r"\bfn \w*expectUnused\(", shader)
+    assert not re.search(r"\bfn \w*expectUnused_wesl_test\(", shader)
     assert [site.source for site in sites] == [source, source]

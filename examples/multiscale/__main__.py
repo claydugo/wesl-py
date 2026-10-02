@@ -30,8 +30,8 @@ viewer.settings.update(
     maximum_radius=880.0,
 )
 if isinstance(canvas, OffscreenRenderCanvas):
-    for _ in range(3):
-        frame = canvas.draw()
+    viewer.gui_renderer.render()
+    frame = canvas.draw()
     imageio.imwrite(arguments.screenshot, np.asarray(frame))
 else:
     loop.run()

@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from struct import pack
 
@@ -170,15 +171,22 @@ def test_result_instrumentation_preserves_layout_and_binding(
     cooperative: bool,
 ) -> None:
     result_source = (wgsl_test / "TestResult.wesl").read_text(encoding="utf-8")
-    assert "@binding(0)" in result_source
-    assert "passed: u32,\n  failCount: u32," in result_source
-    assert "expected: vec4f," in result_source
-    result_source = (
-        result_source.replace("@binding(0)", "@binding(\n0\n)")
-        .replace("passed: u32,\n  failCount: u32,", "failCount: u32,\n  passed: u32,")
-        .replace("failCount: u32,", "failCount :\n u32 ,")
-        .replace("expected: vec4f,", "@align(64) @size(64) expected : vec4<f32> ,")
+    result_source, replacement_count = re.subn(
+        r"@binding\s*\(\s*0\s*\)", "@binding(\n0\n)", result_source
     )
+    assert replacement_count == 1
+    result_source, replacement_count = re.subn(
+        r"\bpassed\s*:\s*u32\s*,\s*failCount\s*:\s*u32\s*,",
+        "failCount :\n u32 ,\n  passed: u32,",
+        result_source,
+    )
+    assert replacement_count == 1
+    result_source, replacement_count = re.subn(
+        r"\bexpected\s*:\s*(?:vec4f|vec4\s*<\s*f32\s*>)\s*,",
+        "@align(64) @size(64) expected : vec4<f32> ,",
+        result_source,
+    )
+    assert replacement_count == 1
     result_source = "@if(false) {} @else { @if(true) {\n" + result_source + "\n}}"
     buffer = wesl_device.create_buffer_with_data(
         data=pack("<I", 7), usage=wgpu.BufferUsage.STORAGE
@@ -389,7 +397,10 @@ def test_failures_preserve_scalar_and_vector_values(
     expected: bool | float | tuple[float, ...],
 ) -> None:
     source = (wgsl_test / "package.wesl").read_text(encoding="utf-8")
-    assert f": {parameter_type}" in source
+    source, replacement_count = re.subn(
+        rf":\s*{re.escape(parameter_type)}\b", ": Value", source
+    )
+    assert replacement_count > 0
     with pytest.raises(ShaderAssertionError) as captured:
         run_test(
             wesl_device,
@@ -401,8 +412,7 @@ def test_failures_preserve_scalar_and_vector_values(
                     "expectNearVec4, expectWithinVec4, expectUlpVec4}; "
                     f"@test fn failure() {{ {assertions} }}"
                 ),
-                "wgsl_test": "import package::types::Value;\n"
-                + source.replace(f": {parameter_type}", ": Value"),
+                "wgsl_test": "import package::types::Value;\n" + source,
                 "wgsl_test::types": (
                     f"alias Value = Base; alias Base = {parameter_type};"
                 ),

@@ -69,12 +69,7 @@ def prepare_test(
     if options is not None and not isinstance(options, TestOptions):
         message = "options must be TestOptions or None"
         raise TypeError(message)
-    groups = (
-        {}
-        if resources is None
-        else {group: list(entries) for group, entries in resources.items()}
-    )
-    entries = groups.setdefault(0, [])
+    entries = [] if resources is None else resources.get(0, [])
     bindings = {entry["binding"] for entry in entries}
     if layouts is not None:
         if any(

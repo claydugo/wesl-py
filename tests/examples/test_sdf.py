@@ -7,9 +7,6 @@ import wesl
 
 np = pytest.importorskip("numpy")
 wgpu = pytest.importorskip("wgpu")
-pytest.importorskip("imgui_bundle")
-RenderCanvas = import_module("rendercanvas.offscreen").RenderCanvas
-Viewer = import_module("examples.sdf.viewer").Viewer
 get_default_device = import_module("wgpu.utils").get_default_device
 
 
@@ -80,8 +77,11 @@ def test_particle_collisions(*, cutout: bool) -> None:
 
 @pytest.mark.gpu
 def test_sdf_viewer(caplog: pytest.LogCaptureFixture) -> None:
-    canvas = RenderCanvas(size=(800, 600))
-    viewer = Viewer(canvas)
+    pytest.importorskip("imgui_bundle")
+    canvas_module = import_module("rendercanvas.offscreen")
+    viewer_module = import_module("examples.sdf.viewer")
+    canvas = canvas_module.RenderCanvas(size=(800, 600))
+    viewer = viewer_module.Viewer(canvas)
     try:
         viewer.paused = True
         original = np.asarray(canvas.draw()).copy()

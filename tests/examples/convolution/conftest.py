@@ -124,11 +124,17 @@ def wesl_device(request: pytest.FixtureRequest) -> Iterator["wgpu.GPUDevice"]:
         adapter = wgpu.gpu.request_adapter_sync(power_preference="high-performance")
     else:
         adapter = next(
-            adapter
-            for adapter in wgpu.gpu.enumerate_adapters_sync()
-            if name.lower() in adapter.info["device"].lower()
-            and adapter.info["backend_type"] == "Vulkan"
+            (
+                adapter
+                for adapter in wgpu.gpu.enumerate_adapters_sync()
+                if name.lower() in adapter.info["device"].lower()
+                and adapter.info["backend_type"] == "Vulkan"
+            ),
+            None,
         )
+        if adapter is None:
+            message = "No Vulkan adapter matches --convolution-adapter."
+            raise pytest.UsageError(message)
     if "shader-f16" not in adapter.features:
         pytest.skip("The adapter does not support shader-f16.")
     device = adapter.request_device_sync(required_features=["shader-f16"])

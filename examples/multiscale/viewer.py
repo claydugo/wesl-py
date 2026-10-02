@@ -13,6 +13,7 @@ from examples.multiscale.compute import (
     create_shader,
     distance_field,
     enhance,
+    smooth,
     unwrap,
 )
 
@@ -71,12 +72,20 @@ class Viewer:
         self.canvas.request_draw(self.draw_frame)
 
     def _create_resources(self, colors: np.ndarray) -> None:
-        self.source, _, _, output = enhance(self.channels, 6.0, 3.0)
+        self.source, self.fine, self.coarse, self.enhanced = enhance(
+            self.channels, 6.0, 3.0
+        )
+        self.enhancement_sigma = 6.0
+        self.enhancement_shader = create_shader("enhancement.wesl")
+        self.enhancement_shader.set_resource(0, self.source)
+        self.enhancement_shader.set_resource(1, self.fine)
+        self.enhancement_shader.set_resource(2, self.coarse)
+        self.enhancement_shader.set_resource(3, self.enhanced)
         original_texture, self.original_shader, self.original_weights = composite(
             self.source, colors, self.weights, (self.width, self.height)
         )
         processed_texture, self.processed_shader, self.processed_weights = composite(
-            output, colors, self.weights, (self.width, self.height)
+            self.enhanced, colors, self.weights, (self.width, self.height)
         )
         self.original_texture = original_texture
         self.processed_texture = processed_texture
@@ -109,6 +118,7 @@ class Viewer:
         self.cameras = []
         self.viewports = []
         self.geometries = []
+        self.images = []
         for texture in (self.original_texture, self.processed_texture):
             scene = pygfx.Scene()
             scene.add(pygfx.Background.from_color("#0c1017"))
@@ -122,6 +132,7 @@ class Viewer:
             self.cameras.append(camera)
             self.viewports.append(pygfx.Viewport(self.renderer))
             self.geometries.append(geometry)
+            self.images.append(image)
         self.controller = pygfx.PanZoomController(self.cameras[0])
         self.controller.add_camera(self.cameras[1])
         self.controller.register_events(self.viewports[0])
@@ -170,8 +181,8 @@ class Viewer:
         imgui.separator()
         imgui.text_wrapped("Drag either image to pan. Scroll to zoom both views.")
         if imgui.button("Reset view"):
-            for camera, scene in zip(self.cameras, self.scenes, strict=True):
-                camera.show_object(scene.children[1], match_aspect=True)
+            for camera, image in zip(self.cameras, self.images, strict=True):
+                camera.show_object(image, match_aspect=True)
         imgui.spacing()
         if self.mode == Analysis.ENHANCEMENT:
             imgui.text_wrapped(
@@ -305,11 +316,24 @@ class Viewer:
     def _update_analysis(self) -> None:
         dimensions = (self.width, self.height)
         if self.mode == Analysis.ENHANCEMENT:
-            _, _, _, result = enhance(
-                self.channels,
-                float(self.settings["sigma"]),
-                float(self.settings["strength"]),
+            sigma = float(self.settings["sigma"])
+            if sigma != self.enhancement_sigma:
+                fine = smooth(self.source, self.channels.shape, sigma, first_field=1)
+                coarse = smooth(
+                    self.source, self.channels.shape, sigma * 2, first_field=1
+                )
+                self.enhancement_shader.set_resource(1, fine)
+                self.enhancement_shader.set_resource(2, coarse)
+                self.fine.destroy()
+                self.coarse.destroy()
+                self.fine = fine
+                self.coarse = coarse
+                self.enhancement_sigma = sigma
+            self.enhancement_shader.set_constant(
+                "strength", float(self.settings["strength"])
             )
+            self.enhancement_shader.dispatch((self.channels.size + 255) // 256)
+            result = self.enhanced
         elif self.mode == Analysis.CORRELATION:
             result = analyze(
                 self.source,

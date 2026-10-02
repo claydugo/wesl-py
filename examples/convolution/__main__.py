@@ -16,11 +16,16 @@ def main() -> None:
         adapter = wgpu.gpu.request_adapter_sync(power_preference="high-performance")
     else:
         adapter = next(
-            adapter
-            for adapter in wgpu.gpu.enumerate_adapters_sync()
-            if arguments.adapter.lower() in adapter.info["device"].lower()
-            and adapter.info["backend_type"] == "Vulkan"
+            (
+                adapter
+                for adapter in wgpu.gpu.enumerate_adapters_sync()
+                if arguments.adapter.lower() in adapter.info["device"].lower()
+                and adapter.info["backend_type"] == "Vulkan"
+            ),
+            None,
         )
+        if adapter is None:
+            parser.error("No Vulkan adapter matches --adapter.")
     device = adapter.request_device_sync(required_features=["shader-f16"])
     random = np.random.default_rng(18)
     weights = random.uniform(-1, 1, (7, 3)).astype(np.float16)
@@ -29,22 +34,30 @@ def main() -> None:
         stack.callback(device.destroy)
         buffers = []
         for value in [np.zeros((3, 13, 17), dtype=np.float16), weights, biases]:
-            payload = value.tobytes()
-            buffer = device.create_buffer_with_data(
-                data=payload + bytes(-len(payload) % 4),
-                usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST,
+            buffers.append(
+                device.create_buffer_with_data(
+                    data=value.tobytes() + bytes(-value.nbytes % 4),
+                    usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST,
+                )
             )
-            stack.callback(buffer.destroy)
-            buffers.append(buffer)
+            stack.callback(buffers[-1].destroy)
         for shape in [(7, 13, 17), (7, 7, 9)]:
-            buffer = device.create_buffer(
-                size=(np.prod(shape).item() * 2 + 3) // 4 * 4,
-                usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_SRC,
+            buffers.append(
+                device.create_buffer(
+                    size=(np.prod(shape).item() * 2 + 3) // 4 * 4,
+                    usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_SRC,
+                )
             )
-            stack.callback(buffer.destroy)
-            buffers.append(buffer)
+            stack.callback(buffers[-1].destroy)
+        (
+            input_buffer,
+            weights_buffer,
+            biases_buffer,
+            convolution_buffer,
+            pooling_buffer,
+        ) = buffers
         references = []
-        for buffer in [buffers[3], buffers[4]]:
+        for buffer in [convolution_buffer, pooling_buffer]:
             reference = device.create_buffer(
                 size=buffer.size,
                 usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST,
@@ -58,13 +71,13 @@ def main() -> None:
                 "tiled",
                 [13, 17, 3, 7, 1, 1, 0, 0, 3, 0, 0],
                 [
-                    buffers[3],
-                    buffers[0],
-                    buffers[0],
-                    buffers[0],
-                    buffers[0],
-                    buffers[1],
-                    buffers[2],
+                    convolution_buffer,
+                    input_buffer,
+                    input_buffer,
+                    input_buffer,
+                    input_buffer,
+                    weights_buffer,
+                    biases_buffer,
                 ],
                 (7, 1, 1),
             ),
@@ -72,7 +85,7 @@ def main() -> None:
                 "pooling",
                 "main",
                 [13, 17, 7, 3, 2, 1],
-                [buffers[4], buffers[3]],
+                [pooling_buffer, convolution_buffer],
                 (2, 1, 1),
             ),
         ]:
@@ -110,7 +123,7 @@ def main() -> None:
             filenames={"package::main": Path(__file__).parent / "shaders/verify.wesl"},
             resources={
                 0: [
-                    {"binding": 0, "resource": {"buffer": buffers[3]}},
+                    {"binding": 0, "resource": {"buffer": convolution_buffer}},
                     {"binding": 1, "resource": {"buffer": references[0]}},
                 ]
             },
@@ -129,7 +142,9 @@ def main() -> None:
                 padded, (3, 3), axis=(1, 2)
             )[:, ::2, ::2].max(axis=(-1, -2))
             payload = values.tobytes()
-            device.queue.write_buffer(buffers[0], 0, payload + bytes(-len(payload) % 4))
+            device.queue.write_buffer(
+                input_buffer, 0, payload + bytes(-len(payload) % 4)
+            )
             encoder = device.create_command_encoder()
             for pipeline, group, workgroups in passes:
                 compute = encoder.begin_compute_pass()
@@ -149,7 +164,7 @@ def main() -> None:
             verify(
                 resources={
                     0: [
-                        {"binding": 0, "resource": {"buffer": buffers[4]}},
+                        {"binding": 0, "resource": {"buffer": pooling_buffer}},
                         {"binding": 1, "resource": {"buffer": references[1]}},
                     ]
                 }
