@@ -199,14 +199,19 @@ where
         } else {
             load_module(path, &self.resolver)?
         };
-        if let PathOrigin::Package(namespace) = &path.origin {
+        if matches!(&path.origin, PathOrigin::Package(_)) {
             for import in &mut module.imports {
                 if import.path.is_none()
                     && let ImportContent::Collection(collection) = &mut import.content
                 {
                     for item in collection {
                         if let Some(name) = item.path.first_mut() {
-                            *name = format!("{namespace}/{name}");
+                            *name = path
+                                .join_path(&ModulePath::new(
+                                    PathOrigin::Package(name.clone()),
+                                    Vec::new(),
+                                ))
+                                .to_string();
                         }
                     }
                 }

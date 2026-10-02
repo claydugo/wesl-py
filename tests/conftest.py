@@ -1,6 +1,5 @@
 from dataclasses import replace
 from functools import partial
-from importlib import import_module
 from importlib.util import find_spec
 from pathlib import Path
 
@@ -16,12 +15,6 @@ def shader_runner(request: pytest.FixtureRequest) -> partial:
     if request.param == "cpu":
         return partial(run_test_cpu)
     return partial(run_test, request.getfixturevalue("wesl_device"))
-
-
-@pytest.fixture(scope="session", autouse=True)
-def gpu_backend() -> None:
-    if find_spec("wgpu") is not None:
-        import_module("wgpu.backends.wgpu_native")
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:

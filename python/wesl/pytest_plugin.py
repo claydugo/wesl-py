@@ -207,7 +207,9 @@ class WeslTest:
 def wesl_device(request: pytest.FixtureRequest) -> Iterator[wgpu.GPUDevice]:
     try:
         import wgpu
-    except ModuleNotFoundError:
+    except ModuleNotFoundError as error:
+        if error.name != "wgpu":
+            raise
         if request.config.getoption("--wesl-gpu") == "optional":
             pytest.skip("install wesl-py[testing] to run shader tests")
         pytest.fail("install wesl-py[testing] to run shader tests", pytrace=False)

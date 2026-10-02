@@ -59,18 +59,7 @@ fn compilation_matches_shared_cases() -> Result<(), Box<dyn std::error::Error>> 
                 let mut expected = expected.parse::<TranslationUnit>()?;
                 actual.sort_declarations();
                 expected.sort_declarations();
-                if matches!(
-                    name.as_str(),
-                    "@if on break-if statement" | "@if on continuing statement"
-                ) {
-                    assert_ne!(
-                        actual.to_string(),
-                        expected.to_string(),
-                        "{name} now passes; remove the expected failure"
-                    );
-                } else {
-                    assert_eq!(actual.to_string(), expected.to_string(), "{name}");
-                }
+                assert_eq!(actual.to_string(), expected.to_string(), "{name}");
             }
         }
         Ok(())

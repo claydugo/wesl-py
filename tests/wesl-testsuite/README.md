@@ -7,8 +7,7 @@ The copies retain the upstream data and MIT license.
 
 `tests/upstream.rs` runs 94 compilation cases and 33 import syntax cases through
 the Python API. It compares all 94 compilation results with expected output
-after the parser sorts declarations. Two cases record strict expected failures.
-They fail the test if the compiler starts to produce the expected output.
+after the parser sorts declarations.
 
 The `@else with package function reference` case expects an empty block.
 The compiler flattens that block. The test expects `fn main() {}` for this case.
@@ -21,7 +20,5 @@ Five more expected results retain conditional blocks that the compiler flattens:
 The test supplies explicit flattened output for each case.
 It does not flatten arbitrary blocks when comparing results.
 
-The `@if on break-if statement` and `@if on continuing statement` cases expose
-defects in the pinned compiler. It removes enabled statements and retains disabled
-statements with WESL attributes. The tests retain the correct expected output and
-require a mismatch until upstream fixes each defect.
+The `@if on break-if statement` and `@if on continuing statement` cases pass
+with the fix from [wesl-rs PR #309](https://github.com/webgpu-tools/wesl-rs/pull/309).

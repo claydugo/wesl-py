@@ -156,7 +156,9 @@ class Viewer:
     def draw_controls(self) -> None:
         canvas_width, canvas_height = self.canvas.get_logical_size()
         imgui.set_next_window_pos((16, 16), imgui.Cond_.always)
-        imgui.set_next_window_size((288, canvas_height - 32), imgui.Cond_.always)
+        imgui.set_next_window_size(
+            (288, max(1, canvas_height - 32)), imgui.Cond_.always
+        )
         imgui.begin(
             "Multiscale fluorescence",
             flags=imgui.WindowFlags_.no_move
@@ -210,6 +212,8 @@ class Viewer:
             )
         imgui.end()
         panel_width = (canvas_width - 336) / 2
+        if panel_width - 8 <= 0:
+            return
         for index, title in enumerate(("Original composite", self.mode)):
             imgui.set_next_window_pos(
                 (320 + index * panel_width, 16), imgui.Cond_.always
@@ -448,16 +452,17 @@ class Viewer:
             self._update_display()
         canvas_width, canvas_height = self.canvas.get_logical_size()
         panel_width = (canvas_width - 336) / 2
-        for index, (viewport, scene, camera) in enumerate(
-            zip(self.viewports, self.scenes, self.cameras, strict=True)
-        ):
-            viewport.rect = (
-                320 + index * panel_width,
-                68,
-                panel_width - 8,
-                canvas_height - 84,
-            )
-            viewport.render(scene, camera)
-        self.renderer.flush()
+        if panel_width - 8 > 0 and canvas_height - 84 > 0:
+            for index, (viewport, scene, camera) in enumerate(
+                zip(self.viewports, self.scenes, self.cameras, strict=True)
+            ):
+                viewport.rect = (
+                    320 + index * panel_width,
+                    68,
+                    panel_width - 8,
+                    canvas_height - 84,
+                )
+                viewport.render(scene, camera)
+            self.renderer.flush()
         self.gui_renderer.render()
         self.canvas.request_draw()

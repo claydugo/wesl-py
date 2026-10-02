@@ -328,6 +328,18 @@ def test_dependency_mappings_use_upstream_scopes(
     assert set(result.modules) == {"package::main", "library", "library/common"}
 
 
+@pytest.mark.parametrize("namespace", ["library", "outer/library"])
+def test_grouped_self_imports_use_upstream_scopes(namespace: str) -> None:
+    modules = {
+        namespace: "import {library::helper::value}; fn entry() { value(); }",
+        f"{namespace}::helper": "fn value() {}",
+    }
+    result = wesl.compile(
+        modules, root=namespace, options=wesl.CompileOptions(keep=["entry"])
+    )
+    assert set(result.modules) == {namespace, f"{namespace}::helper"}
+
+
 def test_source_records_preserve_text_and_filenames(tmp_path: Path) -> None:
     root = tmp_path / "main.wesl"
     root.write_text("import package::helper::value; fn main() { value(); }")

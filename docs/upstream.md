@@ -3,10 +3,18 @@
 Reviewed on 2026-09-29 against the pinned WESL commit
 [`0303ecc`](https://github.com/webgpu-tools/wesl-rs/tree/0303eccfafd534cc76c91eddd4b4f5c4413a1733).
 Reproducers use upstream APIs without the binding's adapter.
+The binding now pins
+[`9c715d9`](https://github.com/webgpu-tools/wesl-rs/commit/9c715d94828680b45b866b875754c49658cc27bd),
+which includes PR #309.
 
 ## Next actions
 
-Report seven wesl-rs defects and one wgsl-test defect below.
+Track the defects below and the candidates in the
+[upstream assessment](../upstream-assessment.md).
+The assessment ranks fix effort, merge likelihood, impact, and risk.
+Conditional nodes have [PR #309](https://github.com/webgpu-tools/wesl-rs/pull/309).
+Lexer errors and unfinished comments have
+[PR #310](https://github.com/webgpu-tools/wesl-rs/pull/310).
 PyO3 getter annotations already have a pull request.
 See the [release checklist](../RELEASE_CHECKLIST.md) for publication requirements.
 
@@ -19,6 +27,9 @@ See the [release checklist](../RELEASE_CHECKLIST.md) for publication requirement
 | [Quoted visibility](#quoted-visibility-modifiers) | Generated declarations set visibility through the syntax API | Accept visibility keywords in inline declaration quotes |
 | [Diagnostic line boundaries](#diagnostic-rendering-uses-different-line-boundaries) | Compiler errors retain incorrect rendered locations | Count WGSL line breaks when rendering diagnostics |
 | [Parser EOF spans](#parser-eof-spans-split-utf-8-characters) | The binding corrects EOF spans before rendering | Return an empty EOF span at the source end |
+| [Discarded lexer errors](#the-parser-discards-lexer-errors) | Syntax checking and compilation accept invalid tokens | Preserve lexer errors while skipping trivia |
+| [Unfinished comments](#unfinished-block-comments) | Syntax checking accepts unfinished comments | Reject EOF before the closing delimiter in PR #310 |
+| [Optional conditional nodes](#optional-conditional-nodes) | Shared conditional cases use the correct expected output | PR #309 is merged and included in the pin |
 | [Exact assertion values](#the-bundled-assertion-protocol-loses-integer-precision) | Local fields preserve exact operands | Preserve integer operands in shader results and host decoding |
 
 Record each upstream issue or pull request and the fix revision below.
@@ -100,6 +111,66 @@ The binding already rewrites EOF spans to the source end in
 `wesl.check_syntax` reports `CompileError` for this input without panicking.
 Keep that rewrite until upstream supplies an empty span at the actual source end.
 
+## The parser discards lexer errors
+
+Source: [lexer.rs](https://github.com/webgpu-tools/wesl-rs/blob/0303eccfafd534cc76c91eddd4b4f5c4413a1733/crates/wgsl-parse/src/lexer.rs#L756-L782).
+Both `Lexer::new` and `take_two_tokens` select tokens with
+`tok.as_ref().is_ok_and(|tok| !tok.is_trivia())`.
+This predicate skips lexer errors as well as trivia.
+
+```rust
+use wesl::syntax::TranslationUnit;
+
+fn main() {
+    for source in ["💥", "fn main() { let value = 1 $ + 2; }"] {
+        let module = source.parse::<TranslationUnit>().unwrap();
+        println!("{module}");
+    }
+}
+```
+
+Observed: the emoji parses as an empty module.
+The function parses successfully and prints `let value = 1 + 2;`.
+Both inputs require syntax errors. Invalid tokens must not disappear.
+
+The binding inherits this defect.
+`wesl.check_syntax("💥")` succeeds, and `wesl.compile_source` compiles the
+altered expression. There is no local workaround.
+
+Preserve lexer errors when selecting nontrivia tokens, then update the pin.
+Verify invalid characters at the start, between tokens, and at the source end.
+A temporary binding guard must reuse upstream token definitions.
+Do not add a second WGSL lexer.
+
+## Unfinished block comments
+
+The upstream scanner accepts `/*` and `fn main() {} /* unfinished`.
+It also accepts an unfinished outer comment after a closed nested comment.
+The scanner reaches EOF with positive nesting depth and emits trivia.
+[WGSL comments](https://www.w3.org/TR/WGSL/#comments) require matching delimiters.
+
+[PR #310](https://github.com/webgpu-tools/wesl-rs/pull/310) returns a lexer error
+and preserves that error through token filtering.
+Both changes are necessary. Filtering otherwise discards the comment error.
+Focused regressions fail before the patch and pass after it on the pin
+and current main.
+The binding has no local workaround. Adopt the upstream fix after merge.
+
+## Optional conditional nodes
+
+At the reviewed revision, conditional translation removes enabled
+`break if` and `continuing` nodes.
+It retains disabled nodes.
+This contradicts the
+[conditional specification](https://github.com/webgpu-tools/wesl-spec/blob/main/ConditionalTranslation.md).
+
+[PR #309](https://github.com/webgpu-tools/wesl-rs/pull/309) changes the removal
+predicate to `prev.is_false`.
+Focused regressions cover both forms and both truth values.
+They fail before the patch and pass after it on current main.
+The dependency pin now includes this fix.
+The shared cases compare both forms with the correct expected output.
+
 ## PyO3 rejects signature overrides on getters
 
 Sources: [signature handling](https://docs.rs/crate/pyo3-macros-backend/0.29.2/source/src/method.rs)
@@ -172,7 +243,7 @@ changing the dependency revision.
 
 ### Compiler driver integration
 
-The pin uses upstream 0.5.0 at `0303eccfafd534cc76c91eddd4b4f5c4413a1733`.
+The pin uses upstream 0.5.0 at `9c715d94828680b45b866b875754c49658cc27bd`.
 [The adapter](../src/compiler.rs) uses public `CompilerDriver` APIs for upstream
 passes and local module transformations. It records original sources first.
 The standard frontend keeps its default driver private; this needs no defect report.

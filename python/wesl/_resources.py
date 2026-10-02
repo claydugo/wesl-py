@@ -32,8 +32,10 @@ def load_modules(directory: Traversable, *, namespace: str) -> LoadedModules:
                 directories.append(((*parts, child.name), child, ancestors))
                 continue
             filename = PurePosixPath(child.name)
-            if filename.suffix not in {".wesl", ".wgsl"} or child.name.endswith(
-                ".test.wesl"
+            if (
+                filename.suffix not in {".wesl", ".wgsl"}
+                or child.name.endswith(".test.wesl")
+                or not child.is_file()
             ):
                 continue
             module_path = (*parts, filename.stem)

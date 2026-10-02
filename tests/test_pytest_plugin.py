@@ -543,6 +543,23 @@ def test_missing_gpu_dependency_policy(
     assert "install wesl-py[testing] to run shader tests" in result.stdout.str()
 
 
+@pytest.mark.parametrize("policy", ["required", "optional"])
+def test_broken_gpu_dependency_preserves_import_error(
+    pytester: pytest.Pytester, policy: str
+) -> None:
+    pytester.makepyfile(
+        wgpu=(
+            "raise ModuleNotFoundError(\"No module named 'gpu_helper'\", "
+            "name='gpu_helper')"
+        )
+    )
+    pytester.makefile(".test.wesl", adapter="@test fn dispatch() {}")
+    result = pytester.runpytest_subprocess("-q", "-ra", f"--wesl-gpu={policy}")
+    result.assert_outcomes(errors=1)
+    assert "ModuleNotFoundError: No module named 'gpu_helper'" in result.stdout.str()
+    assert "install wesl-py[testing]" not in result.stdout.str()
+
+
 @pytest.mark.gpu
 def test_shader_names_do_not_register_hooks(pytester: pytest.Pytester) -> None:
     pytester.makeconftest("""
