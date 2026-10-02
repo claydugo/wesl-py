@@ -782,7 +782,9 @@ mod _native {
     use pyo3::{prelude::*, types::PyTuple};
 
     #[pymodule_export]
-    use super::testing::{TestLayout, TestResult, compile_test, discover_tests, execute_test_cpu};
+    use super::testing::{
+        ParsedTestModule, TestLayout, TestResult, compile_test, execute_test_cpu,
+    };
     #[pymodule_export]
     use super::{
         CompileError, CompileResult, Diagnostic, Source, check_syntax, compile, constant_module,

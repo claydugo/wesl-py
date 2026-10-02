@@ -10,6 +10,7 @@ __all__ = [
     "CompileError",
     "CompileResult",
     "Diagnostic",
+    "ParsedTestModule",
     "Source",
     "TestLayout",
     "TestResult",
@@ -18,7 +19,6 @@ __all__ = [
     "compile",
     "compile_test",
     "constant_module",
-    "discover_tests",
     "execute_test_cpu",
     "project_root",
     "render_diagnostic",
@@ -80,6 +80,16 @@ class Diagnostic:
         span: tuple[builtins.int, builtins.int] | None = None,
     ) -> Diagnostic: ...
     def __reduce__(self) -> tuple[type, tuple]: ...
+
+@typing.final
+class ParsedTestModule:
+    @property
+    def tests(
+        self,
+    ) -> builtins.list[tuple[builtins.str, builtins.int, builtins.int]]: ...
+    def __new__(
+        cls, source: builtins.str, filename: builtins.str
+    ) -> ParsedTestModule: ...
 
 @typing.final
 class Source:
@@ -145,6 +155,7 @@ def compile_test(
     dependencies: typing.Mapping[
         builtins.str, builtins.str | os.PathLike | pathlib.Path
     ],
+    parsed_module: ParsedTestModule | None = None,
 ) -> (
     tuple[
         builtins.str,
@@ -158,9 +169,6 @@ def compile_test(
 def constant_module(
     module: builtins.str, constants: collections.abc.Mapping[str, bool | int | float]
 ) -> builtins.str: ...
-def discover_tests(
-    source: builtins.str, filename: builtins.str
-) -> builtins.list[tuple[builtins.str, builtins.int, builtins.int]]: ...
 def execute_test_cpu(
     source: builtins.str,
     entry_point: builtins.str,

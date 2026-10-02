@@ -103,7 +103,7 @@ def run_test(
     constants: Mapping[str, float] | None = None,
 ) -> None:
     __tracebackhide__ = True
-    prepare_test(
+    _prepare_test(
         device,
         modules,
         test_name,
@@ -131,6 +131,37 @@ def prepare_test(
     resources: Mapping[int, Sequence[dict[str, Any]]] | None = None,
     layouts: Mapping[int, Sequence[dict[str, Any]]] | None = None,
     constants: Mapping[str, float] | None = None,
+) -> _PreparedTest:
+    __tracebackhide__ = True
+    return _prepare_test(
+        device,
+        modules,
+        test_name,
+        root=root,
+        options=options,
+        filenames=filenames,
+        root_directory=root_directory,
+        dependencies=dependencies,
+        resources=resources,
+        layouts=layouts,
+        constants=constants,
+    )
+
+
+def _prepare_test(
+    device: wgpu.GPUDevice,
+    modules: Mapping[str, str],
+    test_name: str,
+    *,
+    root: str = "package::main",
+    options: TestOptions | None = None,
+    filenames: Mapping[str, str | PathLike[str]] | None = None,
+    root_directory: str | PathLike[str] | None = None,
+    dependencies: Mapping[str, str | PathLike[str]] | None = None,
+    resources: Mapping[int, Sequence[dict[str, Any]]] | None = None,
+    layouts: Mapping[int, Sequence[dict[str, Any]]] | None = None,
+    constants: Mapping[str, float] | None = None,
+    parsed_module: _native.ParsedTestModule | None = None,
 ) -> _PreparedTest:
     __tracebackhide__ = True
     import wgpu
@@ -168,6 +199,7 @@ def prepare_test(
                 else {name: fspath(path) for name, path in dependencies.items()}
             ),
         },
+        parsed_module,
     )
     if compiled is None:
         message = "WESL conditions disable this test"

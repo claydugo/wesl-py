@@ -74,7 +74,8 @@ class WeslModule(pytest.Module):
     def collect(self) -> Iterator[pytest.Item | pytest.Collector]:
         source = self.path.read_text(encoding="utf-8")
         try:
-            tests = _native.discover_tests(source, str(self.path))
+            parsed_module = _native.ParsedTestModule(source, str(self.path))
+            tests = parsed_module.tests
         except CompileError as error:
             raise self.CollectError(str(error)) from error
         module = ModuleType(self.path.stem)
@@ -99,9 +100,10 @@ class WeslModule(pytest.Module):
                 shader_path: Path = self.path,
                 shader_source: str = source,
                 shader_name: str = name,
+                shader_module: _native.ParsedTestModule = parsed_module,
             ) -> None:
                 __tracebackhide__ = True
-                from .testing import ShaderTestDisabledError, run_test
+                from .testing import ShaderTestDisabledError, _prepare_test
 
                 root_directory = Path(abspath(wesl_root_directory))
                 relative = shader_path.relative_to(root_directory)
@@ -111,7 +113,7 @@ class WeslModule(pytest.Module):
                     message = "the test module is already present in wesl_modules"
                     raise ValueError(message)
                 try:
-                    run_test(
+                    _prepare_test(
                         wesl_device,
                         {**wesl_modules, root: shader_source},
                         shader_name,
@@ -123,7 +125,8 @@ class WeslModule(pytest.Module):
                         resources=wesl_resources,
                         layouts=wesl_layouts,
                         constants=wesl_constants,
-                    )
+                        parsed_module=shader_module,
+                    )()
                 except ShaderTestDisabledError as error:
                     pytest.skip(str(error))
 

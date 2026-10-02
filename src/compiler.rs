@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::LazyLock,
+};
 
 use wesl::{
     CompileOptions, CompileResult, Error, Mangler, Resolver,
@@ -8,8 +11,67 @@ use wesl::{
 };
 use wgsl_parse::SyntaxNode;
 use wgsl_parse::syntax::{
-    Ident, ImportContent, ModulePath, PathOrigin, TranslationUnit, TypeExpression, Visibility,
+    GlobalDeclaration, Ident, ImportContent, ModulePath, PathOrigin, TranslationUnit,
+    TypeExpression, Visibility,
 };
+
+pub(super) fn clone_syntax(syntax: &TranslationUnit) -> TranslationUnit {
+    let mut syntax = syntax.clone();
+    let mut pending: Vec<_> = syntax.global_declarations.iter_mut().collect();
+    while let Some(declaration) = pending.pop() {
+        let ident = match &mut **declaration {
+            GlobalDeclaration::Declaration(declaration) => &mut declaration.ident,
+            GlobalDeclaration::TypeAlias(alias) => &mut alias.ident,
+            GlobalDeclaration::Struct(structure) => &mut structure.ident,
+            GlobalDeclaration::Function(function) => &mut function.ident,
+            GlobalDeclaration::Compound(compound) => {
+                pending.extend(&mut compound.body);
+                continue;
+            }
+            GlobalDeclaration::Void | GlobalDeclaration::ConstAssert(_) => continue,
+        };
+        *ident = Ident::new(ident.to_string());
+    }
+    syntax
+}
+
+pub(super) fn load_module(
+    path: &ModulePath,
+    resolver: &impl Resolver,
+) -> Result<TranslationUnit, Error> {
+    let source = resolver.resolve_source(path)?;
+    if matches!(&path.origin, PathOrigin::Package(name) if name == "wgsl_test") {
+        if path.components.is_empty()
+            && source == include_str!("../python/wesl/shaders/wgsl_test/package.wesl")
+        {
+            static SYNTAX: LazyLock<Option<TranslationUnit>> = LazyLock::new(|| {
+                include_str!("../python/wesl/shaders/wgsl_test/package.wesl")
+                    .parse()
+                    .ok()
+            });
+            if let Some(syntax) = &*SYNTAX {
+                return Ok(clone_syntax(syntax));
+            }
+        } else if path.components == ["TestResult"]
+            && source == include_str!("../python/wesl/shaders/wgsl_test/TestResult.wesl")
+        {
+            static SYNTAX: LazyLock<Option<TranslationUnit>> = LazyLock::new(|| {
+                include_str!("../python/wesl/shaders/wgsl_test/TestResult.wesl")
+                    .parse()
+                    .ok()
+            });
+            if let Some(syntax) = &*SYNTAX {
+                return Ok(clone_syntax(syntax));
+            }
+        }
+    }
+    source.parse().map_err(|error| {
+        wesl::error::Diagnostic::from(error)
+            .with_module_path(path.clone(), resolver.display_name(path))
+            .with_source(source.to_string())
+            .into()
+    })
+}
 
 struct Driver<'a, Transform> {
     main_path: &'a ModulePath,
@@ -135,7 +197,7 @@ where
             }
             module
         } else {
-            pass::load_module(path, &self.resolver)?
+            load_module(path, &self.resolver)?
         };
         if let PathOrigin::Package(namespace) = &path.origin {
             for import in &mut module.imports {

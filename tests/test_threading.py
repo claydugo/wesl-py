@@ -34,7 +34,8 @@ def test_concurrent_shader_instrumentation(wgsl_test: Path) -> None:
             f"@test fn test_{index}() {{ expectEq({index}u, {index}u); }}"
         )
         filename = f"shader_{index}.wesl"
-        [(name, _, _)] = _native.discover_tests(source, filename)
+        parsed = _native.ParsedTestModule(source, filename)
+        [(name, _, _)] = parsed.tests
         assert name == f"test_{index}"
         compiled = _native.compile_test(
             {"package::main": source},
@@ -45,6 +46,7 @@ def test_concurrent_shader_instrumentation(wgsl_test: Path) -> None:
             None,
             0,
             {"wgsl_test": str(wgsl_test)},
+            parsed,
         )
         assert compiled is not None
         shader, entry_point, diagnostics, overrides, _ = compiled

@@ -8,7 +8,7 @@ from wesl import _native
 
 
 @pytest.mark.parametrize(
-    "operation", [wesl.check_syntax, wesl.compile_source, _native.discover_tests]
+    "operation", [wesl.check_syntax, wesl.compile_source, _native.ParsedTestModule]
 )
 def test_misplaced_import_explains_ordering(
     operation: Callable[..., object],

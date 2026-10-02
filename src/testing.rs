@@ -223,8 +223,10 @@ impl TestTransform {
         result_binding: u32,
         features: &wesl::Features,
         resolver: &ModuleResolver,
+        syntax: Option<TranslationUnit>,
     ) -> Result<Option<PreparedTest>, Failure> {
-        let mut syntax = pass::load_module(&root, &resolver)
+        let mut syntax = syntax
+            .map_or_else(|| crate::compiler::load_module(&root, &resolver), Ok)
             .map_err(|error| Failure::from_diagnostic(wesl::error::Diagnostic::from(error)))?;
         let mut names = test_names(&syntax, &root, &test_name)?;
         let entry_point = available_name("wesl_test_entry".to_owned(), |name| {
@@ -246,7 +248,7 @@ impl TestTransform {
         let assertion_module = module_path("wgsl_test")?;
         let result_module = module_path("wgsl_test::TestResult")?;
         let cooperative = !parameters.is_empty() || workgroup_size.is_some();
-        let result_syntax = pass::load_module(&result_module, &resolver)
+        let result_syntax = crate::compiler::load_module(&result_module, &resolver)
             .map_err(|error| Failure::from_diagnostic(wesl::error::Diagnostic::from(error)))?;
         for declaration in global_declarations(&result_syntax) {
             if let Some(ident) = declaration.ident() {
@@ -641,37 +643,49 @@ fn strip_test_attributes(syntax: &mut TranslationUnit) {
     }
 }
 
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "wesl._native")]
-#[pyfunction]
-pub(super) fn discover_tests(
-    py: Python<'_>,
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "wesl._native")]
+#[pyclass(frozen, module = "wesl._native")]
+pub(super) struct ParsedTestModule {
     source: String,
-    filename: String,
-) -> PyResult<Vec<(String, usize, usize)>> {
-    py.detach(move || {
-        let syntax = source
-            .parse::<TranslationUnit>()
-            .map_err(wesl::error::Diagnostic::from)
-            .map_err(|mut diagnostic| {
-                diagnostic.detail.source = Some(source);
-                diagnostic.detail.display_name = Some(filename);
-                Failure::from_diagnostic(diagnostic)
-            })?;
-        let mut tests = Vec::new();
-        for declaration in global_declarations(&syntax) {
-            if let GlobalDeclaration::Function(function) = &**declaration
-                && function.attributes.iter().any(|attribute| {
-                    matches!(&**attribute, Attribute::Custom(custom) if custom.name == "test")
-                })
-            {
-                let range = declaration.span().range();
-                tests.push((function.ident.name().to_string(), range.start, range.end));
+    syntax: TranslationUnit,
+    #[pyo3(get)]
+    tests: Vec<(String, usize, usize)>,
+}
+
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
+impl ParsedTestModule {
+    #[new]
+    fn new(py: Python<'_>, source: String, filename: String) -> PyResult<Self> {
+        py.detach(move || {
+            let syntax = source
+                .parse::<TranslationUnit>()
+                .map_err(wesl::error::Diagnostic::from)
+                .map_err(|mut diagnostic| {
+                    diagnostic.detail.source = Some(source.clone());
+                    diagnostic.detail.display_name = Some(filename);
+                    Failure::from_diagnostic(diagnostic)
+                })?;
+            let mut tests = Vec::new();
+            for declaration in global_declarations(&syntax) {
+                if let GlobalDeclaration::Function(function) = &**declaration
+                    && function.attributes.iter().any(|attribute| {
+                        matches!(&**attribute, Attribute::Custom(custom) if custom.name == "test")
+                    })
+                {
+                    let range = declaration.span().range();
+                    tests.push((function.ident.name().to_string(), range.start, range.end));
+                }
             }
-        }
-        tests.sort_by_key(|test| test.1);
-        Ok(tests)
-    })
-    .map_err(|failure: Failure| failure.into_pyerr(py))
+            tests.sort_by_key(|test| test.1);
+            Ok(Self {
+                source,
+                syntax,
+                tests,
+            })
+        })
+        .map_err(|failure: Failure| failure.into_pyerr(py))
+    }
 }
 
 type CompiledTest = Option<(
@@ -1131,7 +1145,7 @@ fn assertion_wrapper(
 
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "wesl._native")]
 #[pyfunction]
-#[pyo3(signature = (modules, root, test_name, options, filenames, root_directory, result_binding, dependencies))]
+#[pyo3(signature = (modules, root, test_name, options, filenames, root_directory, result_binding, dependencies, parsed_module=None))]
 pub(super) fn compile_test(
     py: Python<'_>,
     #[gen_stub(override_type(type_repr="collections.abc.Mapping[str, str]", imports=("collections.abc")))]
@@ -1145,6 +1159,7 @@ pub(super) fn compile_test(
     root_directory: Option<PathBuf>,
     result_binding: u32,
     dependencies: HashMap<String, PathBuf>,
+    parsed_module: Option<&ParsedTestModule>,
 ) -> PyResult<CompiledTest> {
     if options.lower {
         return Err(PyNotImplementedError::new_err("lowering is not supported"));
@@ -1161,11 +1176,25 @@ pub(super) fn compile_test(
     py.detach(move || {
         let root = module_path(&root)?;
         let resolver = ModuleResolver::new(modules, filenames, root_directory, dependencies)?;
+        let syntax = parsed_module
+            .filter(|parsed_module| {
+                resolver
+                    .resolve_source(&root)
+                    .is_ok_and(|source| source == parsed_module.source)
+            })
+            .map(|parsed_module| crate::compiler::clone_syntax(&parsed_module.syntax));
         let Some(PreparedTest {
             transformed,
             parsed_modules,
             syntax,
-        }) = TestTransform::prepare(root, test_name, result_binding, &features, &resolver)?
+        }) = TestTransform::prepare(
+            root,
+            test_name,
+            result_binding,
+            &features,
+            &resolver,
+            syntax,
+        )?
         else {
             return Ok(None);
         };
