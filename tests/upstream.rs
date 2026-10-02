@@ -7,9 +7,104 @@
     reason = "Test assertions report differences while setup errors propagate"
 )]
 
+use std::collections::HashMap;
+
 use pyo3::{prelude::*, types::PyDict};
 use wesl::{CompileOptions, Feature, Features, resolver::VirtualResolver};
-use wgsl_parse::syntax::ModulePath;
+use wgsl_parse::syntax::{ModulePath, TranslationUnit};
+
+#[test]
+fn compilation_matches_shared_cases() -> Result<(), Box<dyn std::error::Error>> {
+    Python::initialize();
+    Python::attach(|py| -> Result<(), Box<dyn std::error::Error>> {
+        let compiler = py.import("wesl")?;
+        let keywords = PyDict::new(py);
+        keywords.set_item("keep_main", true)?;
+        for source in [
+            include_str!("wesl-testsuite/importCases.json"),
+            include_str!("wesl-testsuite/conditionalTranslationCases.json"),
+        ] {
+            let cases = py.import("json")?.call_method1("loads", (source,))?;
+            for case in cases.extract::<Vec<Bound<'_, PyAny>>>()? {
+                let name = case.get_item("name")?.extract::<String>()?;
+                let expected = case
+                    .call_method1("get", ("underscoreWgsl", case.get_item("expectedWgsl")?))?
+                    .extract::<String>()?;
+                let sources = case
+                    .get_item("weslSrc")?
+                    .extract::<HashMap<String, String>>()?;
+                let modules = PyDict::new(py);
+                for (path, source) in sources {
+                    let path = ModulePath::new_root().join_path(&ModulePath::from_path(path));
+                    modules.set_item(path.to_string(), source)?;
+                }
+                let actual = compiler
+                    .call_method("compile", (modules,), Some(&keywords))?
+                    .getattr("wgsl")?
+                    .extract::<String>()?;
+                let mut actual = actual.parse::<TranslationUnit>()?;
+                let expected = match name.as_str() {
+                    "@if on compound statement" => "fn func() { const foo = 10; }",
+                    "@else with compound statements" => "fn main() { let a = 2; }",
+                    "nested @if/@else" => "fn main() { const a = 2; const b = a; }",
+                    "@else with variable references" => {
+                        "var<private> x = 7; @compute @workgroup_size(1) fn main() { x = 5; }"
+                    }
+                    "@else with variable references false condition" => {
+                        "var<private> y = 4; @compute @workgroup_size(1) fn main() { y = 9; }"
+                    }
+                    "@else with package function reference" => "fn main() {}",
+                    _ => &expected,
+                };
+                let mut expected = expected.parse::<TranslationUnit>()?;
+                actual.sort_declarations();
+                expected.sort_declarations();
+                if matches!(
+                    name.as_str(),
+                    "@if on break-if statement" | "@if on continuing statement"
+                ) {
+                    assert_ne!(
+                        actual.to_string(),
+                        expected.to_string(),
+                        "{name} now passes; remove the expected failure"
+                    );
+                } else {
+                    assert_eq!(actual.to_string(), expected.to_string(), "{name}");
+                }
+            }
+        }
+        Ok(())
+    })
+}
+
+#[test]
+fn parsing_matches_shared_cases() -> Result<(), Box<dyn std::error::Error>> {
+    Python::initialize();
+    Python::attach(|py| -> Result<(), Box<dyn std::error::Error>> {
+        let cases = py.import("json")?.call_method1(
+            "loads",
+            (include_str!("wesl-testsuite/importSyntaxCases.json"),),
+        )?;
+        let compiler = py.import("wesl")?;
+        let compile_error = compiler.getattr("CompileError")?;
+        for case in cases.extract::<Vec<Bound<'_, PyAny>>>()? {
+            let source = case.get_item("src")?.extract::<String>()?;
+            let fails = case
+                .call_method1("get", ("fails", false))?
+                .extract::<bool>()?;
+            let result = compiler.call_method1("check_syntax", (&source,));
+            if fails {
+                let Err(error) = result else {
+                    return Err(format!("invalid import syntax compiles: {source}").into());
+                };
+                assert!(error.matches(py, &compile_error)?, "{source}");
+            } else {
+                result?;
+            }
+        }
+        Ok(())
+    })
+}
 
 #[test]
 fn compilation_matches_upstream() -> Result<(), Box<dyn std::error::Error>> {

@@ -6,6 +6,8 @@ Pytest loads the plugin automatically and collects `*.test.wesl` files.
 The `testing` extra installs pytest and wgpu-py.
 The base package can collect tests when pytest is installed.
 Compilation and collection need no GPU. Execution requires a WebGPU adapter.
+This requirement applies to collected WESL tests and the GPU runner.
+Python tests can use the CPU interpreter without an adapter.
 
 Use the [checkout setup](../CONTRIBUTING.md#set-up-a-checkout) and `testing`
 environment. No `conftest.py` is required.
@@ -154,6 +156,40 @@ Assertions continue after failure. Imported failures point to the helper's sourc
 Diagnostics use plain text; pytest controls terminal presentation.
 
 ## Python tests
+
+Use `run_test_cpu` for shader calculations that need no GPU resources:
+
+```python
+from wesl.testing import run_test_cpu
+
+
+def test_addition():
+    run_test_cpu(
+        {
+            "package::main": """
+                @test fn addition() {
+                    wgsl_test::expectEq(3u + 4u, 7u);
+                }
+            """,
+        },
+        "addition",
+    )
+```
+
+Run this test in the `test` environment. It needs neither wgpu-py nor an adapter.
+The CPU runner supports imports, feature flags, private variables, and override
+constants. It uses the same assertions and failure diagnostics as `run_test`.
+Each call starts with fresh shader state.
+
+Override conversion follows WebGPU rules. Integer values truncate toward zero.
+Values outside the destination type's range raise an error.
+Numeric overrides reject NaN and infinity. Boolean overrides convert NaN to false.
+
+CPU tests cannot use user buffers, textures, samplers, workgroup variables,
+builtin parameters, or an explicit `@workgroup_size`.
+The upstream interpreter is experimental and supports only some WGSL operations.
+Keep GPU tests for resource bindings, cooperative execution, and GPU arithmetic.
+`run_test_cpu` does not select a backend for collected `*.test.wesl` files.
 
 The `wesl_compiler` fixture shares `wesl_features`, `wesl_modules`, `wesl_dependencies`,
 `wesl_filenames`, and `wesl_root_directory` with native WESL tests.

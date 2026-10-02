@@ -1,12 +1,21 @@
 from dataclasses import replace
+from functools import partial
 from importlib import import_module
 from importlib.util import find_spec
 from pathlib import Path
 
 import pytest
 import wesl
+from wesl.testing import run_test, run_test_cpu
 
 pytest_plugins = ["pytester"]
+
+
+@pytest.fixture(params=["cpu", pytest.param("gpu", marks=pytest.mark.gpu)])
+def shader_runner(request: pytest.FixtureRequest) -> partial:
+    if request.param == "cpu":
+        return partial(run_test_cpu)
+    return partial(run_test, request.getfixturevalue("wesl_device"))
 
 
 @pytest.fixture(scope="session", autouse=True)

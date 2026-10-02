@@ -1,20 +1,23 @@
+from __future__ import annotations
+
 import re
-from pathlib import Path
 from struct import pack
+from typing import TYPE_CHECKING
 
 import pytest
-
-wgpu = pytest.importorskip("wgpu")
 from wesl.testing import ShaderAssertionError, run_test
 
-pytestmark = pytest.mark.gpu
+if TYPE_CHECKING:
+    from functools import partial
+    from pathlib import Path
+
+    import wgpu
 
 
 def test_assertions_pass_in_root_and_imported_functions(
-    wesl_device: wgpu.GPUDevice,
+    shader_runner: partial,
 ) -> None:
-    run_test(
-        wesl_device,
+    shader_runner(
         {
             "package::main": """
                 import library::verify;
@@ -43,15 +46,14 @@ def test_assertions_pass_in_root_and_imported_functions(
     )
 
 
-def test_failure_in_imported_helper(wesl_device: wgpu.GPUDevice) -> None:
+def test_failure_in_imported_helper(shader_runner: partial) -> None:
     source = (
         "import wgsl_test::expectEq;\nfn verify() {\n"
         "    expectEq(4294967295u, 4294967294u);\n"
         "    expectEq(1u, 2u);\n}"
     )
     with pytest.raises(ShaderAssertionError) as captured:
-        run_test(
-            wesl_device,
+        shader_runner(
             {
                 "package::main": (
                     "import library::verify; @test fn failure() { verify(); }"
@@ -104,9 +106,12 @@ def test_failure_in_imported_helper(wesl_device: wgpu.GPUDevice) -> None:
         ),
     ],
 )
+@pytest.mark.gpu
 def test_tolerance_assertions_reject_nan(
     wesl_device: wgpu.GPUDevice, assertions: str
 ) -> None:
+    import wgpu
+
     buffer = wesl_device.create_buffer_with_data(
         data=pack("<f", float("nan")), usage=wgpu.BufferUsage.STORAGE
     )
@@ -130,12 +135,11 @@ def test_tolerance_assertions_reject_nan(
 
 
 def test_assertion_wrapper_avoids_parameter_collisions(
-    wesl_device: wgpu.GPUDevice,
+    shader_runner: partial,
 ) -> None:
     source = "@test fn failure() { wgsl_test::expectEq(7u, 9u); }"
     with pytest.raises(ShaderAssertionError) as captured:
-        run_test(
-            wesl_device,
+        shader_runner(
             {
                 "package::main": source,
                 "wgsl_test": """
@@ -164,12 +168,15 @@ def test_assertion_wrapper_avoids_parameter_collisions(
         pytest.param(True, id="workgroup"),
     ],
 )
+@pytest.mark.gpu
 def test_result_instrumentation_preserves_layout_and_binding(
     wesl_device: wgpu.GPUDevice,
     wgsl_test: Path,
     *,
     cooperative: bool,
 ) -> None:
+    import wgpu
+
     result_source = (wgsl_test / "TestResult.wesl").read_text(encoding="utf-8")
     result_source, replacement_count = re.subn(
         r"@binding\s*\(\s*0\s*\)", "@binding(\n0\n)", result_source
@@ -219,11 +226,10 @@ def test_result_instrumentation_preserves_layout_and_binding(
 
 
 def test_failure_recording_preserves_control_flow(
-    wesl_device: wgpu.GPUDevice,
+    shader_runner: partial,
 ) -> None:
     with pytest.raises(ShaderAssertionError) as captured:
-        run_test(
-            wesl_device,
+        shader_runner(
             {
                 "package::main": """
                     @test fn failure() {
@@ -297,7 +303,7 @@ def test_failure_recording_preserves_control_flow(
     ],
 )
 def test_assertions_in_control_flow(
-    wesl_device: wgpu.GPUDevice,
+    shader_runner: partial,
     statement: str,
     checks: int,
     failures: int,
@@ -311,8 +317,7 @@ def test_assertions_in_control_flow(
         "}"
     )
     with pytest.raises(ShaderAssertionError) as captured:
-        run_test(
-            wesl_device,
+        shader_runner(
             {"package::main": source},
             "loops",
             filenames={"package::main": "control_flow.wesl"},
@@ -387,7 +392,7 @@ def test_assertions_in_control_flow(
     ],
 )
 def test_failures_preserve_scalar_and_vector_values(
-    wesl_device: wgpu.GPUDevice,
+    shader_runner: partial,
     wgsl_test: Path,
     parameter_type: str,
     assertions: str,
@@ -402,8 +407,7 @@ def test_failures_preserve_scalar_and_vector_values(
     )
     assert replacement_count > 0
     with pytest.raises(ShaderAssertionError) as captured:
-        run_test(
-            wesl_device,
+        shader_runner(
             {
                 "package::main": (
                     "import wgsl_test::{expect, expectEq, expectNear, expectWithin, "
@@ -427,10 +431,9 @@ def test_failures_preserve_scalar_and_vector_values(
     assert captured.value.failures == checks
 
 
-def test_entry_name_avoids_imports(wesl_device: wgpu.GPUDevice) -> None:
+def test_entry_name_avoids_imports(shader_runner: partial) -> None:
     with pytest.raises(ShaderAssertionError, match="expect failed") as captured:
-        run_test(
-            wesl_device,
+        shader_runner(
             {
                 "package::main": """
                     import library::wesl_test_entry;

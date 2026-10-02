@@ -21,14 +21,17 @@ use pyo3::{
 };
 use wesl::{
     Resolver,
-    eval::{Context, Instance, LiteralInstance, SyntaxUtil as _, Type, ty_eval_ty},
+    eval::{
+        Context, EvalAttrs as _, EvalTy as _, Exec as _, Instance, LiteralInstance, RefInstance,
+        ShaderStage, SyntaxUtil as _, Type, call_ctor, ty_eval_ty,
+    },
     pass::{self, Visit},
     sourcemap::SourceMap,
 };
 use wesl_quote::{quote_declaration, quote_expression};
 use wgsl_parse::SyntaxNode;
 use wgsl_parse::syntax::{
-    AddressSpace, AssignmentOperator, AssignmentStatement, Attribute, BinaryExpression,
+    AccessMode, AddressSpace, AssignmentOperator, AssignmentStatement, Attribute, BinaryExpression,
     BinaryOperator, BuiltinValue, CompoundStatement, Declaration, DeclarationKind, Expression,
     FormalParameter, Function, FunctionCall, FunctionCallStatement, GlobalDeclaration, Ident,
     IfClause, IfStatement, LiteralExpression, ModulePath, NamedComponentExpression,
@@ -1185,6 +1188,153 @@ pub(super) fn compile_test(
         );
         drop(syntax);
         result
+    })
+    .map_err(|failure: Failure| failure.into_pyerr(py))
+}
+
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "wesl._native")]
+#[pyfunction]
+#[expect(
+    clippy::too_many_lines,
+    reason = "CPU execution initializes shader state, overrides, and the assertion buffer"
+)]
+pub(super) fn execute_test_cpu(
+    py: Python<'_>,
+    source: String,
+    entry_point: String,
+    layout: &TestLayout,
+    constants: HashMap<String, f64>,
+) -> PyResult<Vec<u8>> {
+    if layout.cooperative {
+        return Err(PyNotImplementedError::new_err(
+            "CPU tests do not support builtin parameters or explicit workgroup sizes",
+        ));
+    }
+    let result_type = layout.result_type.clone();
+    py.detach(move || {
+        let mut syntax = source.parse::<TranslationUnit>().map_err(|error| {
+            Failure::from_diagnostic(
+                wesl::error::Diagnostic::from(error).with_source(source.clone()),
+            )
+        })?;
+        pass::retarget_idents(&mut syntax);
+        let mut storage_count = 0;
+        for declaration in &syntax.global_declarations {
+            if matches!(
+                &**declaration,
+                GlobalDeclaration::Declaration(Declaration {
+                    kind: DeclarationKind::Var(Some((AddressSpace::Storage, _))),
+                    ..
+                })
+            ) {
+                storage_count += 1;
+            }
+            if let GlobalDeclaration::Declaration(declaration) = &**declaration
+                && (storage_count > 1
+                    || matches!(
+                        declaration.kind,
+                        DeclarationKind::Var(
+                            None | Some((
+                                AddressSpace::Handle
+                                    | AddressSpace::Immediate
+                                    | AddressSpace::Workgroup
+                                    | AddressSpace::Uniform,
+                                _
+                            ))
+                        )
+                    ))
+            {
+                return Err(Failure::Message(
+                    "CPU tests do not support user resources or workgroup variables".to_owned(),
+                ));
+            }
+        }
+        let result = Instance::storable_zero_value(&result_type)
+            .map_err(|error| Failure::from_diagnostic(wesl::eval::EvalError::from(error).into()))?;
+        let result = RefInstance::new(result, AddressSpace::Storage, AccessMode::ReadWrite);
+        let mut overrides = HashMap::new();
+        let mut context = Context::new(&syntax);
+        syntax.exec(&mut context).map_err(|error| {
+            Failure::from_diagnostic(
+                wesl::error::Diagnostic::from(error)
+                    .with_ctx(&context)
+                    .with_source(source.clone()),
+            )
+        })?;
+        for (name, value) in constants {
+            let declaration = syntax
+                .global_declarations
+                .iter()
+                .find_map(|declaration| {
+                    let GlobalDeclaration::Declaration(declaration) = &**declaration else {
+                        return None;
+                    };
+                    (declaration.kind == DeclarationKind::Override
+                        && (declaration.ident.name().as_str() == name
+                            || declaration
+                                .attr_id(&mut context)
+                                .ok()
+                                .flatten()
+                                .is_some_and(|identifier| identifier.to_string() == name)))
+                    .then_some(declaration)
+                })
+                .ok_or_else(|| {
+                    Failure::Message("pipeline constant does not name an override".to_owned())
+                })?;
+            let value_type = TypeExpression::from(declaration.ident.clone())
+                .eval_ty(&mut context)
+                .map_err(|error| Failure::from_diagnostic(error.into()))?;
+            if value_type != Type::Bool && !value.is_finite() {
+                return Err(Failure::Message(
+                    "pipeline constant must be finite".to_owned(),
+                ));
+            }
+            if (value_type == Type::I32
+                && !(f64::from(i32::MIN)..=f64::from(i32::MAX)).contains(&value.trunc()))
+                || (value_type == Type::U32
+                    && !(f64::from(u32::MIN)..=f64::from(u32::MAX)).contains(&value.trunc()))
+            {
+                return Err(Failure::Message(
+                    "pipeline constant is outside the override type's range".to_owned(),
+                ));
+            }
+            let value = if value_type == Type::Bool {
+                Instance::from(value != 0.0 && !value.is_nan())
+            } else {
+                Instance::from(value)
+            };
+            let value =
+                call_ctor(&value_type, &[value], ShaderStage::Override).map_err(|error| {
+                    Failure::from_diagnostic(wesl::eval::EvalError::from(error).into())
+                })?;
+            if matches!(&value, Instance::Literal(value) if value.is_infinite()) {
+                return Err(Failure::Message(
+                    "pipeline constant is outside the override type's range".to_owned(),
+                ));
+            }
+            overrides.insert(declaration.ident.to_string(), value);
+        }
+        let expression = format!("{entry_point}()")
+            .parse::<Expression>()
+            .map_err(|error| Failure::from_diagnostic(error.into()))?;
+        let (execution, context) = wesl::exec(
+            &expression,
+            &syntax,
+            HashMap::from([((0, 0), result.clone())]),
+            overrides,
+        );
+        execution.map_err(|error| {
+            Failure::from_diagnostic(
+                wesl::error::Diagnostic::from(error)
+                    .with_ctx(&context)
+                    .with_source(source),
+            )
+        })?;
+        result
+            .read()
+            .map_err(|error| Failure::from_diagnostic(wesl::eval::EvalError::from(error).into()))?
+            .to_buffer()
+            .ok_or_else(|| Failure::Message("cannot encode CPU test result".to_owned()))
     })
     .map_err(|failure: Failure| failure.into_pyerr(py))
 }

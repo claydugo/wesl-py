@@ -1,40 +1,44 @@
-from pathlib import Path
+from __future__ import annotations
+
 from struct import pack, unpack
+from typing import TYPE_CHECKING
 
 import pytest
 import wesl
-
-wgpu = pytest.importorskip("wgpu")
 from wesl.testing import (
     ShaderAssertionError,
     prepare_test,
     run_test,
 )
 
-pytestmark = pytest.mark.gpu
+if TYPE_CHECKING:
+    from functools import partial
+    from pathlib import Path
+
+    import wgpu
 
 
-def test_shader_test_visibility(wesl_device: wgpu.GPUDevice) -> None:
+def test_shader_test_visibility(shader_runner: partial) -> None:
     modules = {
         "package::main": (
             "import library::value; import wgsl_test::expectEq; "
-            "@test @workgroup_size(2) fn selected() { expectEq(value(), 7u); }"
+            "@test fn selected() { expectEq(value(), 7u); }"
         ),
         "library": "fn value() -> u32 { return 7u; }",
     }
-    run_test(wesl_device, modules, "selected")
+    shader_runner(modules, "selected")
     options = wesl.TestOptions(visibility=True)
     with pytest.raises(wesl.CompileError, match="visibility"):
-        run_test(wesl_device, modules, "selected", options=options)
+        shader_runner(modules, "selected", options=options)
     modules["library"] = "public fn value() -> u32 { return 7u; }"
-    run_test(wesl_device, modules, "selected", options=options)
+    shader_runner(modules, "selected", options=options)
 
 
 @pytest.mark.parametrize(
     "override", [False, True], ids=["filesystem", "virtual-override"]
 )
 def test_run_test_uses_explicit_dependencies(
-    wesl_device: wgpu.GPUDevice, tmp_path: Path, *, override: bool
+    shader_runner: partial, tmp_path: Path, *, override: bool
 ) -> None:
     common = tmp_path / "common"
     common.mkdir()
@@ -53,17 +57,15 @@ def test_run_test_uses_explicit_dependencies(
             "var<private> counter: u32 = 10u; "
             "fn next() -> u32 { counter += 1u; return counter; }"
         )
-    run_test(
-        wesl_device,
+    shader_runner(
         modules,
         "selected",
         dependencies={"common": common},
     )
 
 
-def test_named_and_numeric_overrides(wesl_device: wgpu.GPUDevice) -> None:
-    run_test(
-        wesl_device,
+def test_named_and_numeric_overrides(shader_runner: partial) -> None:
+    shader_runner(
         {
             "package::main": """
                 override offset: u32 = 0u;
@@ -84,9 +86,12 @@ def test_named_and_numeric_overrides(wesl_device: wgpu.GPUDevice) -> None:
     )
 
 
+@pytest.mark.gpu
 def test_repeated_runs_preserve_user_buffers_and_bindings(
     wesl_device: wgpu.GPUDevice,
 ) -> None:
+    import wgpu
+
     uniform = wesl_device.create_buffer_with_data(
         data=pack("<4I", 3, 0, 0, 0),
         usage=wgpu.BufferUsage.UNIFORM,
@@ -128,9 +133,12 @@ def test_repeated_runs_preserve_user_buffers_and_bindings(
         uniform.destroy()
 
 
+@pytest.mark.gpu
 def test_prepared_test_resets_results_and_preserves_default_resources(
     wesl_device: wgpu.GPUDevice,
 ) -> None:
+    import wgpu
+
     uniform = wesl_device.create_buffer_with_data(
         data=pack("<4I", 3, 0, 0, 0),
         usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST,
@@ -170,7 +178,10 @@ def test_prepared_test_resets_results_and_preserves_default_resources(
         uniform.destroy()
 
 
+@pytest.mark.gpu
 def test_texture_bindings(wesl_device: wgpu.GPUDevice) -> None:
+    import wgpu
+
     texture = wesl_device.create_texture(
         size=(1, 1, 1),
         format="rgba8unorm",
@@ -213,9 +224,12 @@ def test_texture_bindings(wesl_device: wgpu.GPUDevice) -> None:
     ("group", "texture_format", "channel_count"),
     [(0, "r32float", 1), (2, "rgba32float", 4)],
 )
+@pytest.mark.gpu
 def test_float32_texture_bindings(
     wesl_device: wgpu.GPUDevice, group: int, texture_format: str, channel_count: int
 ) -> None:
+    import wgpu
+
     assert "float32-filterable" not in wesl_device.features
     texture = wesl_device.create_texture(
         size=(1, 1, 1),

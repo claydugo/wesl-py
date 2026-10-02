@@ -13,6 +13,18 @@ Run selected Python compiler tests without GPU dependencies:
 pixi run -e test python -m pytest tests/test_compile.py tests/test_sources.py -q
 ```
 
+The Rust integration test also runs the pinned shared WESL cases through the
+Python compiler API. See [fixture provenance](wesl-testsuite/README.md).
+
+Run CPU execution and assertion tests without GPU dependencies:
+
+```bash
+pixi run -e test python -m pytest tests/test_cpu.py tests/test_testing.py \
+  tests/test_shader_assertions.py tests/test_shader_errors.py -m 'not gpu' -q
+```
+
+Pure assertion cases also run on GPU in the `testing` environment.
+
 ## Shader execution and pytest integration
 
 Run the plugin contracts with GPU dependencies:
@@ -50,6 +62,8 @@ Keep tests for behavior owned by these bindings, known regressions, and represen
 example execution. Test each behavior at the layer that owns it. Do not repeat
 upstream compiler semantics, pytest fixture mechanics, or an example kernel already
 covered through its public API.
+
+The shared WESL cases verify the adapter against independent expectations.
 
 Choose distinct contracts and boundaries. Share compilation or dispatch between
 related assertions. Keep consecutive calls together when testing mutation or reuse.

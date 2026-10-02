@@ -2,8 +2,6 @@ from pathlib import Path
 
 import pytest
 import wesl
-
-pytest.importorskip("wgpu")
 from wesl.testing import ShaderAssertionError
 
 

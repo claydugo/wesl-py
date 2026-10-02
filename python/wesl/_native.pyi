@@ -19,6 +19,7 @@ __all__ = [
     "compile_test",
     "constant_module",
     "discover_tests",
+    "execute_test_cpu",
     "project_root",
     "render_diagnostic",
 ]
@@ -160,5 +161,11 @@ def constant_module(
 def discover_tests(
     source: builtins.str, filename: builtins.str
 ) -> builtins.list[tuple[builtins.str, builtins.int, builtins.int]]: ...
+def execute_test_cpu(
+    source: builtins.str,
+    entry_point: builtins.str,
+    layout: TestLayout,
+    constants: typing.Mapping[builtins.str, builtins.float],
+) -> builtins.list[builtins.int]: ...
 def project_root(source: builtins.str) -> builtins.str: ...
 def render_diagnostic(diagnostic: Diagnostic) -> builtins.str: ...

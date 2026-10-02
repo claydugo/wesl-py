@@ -1,24 +1,91 @@
-from collections.abc import Mapping, Sequence
+from __future__ import annotations
+
 from contextlib import suppress
 from dataclasses import dataclass
 from os import PathLike, fspath
 from os.path import relpath
 from pathlib import Path
-from typing import Any, cast
-
-import wgpu
+from typing import TYPE_CHECKING, Any, cast
 
 from . import Diagnostic, TestOptions, _native
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
+    import wgpu
 
 __all__ = [
     "ShaderAssertionError",
     "ShaderTestDisabledError",
     "prepare_test",
     "run_test",
+    "run_test_cpu",
 ]
 
 
 type _AssertionValue = bool | int | float | tuple[float, ...]
+
+
+def run_test_cpu(
+    modules: Mapping[str, str],
+    test_name: str,
+    *,
+    root: str = "package::main",
+    options: TestOptions | None = None,
+    filenames: Mapping[str, str | PathLike[str]] | None = None,
+    root_directory: str | PathLike[str] | None = None,
+    dependencies: Mapping[str, str | PathLike[str]] | None = None,
+    constants: Mapping[str, float] | None = None,
+) -> None:
+    __tracebackhide__ = True
+    if options is not None and not isinstance(options, TestOptions):
+        message = "options must be TestOptions or None"
+        raise TypeError(message)
+    compiled = _native.compile_test(
+        modules,
+        root,
+        test_name,
+        TestOptions() if options is None else options,
+        {}
+        if filenames is None
+        else {name: fspath(path) for name, path in filenames.items()},
+        None if root_directory is None else fspath(root_directory),
+        0,
+        {
+            "wgsl_test": str(Path(__file__).parent / "shaders/wgsl_test"),
+            **(
+                {}
+                if dependencies is None
+                else {name: fspath(path) for name, path in dependencies.items()}
+            ),
+        },
+    )
+    if compiled is None:
+        message = "WESL conditions disable this test"
+        raise ShaderTestDisabledError(message)
+    shader, entry_point, sites, overrides, result_layout = compiled
+    data = _native.execute_test_cpu(
+        shader,
+        entry_point,
+        result_layout,
+        {}
+        if constants is None
+        else {overrides.get(name, name): value for name, value in constants.items()},
+    )
+    result = result_layout.decode(bytes(data))
+    if result.completed != 1:
+        message = "shader test did not complete"
+        raise RuntimeError(message)
+    if result.passed == 0:
+        actual, expected = result.values
+        raise ShaderAssertionError(
+            sites[result.site - 1],
+            actual=actual,
+            expected=expected,
+            failures=result.failures,
+            checks=result.checks,
+            root_directory=root_directory,
+        )
 
 
 def run_test(
@@ -64,8 +131,10 @@ def prepare_test(
     resources: Mapping[int, Sequence[dict[str, Any]]] | None = None,
     layouts: Mapping[int, Sequence[dict[str, Any]]] | None = None,
     constants: Mapping[str, float] | None = None,
-) -> "_PreparedTest":
+) -> _PreparedTest:
     __tracebackhide__ = True
+    import wgpu
+
     if options is not None and not isinstance(options, TestOptions):
         message = "options must be TestOptions or None"
         raise TypeError(message)
@@ -220,6 +289,8 @@ class _PreparedTest:
         resources: Mapping[int, Sequence[dict[str, Any]]] | None = None,
     ) -> None:
         __tracebackhide__ = True
+        import wgpu
+
         resources = self.resources if resources is None else resources
         groups = {group: list(entries) for group, entries in resources.items()}
         entries = groups.setdefault(0, [])
