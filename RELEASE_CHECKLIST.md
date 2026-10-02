@@ -1,19 +1,12 @@
 # Release checklist
 
-Release support is prepared for later use.
-A push to `main` runs the artifact checks and does not publish to PyPI.
-Publication requires a manual run of `release.yml` from a version tag.
-Making the repository public does not start publication.
+Pushes to `main` run artifact checks. Publication requires a manual run of
+`release.yml` from a version tag.
 
-- [x] Remove private imports from upstream dependencies.
-- [x] Consolidate tests around binding behavior.
-- [x] Simplify the README and maintenance documentation.
-- [x] Prepare installation instructions for published packages.
-- [x] Prepare a manual release workflow that publishes tested artifacts.
-- [ ] Make the repository public and complete the artifact workflow.
+- [ ] Make the repository public and pass the artifact workflow.
 - [ ] Configure the PyPI publisher and GitHub environment.
 - [ ] Publish the first release and verify installation from PyPI.
-- [ ] Remove the pending-release notes from the README and testing guide.
+- [ ] Remove pending-release notes from the README and testing guide.
 
 ## After making the repository public
 
@@ -25,13 +18,9 @@ Making the repository public does not start publication.
    If GitHub still rejects jobs because of billing, resolve the account restriction
    before proceeding.
 
-Continue to use the checkout installation instructions.
-The repository can remain in this state until publication is wanted.
-
 ## Optional publication setup
 
-Complete the steps below only when ready to publish to PyPI.
-They are not required to push changes or make the repository public.
+Complete these steps when ready to publish to PyPI.
 
 ### Configure GitHub once
 
@@ -59,11 +48,8 @@ find **Add a new pending publisher**, select **GitHub**, and enter these values:
 | Workflow filename | `release.yml` |
 | Environment | `pypi` |
 
-Click **Add** to save the publisher.
-Use `release.yml` as the filename, without `.github/workflows/`.
-The first upload creates the PyPI project.
-A pending publisher does not reserve the package name.
-Trusted Publishing uses GitHub's identity token and needs no PyPI API token.
+Click **Add**. The first upload creates the project; a pending publisher does
+not reserve its name. Trusted Publishing needs no PyPI API token.
 See the [PyPI setup guide](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/).
 
 ### Publish a version
@@ -86,11 +72,9 @@ See the [PyPI setup guide](https://docs.pypi.org/trusted-publishers/creating-a-p
    Select the **Release** run when `gh run watch` prompts.
    This workflow publishes to PyPI when its **Publish to PyPI** job runs.
 
-The workflow rejects branches and tags that do not match the package version.
-It runs the existing source, wheel, GPU, and example checks for the tagged commit.
-It uploads the tested source distribution and wheels to PyPI after all checks pass.
-The publish job downloads artifacts from that same run and does not rebuild them.
-Ordinary pushes, pull requests, and tag creation do not publish a package.
+The workflow requires a tag that matches the package version.
+It checks source, wheels, GPU execution, and examples, then publishes those artifacts
+without rebuilding them.
 
 After publication, verify the base package and `testing` extra in fresh environments.
 Check native imports, bundled assertions, and pytest collection outside the checkout.

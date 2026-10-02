@@ -8,7 +8,6 @@ pixi run -e gpu python -m examples.rmsnorm
 
 Normalize 32 token rows with 1025 channels per row.
 The example generates inputs and verifies every output with a NumPy reference.
-It does not open a window or download weights.
 
 For each row, the shader computes:
 
@@ -16,9 +15,6 @@ For each row, the shader computes:
 combined = values + residual
 output = combined * inverse_sqrt(mean(combined * combined) + epsilon) * weights
 ```
-
-Transformer blocks use residual addition and RMSNorm.
-This example uses synthetic weights to demonstrate the operation.
 
 Start with [normalize.wesl](shaders/normalize.wesl).
 One workgroup handles each row.
@@ -43,9 +39,6 @@ The object retains its shader and pipeline.
 The input width and residual presence must match the prepared variant.
 Construct a new object to change those settings or reload shader files.
 
-The entry point lives in [shaders](shaders).
-It imports the input and normalization operations through `package::examples::rmsnorm`.
-
 The example uses core f32 operations without optional GPU features.
 
 ## Tests
@@ -57,10 +50,8 @@ pixi run -e testing python -m pytest \
 
 The tests compare both shader variants with NumPy and verify input limits.
 
-Pytest discovers [row.test.wesl](../../tests/examples/rmsnorm/row.test.wesl) as
-native shader tests.
-[conftest.py](../../tests/examples/rmsnorm/conftest.py) supplies their buffers,
-feature flags, and pipeline constants.
+[Native tests](../../tests/examples/rmsnorm/row.test.wesl) use Python fixtures
+for buffers, feature flags, and pipeline constants.
 
 Collect the native tests without GPU dependencies:
 

@@ -18,88 +18,46 @@ pixi run -e test python -m pytest \
   tests/examples/testing/shaders --collect-only -q
 ```
 
-The `wesl_compiler` fixture reads the shared compilation configuration.
-The `wesl_device` fixture supplies a WebGPU device.
-The repository's `wesl.toml` sets the repository as the package root.
-Calls to `wesl_compiler.compile_file()` use paths such as
-`tests/examples/testing/shaders/combine.wesl` relative to that root.
-
-The `wesl_features` fixture selects clamped and unclamped implementations.
-Pytest applies both parameter values to Python compilation tests, compute tests,
-fragment tests, and native WESL tests.
-The default `wesl_options` and `wesl_test_options` fixtures use these features.
-
-| Test | Behavior |
-| --- | --- |
-| [Native tests](shaders/levels.test.wesl) | Import a shared function and select conditional test definitions. |
-| [Native buffers](shaders/buffers/exposure.test.wesl) | Combine native buffers, pipeline overrides, and feature flags through Python fixtures. |
-| [Compilation tests](test_compilation.py) | Compile imports and verify an expected error without a GPU. |
-| [Compute test](test_compute.py) | Verify a single element, a full workgroup, and partial workgroups with two input buffers and two output buffers. |
-| [Fragment test](test_fragment.py) | Bind a texture, sampler, and uniform buffer. Compare square, wide, and tall images with NumPy. |
-| [Two passes](test_pipeline.py) | Write a storage texture in compute, then sample it in a fragment shader. |
-| [Snapshot test](test_snapshot.py) | Compare float32 pixels with a stored baseline for each feature value. |
-| [Failure demo](shaders/failure_demo.wesl) | Inspect an assertion failure in the terminal and in a JUnit report. Run this file explicitly. |
+[conftest.py](conftest.py) selects linear and clamped feature variants for Python
+and native tests. `wesl_compiler` uses the repository root from `wesl.toml`.
+`wesl_device` supplies the GPU device.
 
 ## Native tests and Python fixtures
 
-Start with [levels.test.wesl](shaders/levels.test.wesl).
-Each `@test` function becomes a pytest item.
-The root [conftest.py](conftest.py) selects the `linear` and `clamped` variants.
-Conditional definitions give each variant its own expected result.
-The `negative_values_clamp_to_zero` test skips for the linear variant.
+Each `@test` function in [levels.test.wesl](shaders/levels.test.wesl) becomes a
+pytest item. Conditional definitions select expected values for each feature variant.
+`negative_values_clamp_to_zero` skips for the linear variant.
 
-Next, run the tests that use Python resources:
+[Buffer tests](shaders/buffers/exposure.test.wesl) combine resources, overrides,
+and features. Their [fixtures](shaders/buffers/conftest.py) provide inputs and NumPy
+references through `wesl_resources`, then destroy the buffers after each test.
+`wesl_constants` selects two gains, producing four cases with the feature variants.
 
 ```bash
 pixi run -e testing python -m pytest tests/examples/testing/shaders/buffers -v
 ```
 
-The local [conftest.py](shaders/buffers/conftest.py) supplies two buffers through
-`wesl_resources`. One contains input values. The other contains the NumPy reference.
-The fixture yields native bind-group entries and destroys its buffers after each
-test.
-
-Its `wesl_constants` fixture selects two values for the shader's `gain` override.
-These values combine with both feature variants to produce four named cases.
-The shader compares every input with its reference through `expectNear()`.
-These fixture overrides apply only to this directory.
-
 ## Numerical checks
 
-The fragment test computes its expected image from the input pixels.
-It does not maintain snapshot files.
-Each fixture or Python test creates and releases its resources.
-
-The compute cases contain 1, 4, and 9 elements with four invocations per
-workgroup. Output buffers start with NaNs so an unwritten element fails the test.
-The fragment cases use images of size 2 by 2, 4 by 2, and 2 by 4.
-Run only these numerical checks with:
+Compute tests cover single elements, full workgroups, and partial workgroups.
+NaN output initialization detects unwritten elements.
+Fragment tests compare square, wide, and tall images with NumPy.
+The [pipeline test](test_pipeline.py) shares a texture between compute and rendering.
+Tests release their GPU resources.
 
 ```bash
 pixi run -e testing python -m pytest \
   tests/examples/testing/test_compute.py \
-  tests/examples/testing/test_fragment.py -v
+  tests/examples/testing/test_fragment.py \
+  tests/examples/testing/test_pipeline.py -v
 ```
-
-The [pipeline test](test_pipeline.py) joins compute and rendering:
-
-```bash
-pixi run -e testing python -m pytest tests/examples/testing/test_pipeline.py -v
-```
-
-The test creates a texture and binds it in both passes.
-Compute writes an exposure gradient. The fragment shader samples that texture
-and applies a tint. The intermediate image stays on the GPU.
-The test compares the final image with NumPy and releases resources through `ExitStack`.
-This demonstrates ownership when a test supplies a GPU resource.
 
 ## Stored baselines
 
-The snapshot test uses the optional `pytest-regressions` package.
-The repository's `testing` environment includes it.
-Baselines in `test_snapshot/` preserve float32 values, including values outside
-the range from zero to one. The fixture compares each value with explicit
-relative and absolute tolerances. It reports differences by array index.
+The `testing` environment includes `pytest-regressions`.
+Baselines in `test_snapshot/` retain float32 values, including pixels outside
+`[0, 1]`.
+Comparisons use explicit tolerances and report differences by array index.
 
 Update only the selected snapshots after an intentional change:
 
@@ -128,8 +86,7 @@ pixi run -e testing python -m pytest \
   tests/examples/testing/shaders/failure_demo.wesl -k clamped --tb=line
 ```
 
-Both commands fail intentionally. The first command also records the assertion
-details in `failure.xml`. The second command shows concise terminal output.
+Both commands fail intentionally. `failure.xml` retains assertion details.
 
 ## Select cases and report results
 

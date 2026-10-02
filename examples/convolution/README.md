@@ -11,27 +11,15 @@ The example uses wgpu-py and needs `shader-f16`.
 A supplied adapter name selects a Vulkan adapter. Without a name, wgpu-py
 selects the adapter.
 It creates synthetic inputs and verifies convolution and pooling with NumPy.
-Both operations use one command encoder. No weights or image files are needed.
+Both operations use one command encoder.
 
-The example prepares both compute pipelines once and processes three inputs.
-It retains weights, biases, bind groups, and buffers across inputs.
-NumPy computes the references. A callable from `wesl.testing.prepare_test()`
-compares both outputs with those references on the GPU.
-The callable retains one assertion pipeline and accepts replacement resources
-for the pooling output. Each call uses a fresh assertion result buffer.
+The example reuses compute pipelines and resources across three inputs.
+A callable from `wesl.testing.prepare_test()` compares outputs with NumPy references
+on the GPU and accepts replacement resources for pooling.
 
 The reusable shaders live in [shaders](shaders). The OWL YOLO experiment imports
 these same files from the source checkout. They are example assets, not an
 installed Python API.
-
-| Module | Operation |
-| --- | --- |
-| `convolution.wesl` | Tiled convolution, direct 3 by 3 convolution, and a pointwise alternative |
-| `convolution_input.wesl` | NCHW input addressing, zero padding, and up to four channel segments |
-| `activation.wesl` | Bias, linear output, leaky ReLU, and sigmoid |
-| `pooling.wesl` | Maximum pooling with negative-infinity padding |
-| `resize.wesl` | Nearest-neighbor integer enlargement |
-| `verify.wesl` | Compare operator outputs with NumPy references |
 
 Convolution writes binding 0. Bindings 1 through 4 contain channel segments.
 Bindings 5 and 6 contain OIHW weights and per-channel bias.
@@ -67,10 +55,8 @@ pixi run -e testing python -m pytest tests/examples/convolution \
   --convolution-adapter AMD -q
 ```
 
-The resource fixture dispatches a parallel kernel before the native WESL test.
-The test then compares the output buffer with a NumPy reference in one shader
-invocation. This separates execution of the compute entry point from assertions.
-The fixture retains all buffers until the assertion test finishes.
+The resource fixture dispatches the kernel and retains its buffers while a
+native WESL test compares outputs with NumPy.
 
 The cases cover padding, stride, partial tiles, uneven input segments, negative
 pooling inputs, and output guards. Each case runs with three arithmetic policies.

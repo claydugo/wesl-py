@@ -2,18 +2,12 @@
 
 Reviewed on 2026-09-29 against the pinned WESL commit
 [`0303ecc`](https://github.com/webgpu-tools/wesl-rs/tree/0303eccfafd534cc76c91eddd4b4f5c4413a1733).
-GitHub main still matches this revision at review time.
-The review checks API preconditions, control cases, and existing reports.
-The reproductions use upstream APIs without the binding's compiler adapter.
+Reproducers use upstream APIs without the binding's adapter.
 
 ## Next actions
 
-Eight defects warrant new reports: seven in wesl-rs and one in wgsl-test.
-The getter annotation request already has a PyO3 pull request.
-
-These reports do not all block publication.
-This binding does not support lowering.
-Both option classes raise `NotImplementedError` when callers request it.
+Report seven wesl-rs defects and one wgsl-test defect below.
+PyO3 getter annotations already have a pull request.
 See the [release checklist](../RELEASE_CHECKLIST.md) for publication requirements.
 
 | Item | Current binding behavior | Upstream action |
@@ -73,11 +67,9 @@ The binding normalizes assertion sources in [render_diagnostic](../src/lib.rs).
 line-break sequences and multibyte text before the span.
 Compiler errors use upstream rendering and retain this mismatch.
 
-Normalize a rendering copy and remap its byte spans, or add suitable renderer
-support.
-Preserve declaration notes and the original source and byte spans exposed to
-Python. Cover compiler errors with multibyte text before the span.
-Remove the local normalization after upstream rendering passes the same cases.
+Normalize a rendering copy and remap spans, or extend renderer support.
+Preserve original source, spans, and declaration notes exposed to Python.
+Remove local normalization after upstream passes these cases.
 
 ## Parser EOF spans split UTF-8 characters
 
@@ -139,11 +131,8 @@ Returning an erased `PyTuple` or `PyAny` loses element or concrete-type informat
 The Rust `gen_stub` attributes declare tuple types for
 `CompileResult.modules`, `CompileResult.entry_points`, and `TestResult.values`.
 
-[PR #5738](https://github.com/PyO3/pyo3/pull/5738) is open and implements getter
-and setter signatures with tests.
-This is a tracked feature request. It needs no new report.
-Follow that PR when evaluating PyO3 introspection as a replacement for
-`pyo3-stub-gen`.
+Track [PR #5738](https://github.com/PyO3/pyo3/pull/5738) before replacing
+`pyo3-stub-gen` with PyO3 introspection. It implements getter and setter signatures.
 
 ## The bundled assertion protocol loses integer precision
 
@@ -160,14 +149,10 @@ representable as `f32`. The recorded values can coincide.
 permit either adjacent representable value, so identical results are not
 guaranteed across implementations.
 
-The upstream [host decoder](https://github.com/webgpu-tools/wesl-js/blob/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test/src/TestWesl.ts)
-also reads these operands as floats.
-The upstream `runWesl` harness reproduces the precision loss with wgsl-test 0.2.35,
-Node 22.23.2, and webgpu 0.3.8. Its host source matches the audited revision.
-It reports both large operands as `4294967296` while correctly reporting failure.
-A second failed assertion increases `failCount` to two.
-A control with small integers retains the first failed pair correctly.
-First-failure retention needs no fix.
+The [host decoder](https://github.com/webgpu-tools/wesl-js/blob/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test/src/TestWesl.ts)
+also reads floats. `runWesl` reproduces this with wgsl-test 0.2.35, Node 22.23.2,
+and webgpu 0.3.8: both operands report as `4294967296`, but the assertion fails.
+Controls verify failure counts and first-failure retention; neither needs a fix.
 Add the exact-integer case to [TestWesl.test.ts](https://github.com/webgpu-tools/wesl-js/blob/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test/src/test/TestWesl.test.ts).
 Preserving operand types requires agreement on the shader and host representation.
 
@@ -188,21 +173,11 @@ changing the dependency revision.
 ### Compiler driver integration
 
 The pin uses upstream 0.5.0 at `0303eccfafd534cc76c91eddd4b4f5c4413a1733`.
-[The adapter](../src/compiler.rs) implements upstream `CompilerDriver`.
-It uses public upstream APIs.
-It calls the upstream parsing, conditional translation, usage analysis, linking,
-mangling, and validation passes. It records original sources before
-applying the project and test transformations.
-
-The public `CompilerDriver` API supports custom compilation passes.
-The standard frontend keeps its default driver private.
-A hook around module loading could reduce duplicated option handling, but the
-current API supports the binding's transformations. It needs no defect report.
-
-Test discovery parses declarations. Test selection uses the public
-`pass::condcomp` directly. Neither requires the custom driver.
-Compiling with imports disabled removes
-qualified paths that the generated test entry point still needs.
+[The adapter](../src/compiler.rs) uses public `CompilerDriver` APIs for upstream
+passes and local module transformations. It records original sources first.
+The standard frontend keeps its default driver private; this needs no defect report.
+Test discovery and conditional selection do not require the adapter.
+Shader test compilation needs imports to retain generated qualified paths.
 
 Three small examples fail through upstream `wesl::compile` at this revision.
 Use `CompileOptions { visibility: false, keep_main: true, ..Default::default() }`
@@ -245,11 +220,7 @@ Report these cases upstream:
   declarations. The adapter gives those references independent identifiers after
   upstream retargeting and before validation.
 
-The source tests cover explicit dependency scopes.
-The binding does not construct dependency graphs or deduplicate package instances.
-Visibility tests cover private and public external declarations with source maps
-enabled and disabled. After adopting an upstream fix, remove its adapter adjustment
-and run the corresponding regression tests:
+After adopting a fix, remove its adapter adjustment and run these regressions:
 
 | Adjustment | Regression tests |
 | --- | --- |
@@ -277,8 +248,7 @@ for its generated collector. This uses the upstream syntax API.
 
 ### Package visibility inside named packages
 
-At revision `0303eccfafd534cc76c91eddd4b4f5c4413a1733`,
-[usage analysis](https://github.com/webgpu-tools/wesl-rs/blob/0303eccfafd534cc76c91eddd4b4f5c4413a1733/crates/wesl/src/pass/usage_analysis.rs#L249-L252)
+At the pin, [usage analysis](https://github.com/webgpu-tools/wesl-rs/blob/0303eccfafd534cc76c91eddd4b4f5c4413a1733/crates/wesl/src/pass/usage_analysis.rs#L249-L252)
 requires public visibility for an import whose canonical path names a package.
 This also applies when the importing module belongs to that same package.
 A public function in `library` therefore cannot call a helper with package
@@ -308,10 +278,8 @@ abort on them.
 [Issue #157](https://github.com/webgpu-tools/wesl-rs/issues/157) already tracks a
 related crash. Keep the binding's cycle checks for `validate=False`.
 
-The binding also rejects reversed, out-of-bounds, and invalid UTF-8 diagnostic
-spans in assertion rendering. Keep this guard for caller-supplied metadata and
-local normalization. The separate compiler error path needs the EOF correction
-described above for invalid spans generated by the parser itself.
+Keep assertion-rendering guards for reversed, out-of-bounds, and invalid UTF-8
+spans supplied by callers. Compiler errors need the separate EOF correction above.
 
 ## Python resource loading
 
@@ -326,3 +294,17 @@ Upstream package scanning cannot replace the resource adapter at this pin.
 It rejects paired `.wesl` and `.wgsl` files instead of preferring `.wesl`.
 Neither API reads Python resource objects.
 Keep resource loading separate from manifest scanning.
+
+## Other maintenance constraints
+
+- Verify PyPI wgpu compatibility before removing the ImGui upper bound.
+  Wgpu 0.32.0 uses the removed `cmd_lists_count` attribute.
+  Conda supplies a [backend patch](https://github.com/conda-forge/wgpu-py-feedstock/blob/main/recipe/0001-Use-len-draw_data.cmd_lists-in-imgui-backend.patch).
+- Enable Markdown checks on macOS when conda-forge supplies rumdl for arm64.
+  Track [feedstock issue #4](https://github.com/conda-forge/rumdl-feedstock/issues/4).
+- Verify adapters and display support before adding GPU execution to macOS or
+  Windows CI. Current GPU jobs use Mesa Vulkan on Linux.
+- Review cleanup for repeated viewer use. The SDF viewer has no explicit teardown;
+  particle buffers remain usable while the viewer remains referenced.
+  The [wgpu ImGui renderer](https://github.com/pygfx/wgpu-py/blob/main/wgpu/utils/imgui/imgui_renderer.py)
+  creates a context without a cleanup method.

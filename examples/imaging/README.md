@@ -29,24 +29,11 @@ These modules provide image operations for compute kernels.
 The multiscale example keeps its entry points in [shaders](../multiscale/shaders)
 and schedules passes in [compute.py](../multiscale/compute.py).
 
-| Module | Provides |
-| --- | --- |
-| [indexing.wesl](indexing.wesl) | Map channel and pixel coordinates to a buffer index. |
-| [sampling.wesl](sampling.wesl) | Clamp coordinates and sample a channel. |
-| [gaussian.wesl](gaussian.wesl) | Define the Gaussian weights and radius, and convolve along one axis. |
-| [statistics.wesl](statistics.wesl) | Define moments, compute correlation, and identify constant neighborhoods. |
-| [coordinates.wesl](coordinates.wesl) | Convert a polar grid to source coordinates. |
-| [reduction.wesl](reduction.wesl) | Sum four components across a workgroup. |
-
-Sampling builds on indexing.
-Gaussian convolution imports indexing and clamping from sampling.
-The filter uses `convolve`:
+Import convolution or its Gaussian parameters:
 
 ```wesl
 import package::examples::imaging::gaussian::convolve;
 ```
-
-The correlation kernel imports the same Gaussian parameters:
 
 ```wesl
 import package::examples::imaging::gaussian::{radius, weights};
@@ -70,20 +57,11 @@ The function uses workgroup memory and barriers to return the componentwise sum.
 
 ## GPU compositing
 
-The example keeps its algorithm in `.wesl` files and schedules passes
-in `compute.py`. It imports indexing and color functions from this directory.
 `composite()` in [common.py](../multiscale/common.py) connects the composite shader
 to a pygfx texture.
 
-| File | Responsibility |
-| --- | --- |
-| [color.wesl](color.wesl) | Map each channel's intensity through its lookup table. |
-| [composite.wesl](composite.wesl) | Apply the channel gains and add the colors into an RGBA texture. |
-
-Processing keeps the acquisition channels separate.
-The final compute pass applies the LUTs and adds the channel colors.
-The display clips the sum to the range `[0, 1]`.
-Gain and enhancement controls affect visualization.
+The final pass applies LUTs and sums channel colors into a display clipped to
+`[0, 1]`. Gain and enhancement controls affect visualization.
 
 Intermediate arrays and display textures stay on the GPU.
 The verification script reads results back to compare them with NumPy.

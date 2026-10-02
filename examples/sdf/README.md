@@ -6,10 +6,7 @@ Run from the repository root:
 pixi run -e examples python -m examples.sdf
 ```
 
-The window shows a surface made from four blended spheres.
-Particles fall in a narrow stream above the center.
-With the vertical tunnel enabled, they fall through to the floor.
-Disable the tunnel to make them bounce off the sculpture.
+Particles fall onto four blended spheres or through the optional tunnel.
 
 Drag the scene to orbit. Scroll to zoom.
 Use the controls to separate the spheres, change their blend, or cut a tunnel.
@@ -26,11 +23,9 @@ Two shaders import the same geometry:
 - [render.wesl](shaders/render.wesl) traces rays in a fragment shader.
 - [simulate.wesl](shaders/simulate.wesl) moves particles in a compute shader.
 
-Both import `distance_to_scene` and `normal`.
-Edit the scene once to change its appearance and its collision surface.
-Python does not concatenate shader files or substitute shader expressions.
+Both import `distance_to_scene` and `normal`, so scene edits change rendering
+and collisions together.
 
-Entry points live in [shaders](shaders).
 [renderer.py](renderer.py) compiles the pipelines and submits GPU passes.
 [viewer.py](viewer.py) manages camera input and controls.
 
@@ -44,8 +39,7 @@ Blend, separation, tunnel radius, and physics controls use uniforms.
 and particle renderers. Both write depth so particles can pass behind the surface
 and through the tunnel.
 
-Particle positions and velocities stay on the GPU.
-The compute pass updates the same buffer that the particle renderer reads.
+Simulation and rendering share a GPU particle buffer.
 The simulation uses four substeps and projects penetrating particles onto the
 surface. Particles do not collide with each other.
 

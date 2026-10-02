@@ -14,8 +14,6 @@ The distribution name is `wesl-py`; import it as `wesl`.
 Wheels target Linux x86-64 with glibc 2.28 or later, macOS arm64, and Windows x86-64.
 Wheels need no Rust toolchain. Source builds require Rust 1.97.1 or later
 and a native linker.
-See [CONTRIBUTING.md](https://github.com/claydugo/wesl-py/blob/main/CONTRIBUTING.md)
-for development setup.
 
 ## Compile a shader
 
@@ -59,9 +57,8 @@ Use `compile_source()` for a string or `compile()` for a mapping of modules.
 See the [API reference](https://github.com/claydugo/wesl-py/blob/main/docs/api.md)
 for options, library imports, and diagnostics.
 
-Standalone `compile_file()` uses the shader file's parent directory by default.
-Use `Compiler.from_project()` to share the `wesl.toml` shader root with pytest.
-Pass dependency directories explicitly.
+`compile_file()` resolves imports from the shader file's parent directory.
+Use `Compiler.from_project()` for a `wesl.toml` project.
 
 ## Test a shader
 

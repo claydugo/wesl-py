@@ -11,12 +11,8 @@ pixi run -e gpu python -m examples.compaction
 
 Filter 1,000,003 generated u32 values and preserve their input order.
 The example checks the entire result against NumPy boolean indexing.
-It does not need a window or an external dataset.
 
-Compaction turns a sparse selection into a dense buffer.
-It can collect threshold detections, active particles, or work for a later kernel.
-Atomic appends can produce different orders between runs.
-This example gives each selected value a unique output position with a prefix scan.
+A prefix scan gives each selected value a unique output position.
 
 1. [scan.wesl](shaders/scan.wesl) converts values to selection bits and scans
    blocks of 128.
@@ -40,9 +36,6 @@ Both passes use the same rule, including equality at the boundary.
 Threshold uses numeric override ID zero, which survives import renaming.
 The internal scans compile without the predicate or threshold.
 
-Entry points live in [shaders](shaders).
-They import the predicate through `package::examples::compaction::predicate`.
-
 Create `Compactor(device, threshold=500, keep_below=False)` once.
 Call `compactor.compact(values)` for each input.
 The object retains its four pipelines.
@@ -65,11 +58,8 @@ pixi run -e testing python -m pytest \
 
 The tests compare prefixes and selected values with NumPy across hierarchy boundaries.
 
-Pytest discovers
-[predicate.test.wesl](../../tests/examples/compaction/predicate.test.wesl) as
-native shader tests.
-[conftest.py](../../tests/examples/compaction/conftest.py) supplies both
-predicate variants and the threshold override.
+[Native tests](../../tests/examples/compaction/predicate.test.wesl) cover both
+predicate variants and the threshold boundary.
 
 Collect the native tests without GPU dependencies:
 

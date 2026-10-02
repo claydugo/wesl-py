@@ -22,9 +22,7 @@ The [imports example](imports.py) downloads one module from a pinned Lygia revis
 It registers a temporary directory with `dependencies={"lygia": directory}`.
 It needs internet access but no GPU or optional dependencies.
 
-The Pixi `examples` environment provides the graphics and image dependencies.
-Examples and tests use the repository root for imports through `package::examples`.
-Both `wesl.toml` and calls to `compile_file()` set this root.
+Examples and tests resolve `package::examples` from the repository root.
 
 Each example's README includes its verification command.
 
@@ -32,7 +30,6 @@ Each example's README includes its verification command.
 
 The [testing examples](../tests/examples/testing/README.md) cover compilation,
 WESL assertions, compute, rendering, and snapshots without a window.
-They include Python fixtures, shared textures, and a failure demo.
 
 ```bash
 pixi run -e testing python -m pytest tests/examples/testing -v

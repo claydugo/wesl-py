@@ -7,18 +7,12 @@ The `testing` extra installs pytest and wgpu-py.
 The base package can collect tests when pytest is installed.
 Compilation and collection need no GPU. Execution requires a WebGPU adapter.
 
-The executor needs no NumPy, but wgpu-py's rendercanvas dependency installs it.
-
-Use the
-[checkout setup](../CONTRIBUTING.md#set-up-a-checkout) and the `testing` environment.
-See [installation](../README.md#installation) for commands and requirements.
-No `conftest.py` or manual plugin registration is required.
+Use the [checkout setup](../CONTRIBUTING.md#set-up-a-checkout) and `testing`
+environment. No `conftest.py` is required.
 
 ## WESL tests
 
-Put shader tests in `*.test.wesl` files.
-This matches [upstream CLI discovery](https://wesl-lang.dev/docs/wgsl-test#cli).
-Each `@test` function becomes a separate pytest item.
+Each `@test` function becomes a pytest item.
 Save this as `shaders/math.test.wesl`:
 
 ```wesl
@@ -61,11 +55,9 @@ The test can use shared memory, barriers, and enabled subgroup operations.
 The `wesl_device` fixture must enable any device features that the shader requires.
 Use Python tests for multiple workgroups or fragment shaders.
 
-Each invocation records assertions privately. Atomic counters combine the check,
-failure, and completion counts. The report identifies one failing invocation and
-its first failed assertion. The selected invocation can vary with GPU scheduling.
-Passing invocations cannot overwrite a failure. Returning from the test still
-records that invocation's results.
+Counts combine all invocations. Reports identify one failing invocation and its
+first failure; GPU scheduling can change which invocation appears.
+Early returns still record results. Passing invocations cannot overwrite a failure.
 
 Imports resolve through the existing WESL compiler.
 Each test uses the nearest ancestor `wesl.toml` for its shader root.
@@ -101,27 +93,17 @@ Multiple conditional definitions of one name produce one item.
 
 ### Assertions
 
-Import assertions from `wgsl_test`. The installed package includes the two
-[upstream assertion shaders](https://github.com/webgpu-tools/wesl-js/tree/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test/shaders)
-and registers them automatically for compilation and testing.
-Attribution comments and public visibility modifiers differ from upstream.
-The distribution names upstream
-`lib.wesl` as `package.wesl` to identify the package root for the resolver and
-wgsl-analyzer.
-The runner instruments them to capture typed values, source locations, assertion
-counts, and completion status.
-It does not modify the packaged files.
+Import assertions from `wgsl_test`. The bundled
+[upstream shaders](https://github.com/webgpu-tools/wesl-js/tree/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test/shaders)
+register automatically. Upstream `lib.wesl` becomes `package.wesl` with attribution
+and public visibility modifiers. Instrumentation captures typed values, locations,
+counts, and completion without changing packaged files.
 
 WESL derives the result buffer layout from the compiled result type and decodes
 the buffer. Custom result modules must retain the upstream field names and types.
 Arbitrary custom layouts are unsupported. The binding does not populate the
 evaluation context for named layout constants. It rejects zero alignment and
 cyclic result types. See [integration requirements](upstream.md#local-integration-requirements).
-
-Install the `testing` extra to obtain pytest and wgpu-py.
-Shader imports need no download, cache, or registration step.
-Editor configuration is optional for running tests.
-See [shader editing](#shader-editing) for wgsl-analyzer setup.
 
 The test runner uses one shared `wgsl_test` package for assertion results.
 Shader tests reject scoped overrides such as `alpha/wgsl_test` in `dependencies`
@@ -141,10 +123,8 @@ def wesl_dependencies():
     return {"library": Path("path/to/library")}
 ```
 
-The [imports example](../examples/imports.py) fetches and registers an upstream
-module.
-See [library directories](api.md#compile-strings-and-files) for the registration
-API.
+See [library directories](api.md#compile-strings-and-files) and the
+[imports example](../examples/imports.py) for registration outside pytest.
 
 - `expect(condition)`: Boolean is true
 - `expectEq(actual, expected)`: Exact `u32` equality
@@ -162,22 +142,16 @@ Each component must pass. Near comparisons use
 Use finite operands and tolerances. The upstream assertions can accept NaN and
 infinity. GPU floating-point behavior still applies.
 
-A failure reports the first failing assertion and underlines its source span.
-Paths are relative to the project root.
-The report shows actual and expected values, followed by the failure and
-assertion counts.
-If several assertions fail, the report labels the first failure.
+Failures underline the first failed assertion and show actual and expected values
+with failure and assertion counts. Paths are relative to the project root.
 
 Scalar values retain their types. Unsigned integers retain all 32 bits.
 Vectors retain their dimensions, including zero components.
 Boolean assertions report `false` and `true`.
 Use `expect(actual == expected)` to compare signed integers.
 
-Shader diagnostics use plain text. Pytest controls terminal presentation.
-Exception text and JUnit output contain no color codes.
-
-Assertions continue after a failure.
-Failures in imported helpers point to the helper's source.
+Assertions continue after failure. Imported failures point to the helper's source.
+Diagnostics use plain text; pytest controls terminal presentation.
 
 ## Python tests
 
@@ -191,9 +165,6 @@ Call `wesl_compiler.compile_source(source)` for an inline shader.
 Call `wesl_compiler.compile_file("blur.wesl")` for a shader file.
 Relative file paths start at `wesl_root_directory`.
 Absolute paths must stay inside that directory.
-
-Outside pytest, construct `wesl.Compiler` with `options`, `modules`, `filenames`,
-`root_directory`, and `dependencies` to reuse the same configuration across compilations.
 
 Compile with `wesl.compile`, `compile_source`, or `compile_file` when a test
 needs separate configuration. Pass `CompileResult.wgsl` to wgpu-py.
@@ -233,12 +204,9 @@ compilation failures.
 
 ### Resources for WESL tests
 
-The `wesl_resources` fixture maps each group number to a list of entries.
-These entries use wgpu-py's bind-group format.
-Each entry specifies a binding number and a resource.
-Use a buffer binding dictionary, a texture view, or a sampler as the resource.
-Buffer dictionaries support `offset` and `size`.
-Save this fixture as `shaders/buffers/conftest.py`:
+`wesl_resources` maps group numbers to wgpu-py bind-group entries.
+Resources can be buffer dictionaries (with optional `offset` and `size`), texture
+views, or samplers. Save this as `shaders/buffers/conftest.py`:
 
 ```python
 from struct import pack
@@ -313,10 +281,9 @@ These layouts allow nearest sampling of `r32float`, `rg32float`, and `rgba32floa
 without the `float32-filterable` device feature. Automatic layouts require that
 feature when a shader uses these textures with a sampler.
 
-Fixtures own application resources. The runner leaves those resources and the
-device open, and it reads only its result buffer. It destroys that buffer on
-success or failure. Read application outputs through the device queue when needed.
-NumPy is optional for fixtures and application readback.
+Fixtures own application resources and teardown. The runner reads and destroys
+only its result buffer, including on failure. Read application outputs through the
+device queue. NumPy is optional for fixtures and readback.
 
 Arrays must match the shader's binary layout and the texture's format.
 Specify NumPy dtypes explicitly when using NumPy. Represent struct offsets,
@@ -327,9 +294,8 @@ Python calls to `run_test()` pass resources and constants explicitly.
 
 ### Fragment tests
 
-Create a render pipeline through `wesl_device` and pass the compiled WGSL to
-`create_shader_module()`. Choose the vertex shader, attachments, texture formats,
-and readback layout in the test.
+Use `wesl_device` to create a render pipeline from compiled WGSL.
+The test sets attachments, formats, and readback layout.
 The [fragment example](../tests/examples/testing/test_fragment.py) renders a texture
 with a sampler and a uniform buffer. The
 [pipeline example](../tests/examples/testing/test_pipeline.py) shares a texture
@@ -354,20 +320,17 @@ ndarrays_regression.check(
 )
 ```
 
-The fixture stores float32 arrays in `.npz` files beside the test module.
-It preserves values outside the range from zero to one.
-Choose tolerances for the shader and the target adapters.
-Parameter values produce separate baselines with names derived from pytest IDs.
-The first run creates missing baselines and fails the tests so you can review
-the values. Keep approved baselines in version control.
+The fixture stores float32 `.npz` baselines beside the test, including values outside
+`[0, 1]`. Pytest IDs distinguish parameter variants.
+Choose tolerances for the shader and adapters. The first run creates missing baselines
+and fails for review. Keep approved baselines in version control.
 
 Use `--force-regen` with a selected test to update a mismatched baseline.
 The update fails that test; run it again to verify the new baseline.
 See the [snapshot example](../tests/examples/testing/test_snapshot.py) and its
 [update commands](../tests/examples/testing/README.md).
 
-This comparison reports numerical differences by array index.
-The plugin does not support native WESL `@snapshot` annotations.
+Comparisons report differences by array index. Native `@snapshot` is unsupported.
 
 ## Fixtures and pytest behavior
 
@@ -400,8 +363,7 @@ The `gpu` marker includes hardware and software adapters.
 A software adapter runs shaders on the CPU.
 Use `-m 'not gpu'` to select tests that need no WebGPU runtime.
 
-`-k`, node IDs, JUnit reports, and pytest-xdist work through pytest's normal hooks.
-Add the pytest-xdist package separately to use `-n`.
+Use normal pytest selection and reports. Install pytest-xdist to use `-n`.
 
 Use `--tb=line` for concise shader failures.
 JUnit reports retain the shader location and failure message in this mode.
@@ -450,8 +412,6 @@ def run_test(
 ) -> None: ...
 ```
 
-`device` is an existing `wgpu.GPUDevice`. The caller owns its teardown.
-
 `modules` maps module names to WESL source strings.
 `test_name` names a test function in the `root` module.
 `root`, `filenames`, `root_directory`, and `dependencies` use the
@@ -465,8 +425,8 @@ in [Resources for WESL tests](#resources-for-wesl-tests).
 layouts. An empty mapping specifies a layout with only the runner's result buffer.
 `constants` maps override names or numeric ID strings to pipeline values.
 
-The function does not read pytest fixtures.
-It runs one named `@test` function and returns `None` on success.
+The function runs one named `@test`, returns `None` on success, and reads no fixtures.
+The caller owns the device and application resources.
 
 Each `run_test()` call compiles the test and creates a compute pipeline.
 For repeated execution, `prepare_test()` accepts the same arguments and returns
@@ -480,12 +440,9 @@ test()
 test(resources=replacement_resources)
 ```
 
-Preparation compiles the test and creates its pipeline once.
-Each call creates a fresh result buffer and destroys it after execution.
-Omit `resources` to use the resources supplied during preparation.
-Replacement resources must use the same bindings and layout.
-The caller owns the device and resource lifetimes.
-Keep them alive while the callable uses them.
+Preparation compiles once. Calls create and destroy a fresh result buffer.
+Omit `resources` to reuse prepared resources; replacements must match the bindings
+and layout. The caller keeps the device and resources alive and owns their teardown.
 Prepare again to change sources, options, layouts, or constants.
 Pytest prepares each shader test invocation separately.
 
@@ -510,10 +467,6 @@ The function raises `ShaderAssertionError` on assertion failure and
 - `failures`: The total number of failed assertions.
 - `invocation`: The local invocation index for a cooperative failure. Scalar tests
   report `None`.
-
-Vectors contain two, three, or four components.
-Integer reports preserve exact values. Boolean failures expose `False` and `True`.
-Assertions continue after failure, so counts include later assertions and loop iterations.
 
 `run_test()` accepts `wesl.TestOptions` through its `options` argument.
 Passing `CompileOptions` raises `TypeError`.
@@ -543,10 +496,8 @@ def wesl_test_options(wesl_features):
 Native tests use the shared source fixtures directly.
 Overriding `wesl_compiler` or `wesl_options` affects only Python compilation.
 
-Importing the plugin, collecting tests, and compiling shaders need no WebGPU adapter.
-Importing the plugin and collecting tests do not import NumPy or wgpu-py.
-Executing shader tests requires a WebGPU adapter.
-Linux CI uses Mesa lavapipe to execute shaders on the CPU.
+Plugin import and collection do not import NumPy or wgpu-py.
+Linux CI executes shaders on the CPU with Mesa lavapipe.
 
 Missing adapters fail by default. Use `--wesl-gpu=optional` to
 skip when the adapter or wgpu-py is unavailable. Shader compilation, device
@@ -558,11 +509,8 @@ Use `-p no:wesl` to disable automatic registration.
 
 ## Shader editing
 
-The repository's `wesl.toml` configures wgsl-analyzer for the examples and tests.
-It sets `root = "."` and declares the bundled `wgsl_test` library as a dependency.
-The library retains its own manifest for use by other projects.
-The `wgsl_test` imports need no editor setup beyond loading the repository manifest.
-Configure your editor to use the nearest `wesl.toml` as the project root.
+Configure wgsl-analyzer to use the nearest `wesl.toml`.
+The repository manifest sets `root = "."` and declares bundled `wgsl_test`.
 
 For another development project with a sibling wesl-py checkout, use:
 

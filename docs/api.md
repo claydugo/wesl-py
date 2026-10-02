@@ -1,6 +1,6 @@
 # API reference
 
-Import `wesl` to compile shaders, configure projects, and inspect diagnostics.
+Compile shaders with `wesl` and inspect the resulting WGSL and diagnostics.
 
 ## Compile modules
 
@@ -25,15 +25,14 @@ print(result.wgsl)
 keep=..., keep_main=None, strip=None, filenames=None, root_directory=None,
 dependencies=None)` returns a `CompileResult`.
 
-Module keys and `root` use names such as `package::main` and
-`package::settings`. Imports resolve through `modules` by default.
-An explicit `root_directory` also enables file imports.
-The function accepts mappings and preserves their contents.
+Module keys and `root` use paths such as `package::main`.
+Imports resolve through `modules`; `root_directory` also enables file imports.
+Compilation preserves supplied mappings.
 
 `features`, `keep`, `keep_main`, and `strip` override the corresponding fields in
 `options` for one call. They do not mutate the supplied options.
-Omit `keep` to use the stored selection. Pass `keep=None` to select entry points.
-Pass `keep=[]` to select no root declarations.
+Omit `keep` to use the stored selection.
+See retention rules below for `None` and `[]`.
 The other keyword overrides use `None` to retain the stored setting.
 
 `CompileOptions` is a mutable dataclass of upstream compiler options.
@@ -48,12 +47,10 @@ Mappings use the default policy, `Feature.Disable`.
 `CompileOptions.features` and `TestOptions.features` hold `Features` instances.
 A call-level feature setting replaces the stored setting without merging flags.
 
-`Features()` is a mutable dataclass with an empty flag dictionary.
-Its default policy is `Feature.Disable`.
-The four policies are `Feature.Enable`, `Feature.Disable`, `Feature.Keep`,
-and `Feature.Error`. Each policy can apply to the default or an individual flag.
-The `flags` mapping also accepts booleans.
-Annotate a reusable flag dictionary as `dict[str, bool | wesl.Feature]`.
+`Features()` defaults to an empty flag dictionary and `Feature.Disable`.
+Policies are `Feature.Enable`, `Feature.Disable`, `Feature.Keep`, and `Feature.Error`.
+Each applies to the default or an individual flag. Flags also accept booleans.
+Annotate reusable flags as `dict[str, bool | wesl.Feature]`.
 
 `Feature.Keep` preserves unresolved conditions for a later compilation.
 `Feature.Error` rejects flags that the compiler evaluates with that policy.
@@ -65,11 +62,9 @@ features = wesl.Features(default=wesl.Feature.Error, flags={"enabled": True})
 result = wesl.compile(modules, options=wesl.CompileOptions(features=features))
 ```
 
-Options retain the supplied feature settings and collections.
-Each default instance owns a separate flag dictionary.
-Assignments such as `options.features.flags["enabled"] = False` update the settings.
-Compilation copies the settings into Rust before it releases the GIL.
-The compile boundary checks field types.
+Options share supplied settings and collections; defaults belong to each instance.
+Mutate `options.features.flags` to update flags.
+Compilation checks field types and copies settings before releasing the GIL.
 
 `Feature` and `ManglerKind` are Python enums.
 Both enums, `CompileOptions`, and `Features` support pickle for process workers.
@@ -92,11 +87,9 @@ The retention options follow
 The compiler rejects unknown names in `keep`. This includes declarations that
 conditional translation removes.
 
-A root with only unused helpers produces empty WGSL under the default options.
-Use `compile_source(source, keep=["answer"])` to retain a helper and its dependencies.
-Use `keep_main=True` to retain all active root declarations, or `strip=False`
-to disable stripping.
-Upstream usage analysis loads modules as dependencies, without scanning the package.
+A root with only unused helpers produces empty WGSL by default.
+Use `keep=["answer"]` to retain a helper and its dependencies.
+Modules load on demand; compilation does not scan the package.
 
 Set `mangle_main=True` to rename root declarations as well as imported declarations.
 Selections always use original names, independent of mangling.
@@ -120,8 +113,7 @@ The pinned compiler has these known limitations:
 - Large expressions can exhaust a small caller stack on Windows.
   See the [10,000-term expression failure](https://github.com/claydugo/wesl-py/actions/runs/35526430139/job/106119676932).
 
-The binding pins upstream 0.5.0 plus the merged visibility and visitor fixes.
-It does not modify dependency sources. The compiler adapter handles the remaining
+The compiler adapter handles the remaining
 [upstream integration gaps](upstream.md#compiler-driver-integration).
 Disabling visibility follows the [upstream recommendation](https://github.com/webgpu-tools/wesl-rs/issues/300#issuecomment-5757180358).
 
@@ -130,7 +122,6 @@ Disabling visibility follows the [upstream recommendation](https://github.com/we
 `None_` represents the Rust `None` variant and disables mangling.
 The Unicode mangler keeps paths in names. A WGSL runtime can reject these names.
 Set `CompileOptions(sourcemap=False)` to skip source-map recording.
-Escape mangling and source-map recording are upstream defaults.
 
 Invalid argument types raise `TypeError`. Invalid module names raise
 `ValueError`. Missing modules and compiler failures raise `CompileError`.
@@ -181,9 +172,7 @@ Invalid root file paths raise the corresponding Python file exception.
 A file outside `root_directory` raises `ValueError`.
 
 Both functions accept `options` and the keyword overrides from `compile()`.
-Files load only when the compiler resolves an import.
-The resolver first checks the supplied `modules` mapping.
-It then looks for a `.wesl` file, with `.wgsl` as a fallback.
+Imports check `modules`, then `.wesl` files, then `.wgsl` files.
 Missing imported files raise `CompileError`.
 
 The installed package includes `wgsl_test`, which needs no registration.
@@ -204,11 +193,8 @@ result = compiler.compile_source(
 The [imports example](../examples/imports.py) fetches an upstream module and
 compiles a shader that imports it.
 
-`compile`, `compile_source`, and `compile_file` also accept `dependencies`.
-Pass a mapping of package names to shader directories.
-Relative directory paths use the working directory.
-The binding routes imports through upstream `Router` and `FileResolver`.
-It reads files on demand, with `.wesl` preferred over `.wgsl`.
+All compilation functions accept `dependencies`, a mapping of package names to
+shader directories. Relative paths use the working directory.
 
 The package root is `package.wesl`. For example, `library::value` refers to
 `value` in that file, and `library::math::value` refers to `value` in `math.wesl`.
@@ -277,9 +263,7 @@ If `noise::lib` imports `arithmetic::one`, supply that dependency under
 WESL source still uses normal import syntax.
 For example, `alpha/common` and `beta/common` identify separate dependencies.
 Neither falls back to a virtual module named `common`.
-These keys identify virtual modules. Virtual module mappings do not define a
-package dependency graph or deduplicate package instances.
-Use `dependencies` to register directories for named libraries.
+Virtual mappings do not define dependency graphs or deduplicate package instances.
 
 ## Supply constants
 
@@ -306,11 +290,10 @@ fn main() {
 }
 ```
 
-`compile`, `compile_source`, `compile_file`, and both `Compiler` methods accept
-`constant_modules`. The outer mapping uses the same module paths as `modules`,
-including scoped dependencies. Each inner mapping pairs constant names with values.
-Compilation preserves the supplied mappings and the stored compiler settings.
-Omit the argument, or pass `None` or `{}`, to generate no modules.
+All compilation functions and methods accept `constant_modules`.
+Keys use the same paths as `modules`, including scoped dependencies.
+Inner mappings pair constant names with values. Omit the argument, or pass `None`
+or `{}`, to generate no modules. Stored compiler settings remain unchanged.
 
 The compiler emits one `public const` declaration for each value:
 
@@ -320,10 +303,8 @@ The compiler emits one `public const` declaration for each value:
 | `0.5` | `public const scale = 0.5;` |
 | `True` | `public const enabled = true;` |
 
-Numeric declarations retain WGSL's abstract numeric types. The shader determines
-the concrete type where it uses a constant. For example, the same integer constant
-can initialize an `i32` or a `u32` when its value fits both types.
-Float values retain a decimal point or exponent, including `1.0` and `-0.0`.
+Numbers retain WGSL's abstract numeric types; shader use determines concrete types.
+Float literals retain a decimal point or exponent, including `1.0` and `-0.0`.
 
 Values accept Python `bool`, `int`, and finite `float` instances.
 They also accept `numbers.Integral` and `numbers.Real` instances.
@@ -408,12 +389,9 @@ Use `result.wgsl` to pass the shader to wgpu-py.
 Each access to `sources` returns a dictionary copy.
 The source text comes from the upstream source map.
 With `CompileOptions(sourcemap=False)`, `sources` is empty.
-These records adapt the upstream result for Python. The binding emits WGSL once
-and reads the existing syntax tree for names. It does not parse the output again.
 
 `Source(text, filename=None)` retains exact UTF-8 source text and a display label.
 `compile_file` uses the absolute filename as its label.
-Applications track file dependencies and reload sources.
 Source records support equality, hashing, and pickle.
 
 ## Package resources
@@ -529,8 +507,7 @@ Concurrent calls can share inputs when callers do not modify those inputs.
 
 ## Build identity
 
-`wesl.__version__` identifies the binding.
-`wesl.__version__` matches Python distribution metadata. This package uses the
+`wesl.__version__` matches Python distribution metadata. The package uses the
 WESL workspace crates at commit
 [`0303eccfafd534cc76c91eddd4b4f5c4413a1733`](https://github.com/webgpu-tools/wesl-rs/tree/0303eccfafd534cc76c91eddd4b4f5c4413a1733).
 This commit follows upstream 0.5.0 and includes
@@ -541,8 +518,3 @@ Cargo and access to the pinned Git sources unless those sources are cached.
 The source distribution includes `Cargo.lock`; builds use locked resolution.
 Report parser defects to the [upstream issue tracker](https://github.com/webgpu-tools/wesl-rs/issues).
 See [LICENSE](../LICENSE) for source provenance and third-party notices.
-
-The binding enables imports, conditional translation, name mangling,
-source diagnostics, and upstream validation by default. It enables evaluation
-and disables generics at build time. Lowering is unsupported.
-Upstream validation does not catch every WGSL error.
