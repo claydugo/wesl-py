@@ -12,6 +12,8 @@ which includes PR #309.
 Track the defects below and the candidates in the
 [upstream assessment](../upstream-assessment.md).
 The assessment ranks fix effort, merge likelihood, impact, and risk.
+Its [review packages](../upstream-assessment.md#review-packages) link the local
+report, patch, and validation for the seven selected cases.
 Conditional nodes have [PR #309](https://github.com/webgpu-tools/wesl-rs/pull/309).
 Lexer errors and unfinished comments have
 [PR #310](https://github.com/webgpu-tools/wesl-rs/pull/310).

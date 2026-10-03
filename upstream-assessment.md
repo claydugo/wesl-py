@@ -8,10 +8,46 @@ and PyO3 0.29.2. The original audit records wesl-rs main at
 [`4783a43`](https://github.com/webgpu-tools/wesl-rs/commit/4783a436efda2c8caec1bc20ec940800c5f5dd6d),
 one maintenance commit after the pin. The audited wesl-js main equals the pin.
 I inspected current source and issue and PR lists. The lexer and conditional
-patches pass focused regressions on that revision. Other runtime results come
-from the linked investigations at the pin. Those cases were not rebuilt on
-current main. Merge likelihood is an inference from scope, contract, and
+patches pass focused regressions on that revision. The seven selected cases now
+have refreshed evidence in their assessments.
+Other findings retain the original audit results. Merge likelihood is an
+inference from scope, contract, and
 existing maintainer work. It is not a promise.
+
+## Review packages
+
+These seven cases are local drafts. No GitHub submission is authorized.
+Each report contains standalone reproduction commands.
+Each assessment records the upstream base, validation, and remaining limits.
+Review the report and patch before deciding whether to submit either.
+Diff counts include production code and regression tests.
+All six patches use existing files. Each of the four trimmed regressions fails
+before its fix and passes afterward in an isolated Rust source copy.
+The five Rust patches apply to our current `9c715d9` dependency pin.
+The NaN case verifies published wgsl-test on a GPU.
+Its added test in the upstream source tree has not run.
+
+| Order | Case | Report | Patch | Diff (+/−) | Validation and limits |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Qualified references report false cycles | [Issue](/home/clay/issue_tracking/20260929134130_wesl-rs_qualified_reference/issue.md) | [Fix](/home/clay/issue_tracking/20260929134130_wesl-rs_qualified_reference/fix.patch) | +20 / −9 | [Assessment](/home/clay/issue_tracking/20260929134130_wesl-rs_qualified_reference/assessment.md) |
+| 2 | Disabled visibility is ignored | [Issue](/home/clay/issue_tracking/20260929134128_wesl-rs_disabled_visibility/issue.md) | [Fix](/home/clay/issue_tracking/20260929134128_wesl-rs_disabled_visibility/fix.patch) | +23 / −1 | [Assessment](/home/clay/issue_tracking/20260929134128_wesl-rs_disabled_visibility/assessment.md) |
+| 3 | Same-package visibility fails | [Issue](/home/clay/issue_tracking/20260929020241_wesl-rs_package_visibility/issue.md) | [Fix](/home/clay/issue_tracking/20260929020241_wesl-rs_package_visibility/fix.patch) | +21 / −0 | [Assessment](/home/clay/issue_tracking/20260929020241_wesl-rs_package_visibility/assessment.md) |
+| 4 | pygfx noise parentheses | No new report | [Existing PR](https://github.com/pygfx/pygfx/pull/1329/files) | Existing PR | [Assessment](/home/clay/issue_tracking/20260928150000_pygfx_noise_precedence/assessment.md) |
+| 5 | NaN tolerance assertions | [Issue](/home/clay/issue_tracking/20261002184232_wgsl-test_nan_tolerance/issue.md) | [Fix](/home/clay/issue_tracking/20261002184232_wgsl-test_nan_tolerance/fix.patch) | +21 / −4 | [Assessment](/home/clay/issue_tracking/20261002184232_wgsl-test_nan_tolerance/assessment.md) |
+| 6 | Module output order varies | [Addition to #292](/home/clay/issue_tracking/20260930150925_wesl-rs_nondeterministic_module_order/issue.md) | [Fix](/home/clay/issue_tracking/20260930150925_wesl-rs_nondeterministic_module_order/fix.patch) | +29 / −3 | [Assessment](/home/clay/issue_tracking/20260930150925_wesl-rs_nondeterministic_module_order/assessment.md) |
+| 7 | Lowering drops a for initializer | [Issue](/home/clay/issue_tracking/20260929134256_wesl-rs_for_initializer/issue.md) | [Fix](/home/clay/issue_tracking/20260929134256_wesl-rs_for_initializer/fix.patch) | +37 / −1 | [Assessment](/home/clay/issue_tracking/20260929134256_wesl-rs_for_initializer/assessment.md) |
+
+Items 1 and 2 can remove adapter adjustments after upstream adoption.
+Item 3 enables a package-visible import that remains an expected failure.
+Item 4 records the separate pygfx integration project.
+Its prior recipe patch is absent from the current parent checkout.
+[PR #1329](https://github.com/pygfx/pygfx/pull/1329) already contains its exact
+fix.
+Item 5 can replace the local assertion predicates.
+Item 6 addresses one source of nondeterminism in existing issue #292.
+Item 7 applies when lowering is enabled.
+
+## Priority assessment
 
 Rank prioritizes valid shader workflows and removal of local workarounds.
 Malformed-input fixes rank below those cases. No listed case is a demonstrated
@@ -24,7 +60,7 @@ Merge likelihood is relative. Risk describes possible changes to valid behavior.
 | 1 | [Qualified reference becomes a local cycle](/home/clay/issue_tracking/20260929134130_wesl-rs_qualified_reference/assessment.md), new wesl-rs issue and PR | Small | High | valid shader imports | Moderate | Retargeting matches the final name without checking the qualified path. A valid external call to a same-named function reports a cycle. The tested patch excludes qualified paths from local retargeting. |
 | 2 | [Disabled visibility is ignored](/home/clay/issue_tracking/20260929134128_wesl-rs_disabled_visibility/assessment.md), new wesl-rs issue and PR | Small | High | option parity | Low | First lookup checks visibility despite `visibility=false`. The tested one-condition patch honors the public option. [PR #301](https://github.com/webgpu-tools/wesl-rs/pull/301) introduced the option; [issue #300](https://github.com/webgpu-tools/wesl-rs/issues/300) does not report this branch. |
 | 3 | [Same-package named visibility](/home/clay/issue_tracking/20260929020241_wesl-rs_package_visibility/assessment.md), new wesl-rs issue and PR | Small | Moderate | valid shader imports | Moderate | Usage analysis requires `public` for all canonical package paths, including calls within the same named package. The tested patch compares package identity. Keep cross-package and private controls. |
-| 4 | [pygfx noise precedence](/home/clay/issue_tracking/20260928150000_pygfx_noise_precedence/assessment.md), new pygfx PR | Small | Moderate | separate parent integration | Low | A tested two-line patch adds required parentheses. Current main still has the recorded source. A separate parent project carries a recipe patch. Merge depends on acceptance of strict WGSL grammar despite Naga accepting the original. Contribution guidance requires human communication and AI disclosure. No parser relaxation is justified. |
+| 4 | [pygfx noise precedence](/home/clay/issue_tracking/20260928150000_pygfx_noise_precedence/assessment.md), follow [PR #1329](https://github.com/pygfx/pygfx/pull/1329) | Small | Moderate | separate parent integration | Low | Open PR #1329 already contains the exact two-line fix. Current main still has the recorded source. Do not prepare a duplicate PR. The prior integration used a recipe patch; that recipe is absent from its current checkout. Merge depends on acceptance of strict WGSL grammar despite Naga accepting the original. Contribution guidance requires human communication and AI disclosure. No parser relaxation is justified. |
 | 5 | [NaN tolerance assertions](https://github.com/webgpu-tools/wesl-js/blob/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test/shaders/lib.wesl#L30-L75), new wesl-js issue and PR | Small | Moderate | assertion correctness | Moderate | `diff > tolerance` is false for NaN, so `expectWithin*` passes unordered values. Four predicate changes in the binding reject them. Define infinity behavior before extending non-finite handling; no matching issue or PR appeared in the current tracker search. |
 | 6 | [Non-deterministic module order](https://github.com/webgpu-tools/wesl-rs/issues/292), add evidence and PR there | Moderate | High | reproducible output | Moderate | Identical inputs produce two WGSL outputs because import traversal reads a hash map. A tested sorting patch makes this measured path stable. Issue #292 already covers reproducibility; do not open a second issue. |
 | 7 | [False `for` initializer is lost](/home/clay/issue_tracking/20260929134256_wesl-rs_for_initializer/assessment.md), new wesl-rs issue and PR | Small | High | optional lowering | Moderate | `lower=true` drops an initializer that WGSL executes before the false condition. A focused patch and tests pass. Check scope preservation and one-pass lowering; repeated lowering has a separate known limit. |
