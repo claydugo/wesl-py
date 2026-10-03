@@ -70,7 +70,7 @@ Compilation checks field types and copies settings before releasing the GIL.
 Both enums, `CompileOptions`, and `Features` support pickle for process workers.
 
 The retention options follow
-[wesl-rs `CompileOptions`](https://github.com/webgpu-tools/wesl-rs/blob/0303eccfafd534cc76c91eddd4b4f5c4413a1733/crates/wesl/src/frontend.rs).
+[wesl-rs `CompileOptions`](https://github.com/webgpu-tools/wesl-rs/blob/8bb029aaa2c59b9ff3aca466de5c2289acfd2c40/crates/wesl/src/frontend.rs).
 `keep_main` and `mangle_main` refer to the root module, not a function named `main`.
 
 - `strip=True`: Keep selected root declarations and their dependencies.
@@ -509,10 +509,14 @@ Concurrent calls can share inputs when callers do not modify those inputs.
 
 `wesl.__version__` matches Python distribution metadata. The package uses the
 WESL workspace crates at commit
-[`0303eccfafd534cc76c91eddd4b4f5c4413a1733`](https://github.com/webgpu-tools/wesl-rs/tree/0303eccfafd534cc76c91eddd4b4f5c4413a1733).
+[`8bb029aaa2c59b9ff3aca466de5c2289acfd2c40`](https://github.com/webgpu-tools/wesl-rs/tree/8bb029aaa2c59b9ff3aca466de5c2289acfd2c40).
 This commit follows upstream 0.5.0 and includes
 [PR #301](https://github.com/webgpu-tools/wesl-rs/pull/301) and
-[PR #307](https://github.com/webgpu-tools/wesl-rs/pull/307).
+[PR #307](https://github.com/webgpu-tools/wesl-rs/pull/307), plus the fixes for
+[conditional nodes](https://github.com/webgpu-tools/wesl-rs/pull/309),
+[lexer errors and unfinished comments](https://github.com/webgpu-tools/wesl-rs/pull/310),
+[disabled visibility checks](https://github.com/webgpu-tools/wesl-rs/pull/314), and
+[qualified references](https://github.com/webgpu-tools/wesl-rs/pull/318).
 Python wheels include the compiled Rust dependencies. Source builds require
 Cargo and access to the pinned Git sources unless those sources are cached.
 The source distribution includes `Cargo.lock`; builds use locked resolution.

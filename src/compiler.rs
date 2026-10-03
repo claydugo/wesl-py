@@ -175,11 +175,7 @@ where
         pass::usage_analysis(
             module,
             name,
-            if self.options.visibility {
-                minimum_visibility
-            } else {
-                Visibility::Private
-            },
+            minimum_visibility,
             already_used,
             to_analyze,
             !self.options.visibility,
@@ -226,11 +222,6 @@ where
             })?;
         }
         pass::retarget_idents(&mut module);
-        Visit::<TypeExpression>::visit_rec_mut(&mut module, &mut |expression| {
-            if expression.path.is_some() {
-                expression.ident = Ident::new(expression.ident.to_string());
-            }
-        });
         if self.options.validate {
             pass::validate_wesl(&module).map_err(|error| {
                 error.with_module_path(path.clone(), self.resolver.display_name(path))

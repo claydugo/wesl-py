@@ -10,6 +10,28 @@ from wesl import _native
 @pytest.mark.parametrize(
     "operation", [wesl.check_syntax, wesl.compile_source, _native.ParsedTestModule]
 )
+@pytest.mark.parametrize(
+    ("source", "span"),
+    [
+        ("fn café() { let value = 1 💥 + 2; }", (27, 31)),
+        ("fn café() {}\n/* outer /* inner */", (14, 34)),
+    ],
+)
+def test_lexer_errors_preserve_source_and_byte_spans(
+    operation: Callable[..., object], source: str, span: tuple[int, int]
+) -> None:
+    with pytest.raises(wesl.CompileError, match="invalid token") as caught:
+        operation(source, filename="generated.wesl")
+    (diagnostic,) = caught.value.diagnostics
+    assert diagnostic.message == "invalid token"
+    assert diagnostic.filename == "generated.wesl"
+    assert diagnostic.source == source
+    assert diagnostic.span == span
+
+
+@pytest.mark.parametrize(
+    "operation", [wesl.check_syntax, wesl.compile_source, _native.ParsedTestModule]
+)
 def test_misplaced_import_explains_ordering(
     operation: Callable[..., object],
 ) -> None:

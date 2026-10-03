@@ -1,11 +1,17 @@
 # Upstream integration limits
 
-Reviewed on 2026-09-29 against the pinned WESL commit
+Reviewed on 2026-09-29 against WESL commit
 [`0303ecc`](https://github.com/webgpu-tools/wesl-rs/tree/0303eccfafd534cc76c91eddd4b4f5c4413a1733).
 Reproducers use upstream APIs without the binding's adapter.
 The binding now pins
-[`9c715d9`](https://github.com/webgpu-tools/wesl-rs/commit/9c715d94828680b45b866b875754c49658cc27bd),
-which includes PR #309.
+[`8bb029a`](https://github.com/webgpu-tools/wesl-rs/commit/8bb029aaa2c59b9ff3aca466de5c2289acfd2c40).
+It includes the fixes for
+[conditional nodes](https://github.com/webgpu-tools/wesl-rs/pull/309),
+[lexer errors and unfinished comments](https://github.com/webgpu-tools/wesl-rs/pull/310),
+[disabled visibility checks](https://github.com/webgpu-tools/wesl-rs/pull/314), and
+[qualified references](https://github.com/webgpu-tools/wesl-rs/pull/318).
+These fixes require no local workaround.
+On 2026-10-03, the remaining wesl-rs reproducers fail the same way at `8bb029a`.
 
 ## Next actions
 
@@ -13,25 +19,17 @@ Track the defects below and the candidates in the
 [upstream assessment](../upstream-assessment.md).
 The assessment ranks fix effort, merge likelihood, impact, and risk.
 Its [review packages](../upstream-assessment.md#review-packages) link the local
-report, patch, and validation for the seven selected cases.
-Conditional nodes have [PR #309](https://github.com/webgpu-tools/wesl-rs/pull/309).
-Lexer errors and unfinished comments have
-[PR #310](https://github.com/webgpu-tools/wesl-rs/pull/310).
+report, patch, and validation for the five selected cases.
 PyO3 getter annotations already have a pull request.
 See the [release checklist](../RELEASE_CHECKLIST.md) for publication requirements.
 
 | Item | Current binding behavior | Upstream action |
 | --- | --- | --- |
-| [Disabled visibility](#compiler-driver-integration) | The adapter honors the option | Apply the visibility option during usage analysis |
 | [Disabled imports](#compiler-driver-integration) | The adapter honors the option | Restore the documented behavior of the imports option |
-| [Qualified references](#compiler-driver-integration) | The adapter avoids a false cycle | Keep qualified references separate from local declarations |
 | [Package visibility](#package-visibility-inside-named-packages) | One valid import case remains a strict expected failure | Permit package-visible imports within the same named package |
 | [Quoted visibility](#quoted-visibility-modifiers) | Generated declarations set visibility through the syntax API | Accept visibility keywords in inline declaration quotes |
 | [Diagnostic line boundaries](#diagnostic-rendering-uses-different-line-boundaries) | Compiler errors retain incorrect rendered locations | Count WGSL line breaks when rendering diagnostics |
 | [Parser EOF spans](#parser-eof-spans-split-utf-8-characters) | The binding corrects EOF spans before rendering | Return an empty EOF span at the source end |
-| [Discarded lexer errors](#the-parser-discards-lexer-errors) | Syntax checking and compilation accept invalid tokens | Preserve lexer errors while skipping trivia |
-| [Unfinished comments](#unfinished-block-comments) | Syntax checking accepts unfinished comments | Reject EOF before the closing delimiter in PR #310 |
-| [Optional conditional nodes](#optional-conditional-nodes) | Shared conditional cases use the correct expected output | PR #309 is merged and included in the pin |
 | [Exact assertion values](#the-bundled-assertion-protocol-loses-integer-precision) | Local fields preserve exact operands | Preserve integer operands in shader results and host decoding |
 
 Record each upstream issue or pull request and the fix revision below.
@@ -43,7 +41,7 @@ The Rust examples require neither Python nor a GPU. Use this dependency:
 ```toml
 [dependencies.wesl]
 git = "https://github.com/webgpu-tools/wesl-rs"
-rev = "0303eccfafd534cc76c91eddd4b4f5c4413a1733"
+rev = "8bb029aaa2c59b9ff3aca466de5c2289acfd2c40"
 default-features = false
 features = ["eval"]
 ```
@@ -112,66 +110,6 @@ The binding already rewrites EOF spans to the source end in
 [Failure::from_diagnostic](../src/lib.rs).
 `wesl.check_syntax` reports `CompileError` for this input without panicking.
 Keep that rewrite until upstream supplies an empty span at the actual source end.
-
-## The parser discards lexer errors
-
-Source: [lexer.rs](https://github.com/webgpu-tools/wesl-rs/blob/0303eccfafd534cc76c91eddd4b4f5c4413a1733/crates/wgsl-parse/src/lexer.rs#L756-L782).
-Both `Lexer::new` and `take_two_tokens` select tokens with
-`tok.as_ref().is_ok_and(|tok| !tok.is_trivia())`.
-This predicate skips lexer errors as well as trivia.
-
-```rust
-use wesl::syntax::TranslationUnit;
-
-fn main() {
-    for source in ["💥", "fn main() { let value = 1 $ + 2; }"] {
-        let module = source.parse::<TranslationUnit>().unwrap();
-        println!("{module}");
-    }
-}
-```
-
-Observed: the emoji parses as an empty module.
-The function parses successfully and prints `let value = 1 + 2;`.
-Both inputs require syntax errors. Invalid tokens must not disappear.
-
-The binding inherits this defect.
-`wesl.check_syntax("💥")` succeeds, and `wesl.compile_source` compiles the
-altered expression. There is no local workaround.
-
-Preserve lexer errors when selecting nontrivia tokens, then update the pin.
-Verify invalid characters at the start, between tokens, and at the source end.
-A temporary binding guard must reuse upstream token definitions.
-Do not add a second WGSL lexer.
-
-## Unfinished block comments
-
-The upstream scanner accepts `/*` and `fn main() {} /* unfinished`.
-It also accepts an unfinished outer comment after a closed nested comment.
-The scanner reaches EOF with positive nesting depth and emits trivia.
-[WGSL comments](https://www.w3.org/TR/WGSL/#comments) require matching delimiters.
-
-[PR #310](https://github.com/webgpu-tools/wesl-rs/pull/310) returns a lexer error
-and preserves that error through token filtering.
-Both changes are necessary. Filtering otherwise discards the comment error.
-Focused regressions fail before the patch and pass after it on the pin
-and current main.
-The binding has no local workaround. Adopt the upstream fix after merge.
-
-## Optional conditional nodes
-
-At the reviewed revision, conditional translation removes enabled
-`break if` and `continuing` nodes.
-It retains disabled nodes.
-This contradicts the
-[conditional specification](https://github.com/webgpu-tools/wesl-spec/blob/main/ConditionalTranslation.md).
-
-[PR #309](https://github.com/webgpu-tools/wesl-rs/pull/309) changes the removal
-predicate to `prev.is_false`.
-Focused regressions cover both forms and both truth values.
-They fail before the patch and pass after it on current main.
-The dependency pin now includes this fix.
-The shared cases compare both forms with the correct expected output.
 
 ## PyO3 rejects signature overrides on getters
 
@@ -245,61 +183,35 @@ changing the dependency revision.
 
 ### Compiler driver integration
 
-The pin uses upstream 0.5.0 at `9c715d94828680b45b866b875754c49658cc27bd`.
+The pin uses upstream 0.5.0 at `8bb029aaa2c59b9ff3aca466de5c2289acfd2c40`.
 [The adapter](../src/compiler.rs) uses public `CompilerDriver` APIs for upstream
 passes and local module transformations. It records original sources first.
 The standard frontend keeps its default driver private; this needs no defect report.
 Test discovery and conditional selection do not require the adapter.
 Shader test compilation needs imports to retain generated qualified paths.
 
-Three small examples fail through upstream `wesl::compile` at this revision.
-Use `CompileOptions { visibility: false, keep_main: true, ..Default::default() }`
+Disabling imports fails through upstream `wesl::compile` at this revision.
+Use `CompileOptions { imports: false, keep_main: true, ..Default::default() }`
 and a `wesl::resolver::VirtualResolver` with `package::main` as the main module.
-
-For disabled visibility, the main source is:
+The main source is:
 
 ```wesl
-import library::value;
+import missing::value;
 fn main() -> u32 { return value(); }
 ```
 
-Set the `library` source to `fn value() -> u32 { return 7u; }`.
-Compilation requires public visibility despite the option.
-Making the function public succeeds. A private function still fails when checks
-are disabled. This contradicts the documented visibility option.
-
-For disabled imports, use the same main source with `missing` in place of
-`library`. Also set `imports: false`. Compilation tries to resolve `missing`.
+Compilation tries to resolve `missing`.
 The option documents removal of imports and qualified paths without resolving
 their targets. Both explicit imports and inline paths reproduce the failure.
 
-For the qualified reference, the main source is:
-
-```wesl
-fn value() -> u32 { return package::helper::value(); }
-```
-
-Set `package::helper` to `fn value() -> u32 { return 7u; }`.
-Compilation reports a cycle in `value`.
-Renaming the calling function or importing the helper under an alias succeeds.
-
-Report these cases upstream:
-
-- In `pass::usage_analysis`, apply `ignore_visibility` when first finding a
-  declaration. The adapter passes private minimum visibility when checks are off.
-- Restore `CompileOptions.imports` handling in the frontend. The adapter prevents
-  external module traversal and linking when imports are off.
-- In `pass::retarget_idents`, keep qualified references separate from local
-  declarations. The adapter gives those references independent identifiers after
-  upstream retargeting and before validation.
+Restore `CompileOptions.imports` handling in the frontend. The adapter prevents
+external module traversal and linking when imports are off.
 
 After adopting a fix, remove its adapter adjustment and run these regressions:
 
 | Adjustment | Regression tests |
 | --- | --- |
-| Disabled visibility | `test_external_visibility_is_optional` in [test_compile.py](../tests/test_compile.py) |
 | Disabled imports | `test_import_resolution_can_be_disabled` and `test_disabled_imports_preserve_the_root_entry_point` in [test_compile.py](../tests/test_compile.py) |
-| Qualified references | `test_resource_loader_compiles_package_roots` in [test_resources.py](../tests/test_resources.py) and `test_cooperative_qualified_workgroup_size` in [test_shader_workgroups.py](../tests/test_shader_workgroups.py) |
 
 The adapter still supplies module transformations after these fixes.
 Verify option parity with [tests/upstream.rs](../tests/upstream.rs) when changing it.
@@ -321,7 +233,7 @@ for its generated collector. This uses the upstream syntax API.
 
 ### Package visibility inside named packages
 
-At the pin, [usage analysis](https://github.com/webgpu-tools/wesl-rs/blob/0303eccfafd534cc76c91eddd4b4f5c4413a1733/crates/wesl/src/pass/usage_analysis.rs#L249-L252)
+At the pin, [usage analysis](https://github.com/webgpu-tools/wesl-rs/blob/8bb029aaa2c59b9ff3aca466de5c2289acfd2c40/crates/wesl/src/pass/usage_analysis.rs#L249-L252)
 requires public visibility for an import whose canonical path names a package.
 This also applies when the importing module belongs to that same package.
 A public function in `library` therefore cannot call a helper with package
@@ -338,12 +250,9 @@ cross package boundaries.
 
 ## Local integration requirements
 
-The binding queries custom result types in a fresh evaluation context.
-Named layout constants therefore fail in the binding. Upstream supports them
-when callers execute the module into the context before calling `ty_eval_ty`.
-Transitive constants also work through this public API. Avoiding unrelated module
-assertions would require partial evaluation; it is not an existing API guarantee.
-This is a binding integration limit.
+The binding evaluates named and transitive layout constants for custom result
+types. It evaluates only the required constants before calling `ty_eval_ty`.
+This avoids unrelated module assertions during layout queries.
 
 Cyclic types are invalid WGSL. The standard compiler rejects the tested cycles
 with validation enabled. Direct low-level evaluation without validation can

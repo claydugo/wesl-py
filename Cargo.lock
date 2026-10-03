@@ -1071,7 +1071,7 @@ dependencies = [
 [[package]]
 name = "tokrepr"
 version = "0.1.1"
-source = "git+https://github.com/webgpu-tools/wesl-rs?rev=9c715d94828680b45b866b875754c49658cc27bd#9c715d94828680b45b866b875754c49658cc27bd"
+source = "git+https://github.com/webgpu-tools/wesl-rs?rev=8bb029aaa2c59b9ff3aca466de5c2289acfd2c40#8bb029aaa2c59b9ff3aca466de5c2289acfd2c40"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1081,7 +1081,7 @@ dependencies = [
 [[package]]
 name = "tokrepr-derive"
 version = "0.1.0"
-source = "git+https://github.com/webgpu-tools/wesl-rs?rev=9c715d94828680b45b866b875754c49658cc27bd#9c715d94828680b45b866b875754c49658cc27bd"
+source = "git+https://github.com/webgpu-tools/wesl-rs?rev=8bb029aaa2c59b9ff3aca466de5c2289acfd2c40#8bb029aaa2c59b9ff3aca466de5c2289acfd2c40"
 dependencies = [
  "itertools 0.15.0",
  "proc-macro2",
@@ -1286,7 +1286,7 @@ dependencies = [
 [[package]]
 name = "wesl"
 version = "0.5.0"
-source = "git+https://github.com/webgpu-tools/wesl-rs?rev=9c715d94828680b45b866b875754c49658cc27bd#9c715d94828680b45b866b875754c49658cc27bd"
+source = "git+https://github.com/webgpu-tools/wesl-rs?rev=8bb029aaa2c59b9ff3aca466de5c2289acfd2c40#8bb029aaa2c59b9ff3aca466de5c2289acfd2c40"
 dependencies = [
  "annotate-snippets",
  "anstream",
@@ -1308,12 +1308,12 @@ dependencies = [
 [[package]]
 name = "wesl-core"
 version = "0.1.0"
-source = "git+https://github.com/webgpu-tools/wesl-rs?rev=9c715d94828680b45b866b875754c49658cc27bd#9c715d94828680b45b866b875754c49658cc27bd"
+source = "git+https://github.com/webgpu-tools/wesl-rs?rev=8bb029aaa2c59b9ff3aca466de5c2289acfd2c40#8bb029aaa2c59b9ff3aca466de5c2289acfd2c40"
 
 [[package]]
 name = "wesl-macros"
 version = "0.5.0"
-source = "git+https://github.com/webgpu-tools/wesl-rs?rev=9c715d94828680b45b866b875754c49658cc27bd#9c715d94828680b45b866b875754c49658cc27bd"
+source = "git+https://github.com/webgpu-tools/wesl-rs?rev=8bb029aaa2c59b9ff3aca466de5c2289acfd2c40#8bb029aaa2c59b9ff3aca466de5c2289acfd2c40"
 dependencies = [
  "itertools 0.15.0",
  "proc-macro2",
@@ -1335,7 +1335,7 @@ dependencies = [
 [[package]]
 name = "wesl-quote"
 version = "0.5.0"
-source = "git+https://github.com/webgpu-tools/wesl-rs?rev=9c715d94828680b45b866b875754c49658cc27bd#9c715d94828680b45b866b875754c49658cc27bd"
+source = "git+https://github.com/webgpu-tools/wesl-rs?rev=8bb029aaa2c59b9ff3aca466de5c2289acfd2c40#8bb029aaa2c59b9ff3aca466de5c2289acfd2c40"
 dependencies = [
  "itertools 0.15.0",
  "proc-macro-error3",
@@ -1349,7 +1349,7 @@ dependencies = [
 [[package]]
 name = "wgsl-parse"
 version = "0.5.0"
-source = "git+https://github.com/webgpu-tools/wesl-rs?rev=9c715d94828680b45b866b875754c49658cc27bd#9c715d94828680b45b866b875754c49658cc27bd"
+source = "git+https://github.com/webgpu-tools/wesl-rs?rev=8bb029aaa2c59b9ff3aca466de5c2289acfd2c40#8bb029aaa2c59b9ff3aca466de5c2289acfd2c40"
 dependencies = [
  "annotate-snippets",
  "derive_more",
@@ -1365,7 +1365,7 @@ dependencies = [
 [[package]]
 name = "wgsl-types"
 version = "0.5.0"
-source = "git+https://github.com/webgpu-tools/wesl-rs?rev=9c715d94828680b45b866b875754c49658cc27bd#9c715d94828680b45b866b875754c49658cc27bd"
+source = "git+https://github.com/webgpu-tools/wesl-rs?rev=8bb029aaa2c59b9ff3aca466de5c2289acfd2c40#8bb029aaa2c59b9ff3aca466de5c2289acfd2c40"
 dependencies = [
  "half",
  "itertools 0.15.0",

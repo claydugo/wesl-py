@@ -103,8 +103,8 @@ counts, and completion without changing packaged files.
 
 WESL derives the result buffer layout from the compiled result type and decodes
 the buffer. Custom result modules must retain the upstream field names and types.
-Arbitrary custom layouts are unsupported. The binding does not populate the
-evaluation context for named layout constants. It rejects zero alignment and
+Arbitrary custom layouts are unsupported. The binding evaluates named and
+transitive layout constants. It rejects zero alignment and
 cyclic result types. See [integration requirements](upstream.md#local-integration-requirements).
 
 The test runner uses one shared `wgsl_test` package for assertion results.
