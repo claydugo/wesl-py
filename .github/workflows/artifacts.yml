@@ -83,7 +83,7 @@ jobs:
           PY
       - run: pixi run --locked -e artifacts maturin sdist --out dist
       - run: pixi run --locked -e artifacts twine check --strict dist/*.tar.gz
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
         with:
           python-version: "3.12"
           activate-environment: true
@@ -136,7 +136,7 @@ jobs:
           pixi-version: v0.80.0
           environments: artifacts
           locked: true
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: sdist
           path: sdist
@@ -165,7 +165,7 @@ jobs:
       - name: Audit Python ABI
         shell: bash
         run: pixi run --locked -e artifacts abi3audit --strict --summary dist/*-cp312-abi3-*.whl
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
         with:
           python-version: "3.12"
           activate-environment: true
@@ -226,7 +226,7 @@ jobs:
           pixi-version: v0.80.0
           environments: artifacts
           locked: true
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: sdist
           path: sdist
@@ -257,7 +257,7 @@ jobs:
       - name: Audit Python ABI
         shell: bash
         run: pixi run --locked -e artifacts abi3audit --strict --summary dist/*-cp312-abi3-*.whl
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
         with:
           python-version: "3.12"
           activate-environment: true
@@ -309,11 +309,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: wheel-x86_64-unknown-linux-gnu
           path: dist
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
         with:
           python-version: ${{ matrix.python }}
           activate-environment: true
@@ -333,11 +333,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: wheel-x86_64-unknown-linux-gnu
           path: dist
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
         with:
           python-version: "3.12"
           activate-environment: true
