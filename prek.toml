@@ -1,0 +1,176 @@
+minimum_prek_version = "0.5.4"
+default_stages = ["pre-commit"]
+default_install_hook_types = ["pre-commit", "pre-push"]
+
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "ruff-format"
+name = "Ruff format"
+language = "system"
+entry = "pixi run --locked -e lint ruff format --force-exclude"
+types_or = ["python", "pyi", "jupyter", "markdown"]
+priority = 0
+
+[[repos.hooks]]
+id = "ruff"
+name = "Ruff"
+language = "system"
+entry = "pixi run --locked -e lint ruff check --ignore-noqa ."
+files = { glob = ["**/*.{py,pyi,ipynb,md}", "**/pyproject.toml", "**/ruff.toml", "**/.ruff.toml", "**/.gitignore", "pixi.toml", "pixi.lock", "prek.toml"] }
+include_deleted = true
+pass_filenames = false
+priority = 10
+
+[[repos.hooks]]
+id = "ruff-format-check"
+name = "Ruff format check"
+language = "system"
+entry = "pixi run --locked -e lint ruff format --check ."
+files = { glob = ["**/pyproject.toml", "**/ruff.toml", "**/.ruff.toml", "**/.gitignore", "pixi.toml", "pixi.lock", "prek.toml"] }
+include_deleted = true
+pass_filenames = false
+priority = 10
+
+[[repos.hooks]]
+id = "rustfmt"
+name = "Rustfmt"
+language = "system"
+entry = "pixi run --locked -e rust cargo fmt --all"
+files = { glob = ["**/*.rs", "**/Cargo.toml", "**/rustfmt.toml", "**/.rustfmt.toml", "pixi.toml", "pixi.lock", "prek.toml"] }
+include_deleted = true
+pass_filenames = false
+priority = 3
+
+[[repos.hooks]]
+id = "rumdl"
+name = "rumdl"
+language = "system"
+entry = "pixi run --locked -e lint rumdl check --fix"
+types = ["markdown"]
+priority = 1
+
+[[repos.hooks]]
+id = "rumdl-check"
+name = "rumdl check"
+language = "system"
+entry = "pixi run --locked -e lint rumdl check ."
+files = { glob = ["**/*.md", "**/pyproject.toml", "**/.rumdl.toml", "**/rumdl.toml", "**/.gitignore", "pixi.toml", "pixi.lock", "prek.toml"] }
+include_deleted = true
+pass_filenames = false
+priority = 10
+
+[[repos.hooks]]
+id = "tombi-format"
+name = "Tombi format"
+language = "system"
+entry = "pixi run --locked -e lint tombi format"
+files = { glob = "**/*.toml" }
+priority = 2
+
+[[repos.hooks]]
+id = "tombi-format-check"
+name = "Tombi format check"
+language = "system"
+entry = "pixi run --locked -e lint tombi format --check"
+files = { glob = ["**/pyproject.toml", "**/tombi.toml", "**/.gitignore", "pixi.toml", "pixi.lock", "prek.toml"] }
+include_deleted = true
+pass_filenames = false
+priority = 10
+
+[[repos.hooks]]
+id = "tombi"
+name = "Tombi lint"
+language = "system"
+entry = "pixi run --locked -e lint tombi lint --error-on-warnings"
+files = { glob = ["**/*.toml", "**/.gitignore", "pixi.lock"] }
+include_deleted = true
+pass_filenames = false
+priority = 10
+
+[[repos.hooks]]
+id = "actionlint"
+name = "actionlint"
+language = "system"
+entry = "pixi run --locked -e lint actionlint"
+files = { glob = [".github/workflows/*.{yml,yaml}", ".github/actionlint.{yml,yaml}", "**/.gitignore", "pixi.toml", "pixi.lock", "prek.toml"] }
+include_deleted = true
+pass_filenames = false
+priority = 10
+
+[[repos.hooks]]
+id = "zizmor"
+name = "zizmor"
+language = "system"
+entry = "pixi run --locked -e lint zizmor --strict-collection --no-progress ."
+files = { glob = [".github/workflows/*.{yml,yaml}", "**/action.{yml,yaml}", ".github/dependabot.{yml,yaml}", ".github/zizmor.{yml,yaml}", "zizmor.{yml,yaml}", "**/.gitignore", "pixi.toml", "pixi.lock", "prek.toml"] }
+include_deleted = true
+pass_filenames = false
+priority = 10
+
+[[repos.hooks]]
+id = "rustfmt-check"
+name = "Rustfmt check"
+language = "system"
+entry = "pixi run --locked -e rust cargo fmt --all --check"
+stages = ["pre-push"]
+files = { glob = ["**/*.rs", "**/Cargo.toml", "**/rustfmt.toml", "**/.rustfmt.toml", "pixi.toml", "pixi.lock", "prek.toml"] }
+include_deleted = true
+pass_filenames = false
+priority = 0
+
+[[repos.hooks]]
+id = "clippy"
+name = "Clippy"
+language = "system"
+entry = "pixi run --locked -e rust cargo clippy --locked --all-targets --all-features -- -D warnings"
+stages = ["pre-push"]
+files = { glob = ["**/*.rs", "**/Cargo.toml", "**/Cargo.lock", "**/.cargo/config{,.toml}", "clippy.toml", ".clippy.toml", "pixi.toml", "pixi.lock", "prek.toml"] }
+include_deleted = true
+pass_filenames = false
+priority = 10
+
+[[repos.hooks]]
+id = "ty"
+name = "ty"
+language = "system"
+entry = "pixi run --locked -e dev check-ty"
+stages = ["pre-push"]
+files = { glob = ["python/wesl/**/*.py", "python/wesl/**/*.pyi", "python/wesl/py.typed", "**/ty.toml", "**/pyproject.toml", "**/.gitignore", "pixi.toml", "pixi.lock", "prek.toml"] }
+include_deleted = true
+pass_filenames = false
+priority = 10
+
+[[repos.hooks]]
+id = "pyrefly"
+name = "Pyrefly"
+language = "system"
+entry = "pixi run --locked -e dev check-pyrefly"
+stages = ["pre-push"]
+files = { glob = ["python/wesl/**/*.py", "python/wesl/**/*.pyi", "python/wesl/py.typed", "**/pyrefly.toml", "**/pyproject.toml", "**/setup.py", "**/mypy.ini", "**/pyrightconfig.json", "**/.gitignore", "pixi.toml", "pixi.lock", "prek.toml"] }
+include_deleted = true
+pass_filenames = false
+priority = 10
+
+[[repos.hooks]]
+id = "pyright"
+name = "Pyright"
+language = "system"
+entry = "pixi run --locked -e dev check-pyright"
+stages = ["pre-push"]
+files = { glob = ["python/wesl/**/*.py", "python/wesl/**/*.pyi", "python/wesl/py.typed", "**/pyrightconfig.json", "pyproject.toml", "pixi.toml", "pixi.lock", "prek.toml"] }
+include_deleted = true
+pass_filenames = false
+priority = 10
+
+[[repos.hooks]]
+id = "stubtest"
+name = "Native stubtest"
+language = "system"
+entry = "pixi run --locked -e dev check-stubs"
+stages = ["pre-push"]
+files = { glob = ["python/wesl/**/*.py", "python/wesl/**/*.pyi", "python/wesl/py.typed", "**/*.rs", "**/Cargo.toml", "**/Cargo.lock", "**/.cargo/config{,.toml}", "pyproject.toml", "pixi.toml", "pixi.lock", "prek.toml"] }
+include_deleted = true
+pass_filenames = false
+priority = 20

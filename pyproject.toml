@@ -1,0 +1,109 @@
+[project]
+name = "wesl-py"
+description = "Python bindings for the Rust WESL compiler"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+classifiers = [
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
+  "Programming Language :: Rust",
+]
+dynamic = ["version"]
+
+[project.urls]
+Issues = "https://github.com/claydugo/wesl-py/issues"
+Repository = "https://github.com/claydugo/wesl-py"
+
+[project.entry-points.pytest11]
+wesl = "wesl.pytest_plugin"
+
+[project.optional-dependencies]
+testing = [
+  "pytest>=9.1",
+  "wgpu>=0.32,<0.33",
+]
+
+[build-system]
+requires = ["maturin>=1.15,<2"]
+build-backend = "maturin"
+
+[tool.check-wheel-contents]
+package = ["python/wesl"]
+package_omit = [".*", "__pycache__", "*.pyc", "*.pyo", "*.so", "*.pyd"]
+ignore = ["W102"]
+
+[tool.maturin]
+editable-profile = "dev"
+locked = true
+module-name = "wesl._native"
+python-source = "python"
+
+[tool.pytest.ini_options]
+addopts = ["--import-mode=importlib"]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = ["COM812", "CPY001", "D"]
+
+[tool.ruff.lint.flake8-builtins]
+ignorelist = ["compile"]
+
+[tool.ruff.lint.per-file-ignores]
+"examples/*.py" = ["INP001"]
+"examples/**/__main__.py" = ["T201"]
+"examples/compaction/__main__.py" = ["PLR2004"]
+"examples/imports.py" = ["T201"]
+"examples/rmsnorm/compute.py" = ["PLR2004"]
+"python/wesl/__init__.py" = ["PLR0913"]
+"python/wesl/pytest_plugin.py" = ["PLC0415", "PLR0913", "PTH100"]
+"python/wesl/testing.py" = ["PLC0415", "PLR0913"]
+"tests/*.py" = ["INP001", "S101"]
+"tests/examples/convolution/conftest.py" = ["PLC0415", "PLR0913"]
+"tests/examples/convolution/test_activation.py" = ["E402"]
+"tests/examples/convolution/test_operators.py" = ["PLR0913", "PLR2004"]
+"tests/examples/test_compaction.py" = ["PLR2004"]
+"tests/examples/test_example_render.py" = ["PLR2004"]
+"tests/examples/test_multiscale_analysis.py" = ["PLR2004"]
+"tests/examples/test_optimizers.py" = ["PLR2004"]
+"tests/examples/test_sdf.py" = ["PLR2004"]
+"tests/examples/testing/shaders/buffers/conftest.py" = ["PLC0415"]
+"tests/test_compile.py" = ["FBT001", "PLR2004"]
+"tests/test_diagnostics.py" = ["S301"]
+"tests/test_project.py" = ["PLR2004"]
+"tests/test_pytest_plugin.py" = ["S314"]
+"tests/test_pytest_reporting.py" = ["S314"]
+"tests/test_resources.py" = ["S603"]
+"tests/test_shader_assertions.py" = ["PLC0415", "PLR0913", "PLR2004"]
+"tests/test_shader_compilation.py" = ["PLR2004"]
+"tests/test_shader_workgroups.py" = ["E402"]
+"tests/test_sources.py" = ["S301"]
+"tests/test_testing.py" = ["PLC0415", "PLR2004"]
+
+[tool.rumdl]
+enable = ["ALL"]
+
+[tool.rumdl.MD013]
+line-length = 80
+code-block-line-length = 88
+
+[tool.rumdl.MD063]
+style = "sentence-case"
+ignore-words = ["Python", "wesl-py"]
+
+[tool.tombi.lint.rules]
+dotted-keys-out-of-order = "error"
+key-empty = "error"
+tables-out-of-order = "error"
+
+[tool.tombi.schema]
+enabled = true
+strict = true

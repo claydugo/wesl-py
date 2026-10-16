@@ -1,0 +1,9 @@
+.pixi/
+target/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.rumdl_cache/
+.mypy_cache/
+*.pyc
+dist/

@@ -1,0 +1,22 @@
+[advisories]
+ignore = [
+  { id = "RUSTSEC-2025-0075", reason = "pyo3-stub-gen uses rustpython-parser, which depends on unic-char-range. Accept this maintenance advisory until upstream migrates." },
+  { id = "RUSTSEC-2025-0080", reason = "pyo3-stub-gen uses rustpython-parser, which depends on unic-common. Accept this maintenance advisory until upstream migrates." },
+  { id = "RUSTSEC-2025-0081", reason = "pyo3-stub-gen uses rustpython-parser, which depends on unic-char-property. Accept this maintenance advisory until upstream migrates." },
+  { id = "RUSTSEC-2025-0090", reason = "pyo3-stub-gen uses rustpython-parser, which depends on unic-emoji-char. Accept this maintenance advisory until upstream migrates." },
+  { id = "RUSTSEC-2025-0098", reason = "pyo3-stub-gen uses rustpython-parser, which depends on unic-ucd-version. Accept this maintenance advisory until upstream migrates." },
+  { id = "RUSTSEC-2025-0100", reason = "pyo3-stub-gen uses rustpython-parser, which depends on unic-ucd-ident. Accept this maintenance advisory until upstream migrates." },
+]
+
+[licenses]
+allow = [
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "MIT",
+  "Unicode-3.0",
+  "Zlib",
+]
+exceptions = [
+  { crate = "tiny-keccak", allow = ["CC0-1.0"] },
+  { crate = "unicode_names2", allow = ["MIT", "Unicode-DFS-2016"] },
+]

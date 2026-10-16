@@ -1,0 +1,134 @@
+[workspace]
+name = "wesl-py"
+requires-pixi = ">=0.80"
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64", "win-64"]
+
+[dependencies]
+python = ">=3.12,<3.13"
+
+[pypi-dependencies]
+wesl-py = { path = ".", editable = true }
+
+[pypi-options]
+no-build-isolation = ["wesl-py"]
+
+[feature.build.dependencies]
+rust = ">=1.97.1"
+rust-src = ">=1.97.1"
+maturin = ">=1.15,<2"
+
+[feature.artifacts.dependencies]
+abi3audit = "*"
+check-wheel-contents = ">=0.6.3,<0.7"
+twine = "*"
+
+[feature.artifacts.target.osx-arm64.dependencies]
+delocate = "*"
+
+[feature.artifacts.target.osx-arm64.activation.env]
+MACOSX_DEPLOYMENT_TARGET = "11.0"
+
+[feature.artifacts.target.win-64.dependencies]
+delvewheel = "*"
+
+[feature.test.dependencies]
+pytest = ">=9.1"
+
+[feature.gpu.dependencies]
+numpy = ">=1.26"
+wgpu-py = ">=0.32,<0.33"
+
+[feature.examples.dependencies]
+imageio = ">=2.37"
+imgui-bundle = ">=1.92.801,<1.92.900"
+numpy = ">=2.1"
+pygfx = ">=0.17"
+pyglfw = ">=2.7"
+rendercanvas = ">=2.7.2"
+tifffile = ">=2024.8.30"
+
+[feature.dev.dependencies]
+ruff = ">=0.16.7"
+mypy = ">=1.15"
+ty = ">=0.0.80"
+pyrefly = ">=1.3"
+pyright = ">=1.1.400"
+wgpu-py = ">=0.32,<0.33"
+
+[feature.dev.tasks]
+check-ty = "ty check python/wesl"
+check-pyrefly = "pyrefly check python/wesl"
+check-pyright = "pyright python/wesl"
+check-stubs = "pixi reinstall --locked -e dev wesl-py && python -m mypy.stubtest wesl._native --concise"
+
+[feature.rust.dependencies]
+rust = ">=1.97.1"
+cargo-machete = ">=0.9.1,<0.10"
+cargo-deny = ">=0.20.2,<0.21"
+
+[feature.rust.tasks]
+check-rust = "cargo fmt --all --check && cargo clippy --locked --all-targets --all-features -- -D warnings"
+check-dependencies = "cargo machete ./Cargo.toml && cargo deny --locked --all-features check"
+
+[feature.lint.dependencies]
+actionlint = ">=1.7.12,<2"
+prek = ">=0.5.4,<0.6"
+pyflakes = ">=3.4,<4"
+python = ">=3.12,<3.13"
+ruff = ">=0.16.7"
+shellcheck = ">=0.11,<0.12"
+tombi = ">=1.5.8,<2"
+zizmor = ">=1.30.1,<2"
+
+[feature.lint.target.linux-64.dependencies]
+rumdl = ">=0.2.53,<0.3"
+
+[feature.lint.target.win-64.dependencies]
+rumdl = ">=0.2.53,<0.3"
+
+[feature.lint.target.osx-arm64.tasks]
+rumdl = "true"
+
+[feature.lint.tasks]
+format = "ruff format . && pixi run --locked -e lint rumdl check --fix . && tombi format && pixi run --locked -e rust cargo fmt --all"
+lint = "ruff check --ignore-noqa . && ruff format --check . && pixi run --locked -e lint rumdl check . && tombi format --check && tombi lint --error-on-warnings && actionlint && zizmor --strict-collection --no-progress ."
+rumdl = "rumdl"
+
+[feature.testing.pypi-dependencies]
+wesl-py = { path = ".", editable = true, extras = ["testing"] }
+
+[feature.testing.dependencies]
+pytest-regressions = ">=2.5"
+pytest-xdist = ">=3.6"
+
+[environments]
+default = { features = ["build"], solve-group = "default" }
+test = { features = ["build", "test"], solve-group = "default" }
+gpu = { features = ["build", "test", "gpu"], solve-group = "default" }
+examples = { features = ["build", "gpu", "examples"], solve-group = "default" }
+dev = { features = ["build", "dev", "test"], solve-group = "default" }
+lint = { features = ["lint"], no-default-feature = true }
+testing = { features = ["build", "test", "gpu", "examples", "testing"], solve-group = "default" }
+
+[environments.rust]
+features = ["rust"]
+no-default-feature = true
+dependencies = { python = ">=3.12,<3.13" }
+
+[environments.artifacts]
+features = ["build", "artifacts"]
+no-default-feature = true
+dependencies = { python = ">=3.12,<3.13" }
+
+[tasks]
+test = { cmd = "cargo test --locked && python -m pytest", default-environment = "testing" }
+generate-stubs = { cmd = "cargo run --locked --features stub-gen --bin generate-stubs && ruff check --ignore-noqa --fix --config \"lint.extend-safe-fixes = ['PYI021', 'PYI029']\" --ignore E501 python/wesl/_native.pyi && ruff format python/wesl/_native.pyi", default-environment = "dev" }
+
+[tasks.check-types]
+depends-on = [
+  { task = "check-ty", environment = "dev" },
+  { task = "check-pyrefly", environment = "dev" },
+  { task = "check-pyright", environment = "dev" },
+  { task = "check-stubs", environment = "dev" },
+]

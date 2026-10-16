@@ -1,0 +1,100 @@
+[package]
+name = "wesl-py"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+description = "Python bindings for the Rust WESL compiler"
+repository = "https://github.com/claydugo/wesl-py"
+license = "MIT"
+include = [
+  "/CONTRIBUTING.md",
+  "/Cargo.lock",
+  "/Cargo.toml",
+  "/LICENSE",
+  "/README.md",
+  "/clippy.toml",
+  "/deny.toml",
+  "/pixi.lock",
+  "/pixi.toml",
+  "/prek.toml",
+  "/pyproject.toml",
+  "/rustfmt.toml",
+  "/wesl.toml",
+  "docs/**",
+  "examples/**",
+  "python/**",
+  "src/**",
+  "tests/**",
+]
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+name = "_native"
+
+[[bin]]
+name = "generate-stubs"
+path = "src/bin/generate_stubs.rs"
+required-features = ["stub-gen"]
+
+[dependencies]
+pyo3 = { version = ">=0.29.2,<0.30", features = ["abi3-py312"] }
+pyo3-stub-gen = { version = "0.23.1", default-features = false }
+wesl = { version = "0.6.0", default-features = false, features = ["eval"] }
+wesl-quote = "0.6.0"
+wgsl-parse = { version = "0.6.0", default-features = false }
+
+[features]
+stub-gen = []
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+
+clone_on_ref_ptr = "deny"
+cognitive_complexity = "deny"
+needless_collect = "deny"
+option_if_let_else = "deny"
+redundant_clone = "deny"
+use_self = "deny"
+
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+dbg_macro = "deny"
+empty_drop = "deny"
+empty_enum_variants_with_brackets = "deny"
+empty_structs_with_brackets = "deny"
+error_impl_error = "deny"
+exit = "deny"
+expect_used = "deny"
+infinite_loop = "deny"
+lossy_float_literal = "deny"
+mem_forget = "deny"
+missing_assert_message = "deny"
+panic = "deny"
+panic_in_result_fn = "deny"
+print_stderr = "deny"
+print_stdout = "deny"
+rc_buffer = "deny"
+rest_pat_in_fully_bound_structs = "deny"
+str_to_string = "deny"
+string_add = "deny"
+string_slice = "deny"
+todo = "deny"
+unimplemented = "deny"
+unnecessary_safety_comment = "deny"
+unwrap_used = "deny"
+
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
+[lints.rust]
+unsafe_code = "deny"
+unused = { level = "deny", priority = -1 }
+unused_crate_dependencies = "warn"
+
+[profile.release]
+strip = "symbols"
+lto = "thin"
+codegen-units = 1
