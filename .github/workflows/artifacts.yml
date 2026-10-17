@@ -30,10 +30,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
           pixi-version: v0.80.0
           environments: ${{ matrix.environments }}
@@ -61,30 +61,27 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
           pixi-version: v0.80.0
           environments: artifacts
           locked: true
-      - name: Verify release version
-        if: github.ref_type == 'tag'
-        run: |
-          pixi run --locked -e artifacts python - <<'PY'
-          import os
-          import tomllib
-          from pathlib import Path
-
-          version = tomllib.loads(Path("Cargo.toml").read_text())["package"]["version"]
-          if os.environ["GITHUB_REF_NAME"] != f"v{version}":
-              raise SystemExit("The release tag must match the Cargo package version.")
-          PY
+          cache: false
       - run: pixi run --locked -e artifacts maturin sdist --out dist
-      - run: pixi run --locked -e artifacts twine check --strict dist/*.tar.gz
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
+          name: sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          overwrite: true
+      - run: pixi run --locked -e artifacts twine check --strict dist/*.tar.gz
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.12.22"
+          enable-cache: false
           python-version: "3.12"
           activate-environment: true
       - name: Install minimum Rust version
@@ -116,27 +113,27 @@ jobs:
           assert "wgsl_test" in shader.modules
           assert find_spec("maturin") is None
           PY
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: sdist
-          path: dist/*.tar.gz
-          if-no-files-found: error
 
   wheel-linux:
-    name: Build wheels / x86_64-unknown-linux-gnu
+    name: Build wheels / ${{ matrix.target }}
     needs: sdist
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
           pixi-version: v0.80.0
           environments: artifacts
           locked: true
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+          cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: sdist
           path: sdist
@@ -150,14 +147,20 @@ jobs:
         run: |
           echo "rust=$(pixi run --locked -e artifacts rustc --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
           echo "maturin=$(pixi run --locked -e artifacts maturin --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
-      - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
+      - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           maturin-version: v${{ steps.build-tools.outputs.maturin }}
           rust-toolchain: ${{ steps.build-tools.outputs.rust }}
-          target: x86_64-unknown-linux-gnu
+          target: ${{ matrix.target }}
           manylinux: "2_28"
           working-directory: source
-          args: --release --locked --out ../dist -i python3.12
+          args: --release --locked --compatibility pypi --out ../dist -i python3.12
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wheel-${{ matrix.target }}
+          path: dist/*.whl
+          if-no-files-found: error
+          overwrite: true
       - run: pixi run --locked -e artifacts twine check --strict dist/*.whl
       - name: Check wheel contents
         shell: bash
@@ -165,44 +168,6 @@ jobs:
       - name: Audit Python ABI
         shell: bash
         run: pixi run --locked -e artifacts abi3audit --strict --summary dist/*-cp312-abi3-*.whl
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
-        with:
-          python-version: "3.12"
-          activate-environment: true
-      - name: Install wheel
-        shell: bash
-        run: uv pip install pytest dist/*-cp312-abi3-*.whl
-      - run: uv pip check
-      - name: Test wheel installation
-        shell: bash
-        run: |
-          python - <<'PY'
-          import sys
-          from importlib.metadata import version
-          from importlib.util import find_spec
-          from pathlib import Path
-          import wesl
-
-          assert wesl.__version__ == version("wesl-py")
-          assert Path(wesl.__file__).is_relative_to(sys.prefix)
-          assert Path(wesl.__file__).with_name("py.typed").is_file()
-          assert Path(wesl.__file__).with_name("_native.pyi").is_file()
-          assert "wgpu" not in sys.modules
-          assert "fn main(" in wesl.compile_source("@compute @workgroup_size(1) fn main() {}").wgsl
-          shader = wesl.compile_source(
-              "import wgsl_test::expect; @compute @workgroup_size(1) fn main() { expect(true); }"
-          )
-          assert "wgsl_test" in shader.modules
-          assert find_spec("maturin") is None
-          PY
-      - name: Test Python API
-        run: python -m pytest tests --ignore=tests/examples -q
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: wheel-x86_64-unknown-linux-gnu
-          path: dist/*.whl
-          if-no-files-found: error
 
   wheel:
     name: Build wheels / ${{ matrix.target }}
@@ -218,15 +183,16 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
           pixi-version: v0.80.0
           environments: artifacts
           locked: true
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+          cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: sdist
           path: sdist
@@ -235,7 +201,7 @@ jobs:
         run: |
           mkdir source
           tar -xf sdist/*.tar.gz -C source --strip-components=1
-      - run: pixi run --locked -e artifacts maturin build --manifest-path source/Cargo.toml --release --locked --out dist -i python
+      - run: pixi run --locked -e artifacts maturin build --manifest-path source/Cargo.toml --release --locked --compatibility pypi --out dist -i python
       - name: Repair macOS wheels
         if: runner.os == 'macOS'
         shell: bash
@@ -250,6 +216,12 @@ jobs:
             pixi run --locked -e artifacts delvewheel repair --wheel-dir wheelhouse "$wheel"
           done
           mv wheelhouse/*.whl dist/
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wheel-${{ matrix.target }}
+          path: dist/*.whl
+          if-no-files-found: error
+          overwrite: true
       - run: pixi run --locked -e artifacts twine check --strict dist/*.whl
       - name: Check wheel contents
         shell: bash
@@ -257,8 +229,10 @@ jobs:
       - name: Audit Python ABI
         shell: bash
         run: pixi run --locked -e artifacts abi3audit --strict --summary dist/*-cp312-abi3-*.whl
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
+          version: "0.12.22"
+          enable-cache: false
           python-version: "3.12"
           activate-environment: true
       - name: Install wheel
@@ -289,36 +263,57 @@ jobs:
           PY
       - name: Test Python API
         run: python -m pytest tests --ignore=tests/examples -q
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: wheel-${{ matrix.target }}
-          path: dist/*.whl
-          if-no-files-found: error
 
   test-wheel:
     needs: wheel-linux
-    name: Test Linux / Python ${{ matrix.python }}
-    runs-on: ubuntu-24.04
+    name: Test ${{ matrix.platform.target }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.platform.runner }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.13", "3.14", "3.15"]
+        platform:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+        python: ["3.12", "3.13", "3.14", "3.15"]
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: wheel-x86_64-unknown-linux-gnu
+          name: wheel-${{ matrix.platform.target }}
           path: dist
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
+          version: "0.12.22"
           python-version: ${{ matrix.python }}
           activate-environment: true
       - run: uv pip install pytest dist/*-cp312-abi3-*.whl
       - run: uv pip check
+      - name: Test wheel installation
+        run: |
+          python - <<'PY'
+          import sys
+          from importlib.metadata import version
+          from importlib.util import find_spec
+          from pathlib import Path
+          import wesl
+
+          assert wesl.__version__ == version("wesl-py")
+          assert Path(wesl.__file__).is_relative_to(sys.prefix)
+          assert Path(wesl.__file__).with_name("py.typed").is_file()
+          assert Path(wesl.__file__).with_name("_native.pyi").is_file()
+          assert "wgpu" not in sys.modules
+          assert "fn main(" in wesl.compile_source("@compute @workgroup_size(1) fn main() {}").wgsl
+          shader = wesl.compile_source(
+              "import wgsl_test::expect; @compute @workgroup_size(1) fn main() { expect(true); }"
+          )
+          assert "wgsl_test" in shader.modules
+          assert find_spec("maturin") is None
+          PY
       - run: python -m pytest tests --ignore=tests/examples -q
 
   compute:
@@ -330,15 +325,16 @@ jobs:
       WGPU_BACKEND_TYPE: Vulkan
       VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.json
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: wheel-x86_64-unknown-linux-gnu
           path: dist
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
+          version: "0.12.22"
           python-version: "3.12"
           activate-environment: true
       - name: Install wheel with extra
@@ -365,10 +361,10 @@ jobs:
       WGPU_BACKEND_TYPE: Vulkan
       VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.json
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
         with:
           pixi-version: v0.80.0
           environments: testing

@@ -37,7 +37,7 @@ def test_failure_report_renders_shader_source(tmp_path: Path, line_break: str) -
     assert error.diagnostic.filename == str(filename)
     assert str(error) == (
         "error: expectEq failed\n"
-        " --> shaders/math.test.wesl:2:2\n"
+        f" --> {Path('shaders', 'math.test.wesl')}:2:2\n"
         "  |\n"
         "2 | /     wgsl_test::expectEq(\n"
         "3 | |         3u + 4u,\n"
@@ -45,7 +45,7 @@ def test_failure_report_renders_shader_source(tmp_path: Path, line_break: str) -
         "5 | |     );\n"
         "  | |______^ expectEq failed\n"
         "  |\n"
-        "  = note: in package::main (shaders/math.test.wesl)\n\n"
+        f"  = note: in package::main ({Path('shaders', 'math.test.wesl')})\n\n"
         "  actual:   7u\n"
         "  expected: 8u\n\n"
         "1 of 1 assertions failed"
