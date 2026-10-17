@@ -74,7 +74,7 @@ def test_directories_and_archives_load_the_same_modules(tmp_path: Path) -> None:
     (directory / "nested/helper.wesl").write_bytes(helper.encode())
     (directory / "nested/helper.wgsl").write_text("fn ignored() {}")
     source = "fn value() -> u32 { return package::nested::helper::café(); }"
-    (directory / "package.wesl").write_text(source)
+    (directory / "package.wesl").write_text(source, encoding="utf-8")
     (directory / "package.wgsl").write_text("fn ignored() {}")
     (directory / "math.test.wesl").write_text("@test fn unfinished(")
     (directory / "notes.txt").write_text("not a shader")
