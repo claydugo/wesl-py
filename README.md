@@ -10,7 +10,15 @@ Requires Python 3.12 or later.
 
 The distribution name is `wesl-py`; import it as `wesl`.
 
-TODO: add pip install instructions.
+```bash
+pip install wesl-py
+```
+
+To run shader tests, install the `testing` extra. It adds pytest and wgpu.
+
+```bash
+pip install "wesl-py[testing]"
+```
 
 ## Compile a shader
 
