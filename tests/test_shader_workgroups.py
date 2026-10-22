@@ -2,6 +2,7 @@ from pathlib import Path
 from struct import pack, unpack
 
 import pytest
+import wesl
 
 wgpu = pytest.importorskip("wgpu")
 from wesl.testing import ShaderAssertionError, run_test
@@ -22,23 +23,24 @@ def test_cooperative_failures_retain_counts_and_source(
     with pytest.raises(ShaderAssertionError) as captured:
         run_test(
             wesl_device,
-            {
-                "package::main": """
+            wesl.Compiler(
+                modules={
+                    "package::main": """
                     import wgsl_test::expect;
                     import package::helper::verify;
-                    override failed_lanes: u32 = 1u;
                     @test @workgroup_size(32)
                     fn failures(@builtin(local_invocation_index) lane: u32) {
                         expect(true);
-                        if lane >= 32u - failed_lanes { verify(lane); }
+                        if lane >= 32u - constants::failed_lanes { verify(lane); }
                         workgroupBarrier();
                         expect(true);
                     }
                 """,
-                "package::helper": source,
-            },
+                    "package::helper": source,
+                },
+                filenames={"package::helper": "cooperative/helper.wesl"},
+            ),
             "failures",
-            filenames={"package::helper": "cooperative/helper.wesl"},
             constants={"failed_lanes": failed_lanes},
         )
     error = captured.value
@@ -71,8 +73,9 @@ def test_cooperative_generated_names_avoid_user_declarations(
     try:
         run_test(
             wesl_device,
-            {
-                "package::main": """
+            wesl.Compiler(
+                modules={
+                    "package::main": """
                     import package::configuration::width as wesl_test_entry_parameter_0;
                     @group(0) @binding(0)
                     var<storage, read_write> invocations: array<u32>;
@@ -87,9 +90,10 @@ def test_cooperative_generated_names_avoid_user_declarations(
                         invocations[position.x] = position.x;
                     }
                 """,
-                "package::configuration": "const width = 8u;",
-                "wgsl_test::TestResult": result_source,
-            },
+                    "package::configuration": "const width = 8u;",
+                    "wgsl_test::TestResult": result_source,
+                }
+            ),
             "wesl_test_entry_invocation",
             resources={0: [{"binding": 0, "resource": {"buffer": output}}]},
         )

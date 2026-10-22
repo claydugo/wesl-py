@@ -23,6 +23,7 @@ wesl = "wesl.pytest_plugin"
 
 [project.optional-dependencies]
 testing = [
+  "numpy>=1.26",
   "pytest>=9.1",
   "wgpu>=0.32,<0.33",
 ]
@@ -44,6 +45,7 @@ python-source = "python"
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]
+markers = ["gpu: requires a WebGPU adapter (hardware or software)"]
 testpaths = ["tests"]
 
 [tool.ruff]
@@ -64,6 +66,7 @@ ignorelist = ["compile"]
 "examples/imports.py" = ["T201"]
 "examples/rmsnorm/compute.py" = ["PLR2004"]
 "python/wesl/__init__.py" = ["PLR0913"]
+"python/wesl/reflect.py" = ["PLC0415", "PLR0913"]
 "python/wesl/pytest_plugin.py" = ["PLC0415", "PLR0913", "PTH100"]
 "python/wesl/testing.py" = ["PLC0415", "PLR0913"]
 "tests/*.py" = ["INP001", "S101"]

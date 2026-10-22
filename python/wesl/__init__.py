@@ -5,7 +5,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Self, SupportsFloat
 
-from . import _native
+from . import _native, reflect
 from ._constants import add_constant_modules
 from ._native import (
     CompileError,
@@ -14,7 +14,7 @@ from ._native import (
     Source,
     __version__,
 )
-from ._project import absolute_path, load_project
+from ._project import Project, absolute_path, load_project
 from ._resources import LoadedModules, load_modules, module_name
 
 __all__ = [
@@ -34,10 +34,8 @@ __all__ = [
     "compile_file",
     "compile_source",
     "load_modules",
+    "reflect",
 ]
-
-
-type _ConstantModules = Mapping[str, Mapping[str, SupportsFloat]]
 
 
 class Feature(Enum):
@@ -97,7 +95,7 @@ def compile(
     root: str = "package::main",
     options: CompileOptions | None = None,
     features: Features | Mapping[str, bool | Feature] | None = None,
-    constant_modules: _ConstantModules | None = None,
+    constants: Mapping[str, SupportsFloat | str] | None = None,
     keep: Sequence[str] | _Unset | None = _Unset.Value,
     keep_main: bool | None = None,
     strip: bool | None = None,
@@ -120,8 +118,8 @@ def compile(
     if options is not None and not isinstance(options.mangler, ManglerKind):
         message = "mangler must be ManglerKind"
         raise TypeError(message)
-    if constant_modules is not None:
-        modules = add_constant_modules(modules, constant_modules)
+    if constants:
+        modules = add_constant_modules(modules, {"constants": constants})
     options = CompileOptions() if options is None else options
     options = replace(
         options,
@@ -135,21 +133,14 @@ def compile(
         strip=options.strip if strip is None else strip,
     )
     return _native.compile(
-        modules,
+        Compiler(
+            options=options,
+            modules=modules,
+            filenames={} if filenames is None else filenames,
+            root_directory=root_directory,
+            dependencies={} if dependencies is None else dependencies,
+        ),
         root,
-        options,
-        {}
-        if filenames is None
-        else {name: os.fspath(path) for name, path in filenames.items()},
-        None if root_directory is None else os.fspath(root_directory),
-        {
-            "wgsl_test": str(Path(__file__).parent / "shaders/wgsl_test"),
-            **(
-                {}
-                if dependencies is None
-                else {name: os.fspath(path) for name, path in dependencies.items()}
-            ),
-        },
     )
 
 
@@ -161,7 +152,7 @@ def compile_source(
     filename: str | os.PathLike[str] = "<string>",
     options: CompileOptions | None = None,
     features: Features | Mapping[str, bool | Feature] | None = None,
-    constant_modules: _ConstantModules | None = None,
+    constants: Mapping[str, SupportsFloat | str] | None = None,
     keep: Sequence[str] | _Unset | None = _Unset.Value,
     keep_main: bool | None = None,
     strip: bool | None = None,
@@ -187,7 +178,7 @@ def compile_source(
         root=root,
         options=options,
         features=features,
-        constant_modules=constant_modules,
+        constants=constants,
         keep=keep,
         keep_main=keep_main,
         strip=strip,
@@ -204,7 +195,7 @@ def compile_file(
     root_directory: str | os.PathLike[str] | None = None,
     options: CompileOptions | None = None,
     features: Features | Mapping[str, bool | Feature] | None = None,
-    constant_modules: _ConstantModules | None = None,
+    constants: Mapping[str, SupportsFloat | str] | None = None,
     keep: Sequence[str] | _Unset | None = _Unset.Value,
     keep_main: bool | None = None,
     strip: bool | None = None,
@@ -224,7 +215,7 @@ def compile_file(
         filename=path,
         options=options,
         features=features,
-        constant_modules=constant_modules,
+        constants=constants,
         keep=keep,
         keep_main=keep_main,
         strip=strip,
@@ -264,11 +255,38 @@ class Compiler:
             root_directory=project.root_directory
             if root_directory is None
             else absolute_path(Path(root_directory)),
-            dependencies={}
+            dependencies={
+                name: Project(directory / "wesl.toml").root_directory
+                for name, directory in project.dependencies.items()
+            }
             if dependencies is None
             else {
                 name: absolute_path(Path(path)) for name, path in dependencies.items()
             },
+        )
+
+    def compile(
+        self,
+        *,
+        root: str = "package::main",
+        features: Features | Mapping[str, bool | Feature] | None = None,
+        constants: Mapping[str, SupportsFloat | str] | None = None,
+        keep: Sequence[str] | _Unset | None = _Unset.Value,
+        keep_main: bool | None = None,
+        strip: bool | None = None,
+    ) -> CompileResult:
+        return compile(
+            self.modules,
+            root=root,
+            options=self.options,
+            features=features,
+            constants=constants,
+            keep=keep,
+            keep_main=keep_main,
+            strip=strip,
+            filenames=self.filenames,
+            root_directory=self.root_directory,
+            dependencies=self.dependencies,
         )
 
     def compile_source(
@@ -278,7 +296,7 @@ class Compiler:
         root: str = "package::main",
         filename: str | os.PathLike[str] = "<string>",
         features: Features | Mapping[str, bool | Feature] | None = None,
-        constant_modules: _ConstantModules | None = None,
+        constants: Mapping[str, SupportsFloat | str] | None = None,
         keep: Sequence[str] | _Unset | None = _Unset.Value,
         keep_main: bool | None = None,
         strip: bool | None = None,
@@ -290,7 +308,7 @@ class Compiler:
             filename=filename,
             options=self.options,
             features=features,
-            constant_modules=constant_modules,
+            constants=constants,
             keep=keep,
             keep_main=keep_main,
             strip=strip,
@@ -304,7 +322,7 @@ class Compiler:
         filename: str | os.PathLike[str],
         *,
         features: Features | Mapping[str, bool | Feature] | None = None,
-        constant_modules: _ConstantModules | None = None,
+        constants: Mapping[str, SupportsFloat | str] | None = None,
         keep: Sequence[str] | _Unset | None = _Unset.Value,
         keep_main: bool | None = None,
         strip: bool | None = None,
@@ -320,7 +338,7 @@ class Compiler:
             root_directory=self.root_directory,
             options=self.options,
             features=features,
-            constant_modules=constant_modules,
+            constants=constants,
             keep=keep,
             keep_main=keep_main,
             strip=strip,

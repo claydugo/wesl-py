@@ -59,7 +59,7 @@ class Renderer:
             )
         return compiler.compile_file(
             f"examples/optimizers/shaders/{filename}",
-            constant_modules={"package::examples::optimizers::layout": self.layout},
+            constants=self.layout,
         )
 
     def build(self) -> None:

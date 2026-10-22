@@ -1,8 +1,4 @@
 #![expect(
-    clippy::too_many_arguments,
-    reason = "Python bindings accept compiler settings and source inputs"
-)]
-#![expect(
     clippy::struct_excessive_bools,
     reason = "Compiler options mirror the Python API and upstream compiler flags"
 )]
@@ -23,12 +19,16 @@ use pyo3::{
 use wesl::{
     Resolver,
     error::ResolveError,
-    resolver::{FileResolver, Router, StandardResolver, VirtualResolver},
+    eval::LiteralInstance,
+    resolver::{FileResolver, Router, VirtualResolver},
     sourcemap::SourceMap,
 };
 use wgsl_parse::{
     error::ErrorKind,
-    syntax::{GlobalDeclaration, ImportStatement, ModulePath, PathOrigin, TranslationUnit},
+    syntax::{
+        DeclarationKind, GlobalDeclaration, ImportStatement, ModulePath, PathOrigin,
+        TranslationUnit,
+    },
 };
 
 #[deny(clippy::too_many_arguments, clippy::struct_excessive_bools)]
@@ -183,6 +183,49 @@ impl TryFrom<CompileOptions<'_>> for wesl::CompileOptions {
             features: options.features.try_into()?,
             ..Self::default()
         })
+    }
+}
+
+#[derive(FromPyObject)]
+struct Compiler<'py> {
+    options: CompileOptions<'py>,
+    modules: Bound<'py, PyMapping>,
+    filenames: Bound<'py, PyMapping>,
+    root_directory: Option<PathBuf>,
+    dependencies: Bound<'py, PyMapping>,
+}
+
+struct Sources {
+    modules: Vec<(String, String)>,
+    filenames: Vec<(String, PathBuf)>,
+    root_directory: Option<PathBuf>,
+    dependencies: Vec<(String, PathBuf)>,
+}
+
+impl Compiler<'_> {
+    fn split(self) -> PyResult<(wesl::CompileOptions, Sources)> {
+        let mut dependencies: Vec<(String, PathBuf)> = self.dependencies.items()?.extract()?;
+        if !dependencies.iter().any(|(name, _)| name == "wgsl_test") {
+            let package: PathBuf = self
+                .dependencies
+                .py()
+                .import("wesl")?
+                .getattr("__file__")?
+                .extract()?;
+            dependencies.push((
+                "wgsl_test".to_owned(),
+                package.with_file_name("shaders").join("wgsl_test"),
+            ));
+        }
+        Ok((
+            self.options.try_into()?,
+            Sources {
+                modules: self.modules.items()?.extract()?,
+                filenames: self.filenames.items()?.extract()?,
+                root_directory: self.root_directory,
+                dependencies,
+            },
+        ))
     }
 }
 
@@ -430,12 +473,13 @@ struct ModuleResolver {
 }
 
 impl ModuleResolver {
-    fn new(
-        modules: Vec<(String, String)>,
-        filenames: HashMap<String, String>,
-        root_directory: Option<PathBuf>,
-        dependencies: HashMap<String, PathBuf>,
-    ) -> Result<Self, Failure> {
+    fn new(sources: Sources) -> Result<Self, Failure> {
+        let Sources {
+            modules,
+            filenames,
+            root_directory,
+            dependencies,
+        } = sources;
         let mut dependency_resolver = Router::new();
         for (name, directory) in &dependencies {
             let path = module_path(name)?;
@@ -449,11 +493,13 @@ impl ModuleResolver {
             filenames: HashMap::new(),
             files: root_directory.map(FileResolver::new),
             dependencies: dependency_resolver,
-            dependency_names: dependencies.into_keys().collect(),
+            dependency_names: dependencies.into_iter().map(|(name, _)| name).collect(),
         };
         for (path, filename) in filenames {
             let path = module_path(&path)?;
-            resolver.filenames.insert(path, filename);
+            resolver
+                .filenames
+                .insert(path, filename.to_string_lossy().into_owned());
         }
         for (path, source) in modules {
             let path = module_path(&path)?;
@@ -466,12 +512,15 @@ impl ModuleResolver {
 impl Resolver for ModuleResolver {
     fn canonical_path(&self, path: &ModulePath) -> ModulePath {
         if let PathOrigin::Package(name) = &path.origin
-            && name.ends_with("/wgsl_test")
+            && let Some(global) = ["wgsl_test", "constants"].into_iter().find(|global| {
+                name.strip_suffix(global)
+                    .is_some_and(|scope| scope.ends_with('/'))
+            })
             && !self.dependency_names.contains(name)
             && self.modules.get_module(path).is_err()
         {
             ModulePath {
-                origin: PathOrigin::Package("wgsl_test".to_owned()),
+                origin: PathOrigin::Package(global.to_owned()),
                 components: path.components.clone(),
             }
         } else {
@@ -486,7 +535,28 @@ impl Resolver for ModuleResolver {
                 self.dependencies.resolve_source(path)
             }
             (Err(_), Some(files)) if path.origin.is_absolute() => files.resolve_source(path),
-            (Err(error), _) => Err(error),
+            (Err(_), None) if path.origin.is_absolute() => Err(ResolveError::ModuleNotFound(
+                path.clone(),
+                "no module has this path, and the compiler has no root directory".to_owned(),
+            )),
+            (Err(error), _) => {
+                let PathOrigin::Package(name) = &path.origin else {
+                    return Err(error);
+                };
+                let mut names: Vec<_> = self
+                    .dependency_names
+                    .iter()
+                    .map(|name| format!("`{name}`"))
+                    .collect();
+                names.sort();
+                Err(ResolveError::ModuleNotFound(
+                    path.clone(),
+                    format!(
+                        "no dependency is named `{name}`; the dependencies are {}",
+                        names.join(", ")
+                    ),
+                ))
+            }
         }
     }
 
@@ -529,6 +599,7 @@ impl Diagnostic {
 enum Failure {
     Message(String),
     Path(String),
+    Shape(String, Option<String>),
     Compiler(Box<Diagnostic>, String),
 }
 
@@ -584,6 +655,11 @@ impl Failure {
             Self::Path(path) => PyValueError::new_err(format!(
                 "invalid module path {path:?}; expected an absolute module or package name"
             )),
+            Self::Shape(message, name) => py
+                .import("wesl.reflect")
+                .and_then(|module| module.getattr("TypeShapeError"))
+                .and_then(|class| class.call1((message, name)))
+                .map_or_else(|error| error, PyErr::from_value),
             Self::Compiler(diagnostic, rendered) => {
                 let error = CompileError::new_err(rendered);
                 let result = Py::new(py, *diagnostic)
@@ -618,23 +694,16 @@ fn module_path(path: &str) -> Result<ModulePath, Failure> {
 
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "wesl._native")]
 #[pyfunction]
-#[pyo3(signature = (modules, root, options, filenames, root_directory, dependencies))]
+#[pyo3(signature = (compiler, root))]
 fn compile(
     py: Python<'_>,
-    #[gen_stub(override_type(type_repr="collections.abc.Mapping[str, str]", imports=("collections.abc")))]
-    modules: &Bound<'_, PyMapping>,
+    #[gen_stub(override_type(type_repr="wesl.Compiler", imports=("wesl")))] compiler: Compiler<'_>,
     root: String,
-    #[gen_stub(override_type(type_repr="wesl.CompileOptions", imports=("wesl")))]
-    options: CompileOptions<'_>,
-    filenames: HashMap<String, String>,
-    root_directory: Option<PathBuf>,
-    dependencies: HashMap<String, PathBuf>,
 ) -> PyResult<CompileResult> {
-    let modules = modules.items()?.extract::<Vec<(String, String)>>()?;
-    let options = options.try_into()?;
+    let (options, sources) = compiler.split()?;
     py.detach(move || {
         let root = module_path(&root)?;
-        let resolver = ModuleResolver::new(modules, filenames, root_directory, dependencies)?;
+        let resolver = ModuleResolver::new(sources)?;
         let result = compiler::compile(&root, &options, &resolver, HashMap::new(), |_, _| Ok(()));
         result
             .map(CompileResult::from)
@@ -649,7 +718,7 @@ fn compile(
 fn constant_module(
     py: Python<'_>,
     module: String,
-    #[gen_stub(override_type(type_repr="collections.abc.Mapping[str, bool | int | float]", imports=("collections.abc")))]
+    #[gen_stub(override_type(type_repr="collections.abc.Mapping[str, bool | int | float | str]", imports=("collections.abc")))]
     constants: &Bound<'_, PyMapping>,
 ) -> PyResult<String> {
     #[derive(FromPyObject)]
@@ -657,13 +726,14 @@ fn constant_module(
         Boolean(bool),
         Integer(i64),
         Float(f64),
+        Expression(String),
     }
 
     let constants = constants
         .items()?
         .extract::<Vec<(String, ConstantValue)>>()?;
     py.detach(move || {
-        let mut resolver = StandardResolver::new("");
+        let mut declarations = Vec::new();
         for (name, value) in constants {
             if name.starts_with("__")
                 || !format!("const {name} = 0;")
@@ -677,24 +747,32 @@ fn constant_module(
                     "{module}::{name}: invalid WGSL identifier"
                 )));
             }
-            resolver.add_constant(
-                name,
+            let declaration = format!(
+                "public const {name} = {};",
                 match value {
-                    ConstantValue::Boolean(value) => wesl::eval::LiteralInstance::from(value),
-                    ConstantValue::Integer(value) => wesl::eval::LiteralInstance::from(value),
-                    ConstantValue::Float(value) => wesl::eval::LiteralInstance::from(value),
-                },
+                    ConstantValue::Boolean(value) => LiteralInstance::from(value).to_string(),
+                    ConstantValue::Integer(value) => LiteralInstance::from(value).to_string(),
+                    ConstantValue::Float(value) => LiteralInstance::from(value).to_string(),
+                    ConstantValue::Expression(value) => value,
+                }
             );
+            if !declaration
+                .parse::<GlobalDeclaration>()
+                .is_ok_and(|parsed| {
+                    matches!(parsed, GlobalDeclaration::Declaration(parsed)
+                        if parsed.kind == DeclarationKind::Const
+                            && parsed.ident.name().as_str() == name)
+                })
+            {
+                return Err(Failure::Message(format!(
+                    "{module}::{name}: invalid WGSL expression"
+                )));
+            }
+            declarations.push(declaration);
         }
-        resolver
-            .resolve_source(&ModulePath::new(
-                PathOrigin::Package("constants".to_owned()),
-                Vec::new(),
-            ))
-            .map(Cow::into_owned)
-            .map_err(|error| Failure::from_diagnostic(wesl::error::Diagnostic::from(error)))
+        Ok(declarations.join("\n"))
     })
-    .map_err(|failure| failure.into_pyerr(py))
+    .map_err(|failure: Failure| failure.into_pyerr(py))
 }
 
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "wesl._native")]
@@ -749,10 +827,25 @@ fn render_diagnostic(py: Python<'_>, diagnostic: &Diagnostic) -> String {
 
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "wesl._native")]
 #[pyfunction]
-fn project_root(py: Python<'_>, source: String) -> PyResult<String> {
+fn project(py: Python<'_>, source: String) -> PyResult<(String, HashMap<String, String>)> {
     py.detach(move || {
         wesl::toml_cfg::WeslToml::parse_str(&source)
-            .map(|configuration| configuration.package.root.to_string_lossy().into_owned())
+            .map(|configuration| {
+                let dependencies = match configuration.dependencies {
+                    wesl::toml_cfg::DependenciesConfig::Manual(dependencies) => dependencies
+                        .into_iter()
+                        .filter_map(|(name, specification)| match specification {
+                            wesl::toml_cfg::DependencySpec::Path(path) => Some((name, path)),
+                            _ => None,
+                        })
+                        .collect(),
+                    _ => HashMap::new(),
+                };
+                (
+                    configuration.package.root.to_string_lossy().into_owned(),
+                    dependencies,
+                )
+            })
             .map_err(|error| PyValueError::new_err(error.to_string()))
     })
 }
@@ -767,11 +860,12 @@ mod _native {
 
     #[pymodule_export]
     use super::testing::{
-        ParsedTestModule, TestLayout, TestResult, compile_test, execute_test_cpu,
+        ParsedTestModule, TestLayout, TestResult, compile_compute, compile_test, entry_points,
+        execute_test_cpu, path_layout, struct_layouts, var_reflection,
     };
     #[pymodule_export]
     use super::{
-        CompileError, CompileResult, Diagnostic, Source, compile, constant_module, project_root,
+        CompileError, CompileResult, Diagnostic, Source, compile, constant_module, project,
         render_diagnostic,
     };
 

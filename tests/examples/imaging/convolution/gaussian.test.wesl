@@ -1,6 +1,12 @@
-import package::examples::imaging::gaussian::{convolve, radius};
+import package::examples::imaging::gaussian::convolve_radius;
 import package::examples::imaging::sampling::sample_channel;
 import wgsl_test::{expect, expectNear};
+
+const radius: i32 = constants::radius;
+
+fn convolve(position: vec3u, dimensions: vec2u) -> f32 {
+    return convolve_radius(position, dimensions, radius);
+}
 
 @test @workgroup_size(8, 8)
 fn convolution_invariants(@builtin(local_invocation_id) position: vec3u) {

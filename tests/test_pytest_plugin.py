@@ -30,7 +30,7 @@ def test_collect_without_gpu_dependencies(pytester: pytest.Pytester) -> None:
         ["math.test.wesl::first", "math.test.wesl::second", "*2 tests collected*"]
     )
     assert result.ret == 0
-    result = pytester.runpytest_inprocess("--collect-only", "-q", "-m", "not gpu")
+    result = pytester.runpytest_inprocess("--collect-only", "-q", "-m", "not wesl")
     result.stdout.fnmatch_lines(["*2 deselected*"])
     assert result.ret == pytest.ExitCode.NO_TESTS_COLLECTED
     result = pytester.runpytest_inprocess("--collect-only", "-q", "noise.wesl")
@@ -61,8 +61,7 @@ def test_compilation_and_shader_tests_share_project_settings(
     )
     (tests / "exposure.test.wesl").write_text(
         "import package::exposure::exposure; "
-        "override expected: u32; "
-        "@test fn result() { wgsl_test::expectEq(exposure(), expected); }"
+        "@test fn result() { wgsl_test::expectEq(exposure(), constants::expected); }"
     )
     pytester.makeconftest("""
         import pytest
@@ -135,8 +134,6 @@ def wesl_dependencies(wesl_dependencies):
     directory = Path(__file__).parent
     return MappingProxyType({
         **wesl_dependencies,
-        "alpha": directory / "alpha",
-        "beta": directory / "beta",
         "alpha/common": directory / "common",
         "beta/common": directory / "common",
         "extra": directory / "common",
@@ -148,12 +145,12 @@ def wesl_dependencies(wesl_dependencies):
     )
     for name in ("alpha", "beta"):
         directory = scoped / name
-        directory.mkdir()
+        (directory / "shaders").mkdir(parents=True)
         (directory / "wesl.toml").write_text(
-            'edition = "2026_pre"\nroot = "."\n[dependencies]\n'
+            'edition = "2026_pre"\nroot = "shaders"\n[dependencies]\n'
             'common = { path = "../common" }\n'
         )
-        (directory / "package.wesl").write_text(
+        (directory / "shaders/package.wesl").write_text(
             "import {common::next}; fn value() -> u32 { return next(); }"
         )
     common = scoped / "common"
@@ -320,15 +317,19 @@ def test_shared_features_and_independent_options(pytester: pytest.Pytester) -> N
 
         @pytest.fixture
         def wesl_constants(wesl_features):
-            return {"expected": 7 if wesl_features.flags["enabled"] else 3}
+            return {
+                "offset": 2,
+                "expected": 9 if wesl_features.flags["enabled"] else 5,
+            }
     """)
     pytester.makefile(
         ".test.wesl",
         shared="""
-            override expected: u32;
             @if(enabled) fn value() -> u32 { return 7u; }
             @else fn value() -> u32 { return 3u; }
-            @test fn selected() { wgsl_test::expectEq(value(), expected); }
+            @test fn selected() {
+                wgsl_test::expectEq(value() + constants::offset, constants::expected);
+            }
         """,
     )
     pytester.makepyfile("""
@@ -342,6 +343,10 @@ def test_shared_features_and_independent_options(pytester: pytest.Pytester) -> N
             expected = "7u" if wesl_features.flags["enabled"] else "3u"
             assert expected in shader.wgsl
             assert not shader.sources
+            shader = wesl_compiler.compile_source(
+                "fn selected() -> u32 { return constants::offset; }"
+            )
+            assert "= 2;" in shader.wgsl
     """)
     result = pytester.runpytest_inprocess("-v")
     result.assert_outcomes(passed=4)

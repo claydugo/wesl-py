@@ -5,6 +5,7 @@ from struct import pack
 from typing import TYPE_CHECKING
 
 import pytest
+import wesl
 from wesl.testing import ShaderAssertionError, run_test
 
 if TYPE_CHECKING:
@@ -23,8 +24,9 @@ def test_failure_in_imported_helpers(shader_runner: partial) -> None:
     )
     with pytest.raises(ShaderAssertionError) as captured:
         shader_runner(
-            {
-                "package::main": """
+            wesl.Compiler(
+                modules={
+                    "package::main": """
                     import library::{verify, wesl_test_entry};
                     import library::verify as wesl_test_entry_;
                     import library::{helpers::{verify as wesl_test_entry__}};
@@ -38,11 +40,12 @@ def test_failure_in_imported_helpers(shader_runner: partial) -> None:
                         wesl_test_entry___::verify();
                     }
                 """,
-                "library": source,
-                "library::helpers": "fn verify() { wgsl_test::expect(false); }",
-            },
+                    "library": source,
+                    "library::helpers": "fn verify() { wgsl_test::expect(false); }",
+                },
+                filenames={"library": "library.wesl"},
+            ),
             "failure",
-            filenames={"library": "library.wesl"},
         )
     error = captured.value
     assert error.actual == 4294967295
@@ -100,12 +103,14 @@ def test_tolerance_assertions_reject_nan(
         with pytest.raises(ShaderAssertionError) as captured:
             run_test(
                 wesl_device,
-                {
-                    "package::main": (
-                        "@group(0) @binding(0) var<storage, read> value: f32; "
-                        f"@test fn failure() {{ {assertions} }}"
-                    ),
-                },
+                wesl.Compiler(
+                    modules={
+                        "package::main": (
+                            "@group(0) @binding(0) var<storage, read> value: f32; "
+                            f"@test fn failure() {{ {assertions} }}"
+                        ),
+                    }
+                ),
                 "failure",
                 resources={0: [{"binding": 0, "resource": {"buffer": buffer}}]},
             )
@@ -124,9 +129,10 @@ def test_custom_assertion_package(shader_runner: partial) -> None:
     """
     with pytest.raises(ShaderAssertionError) as captured:
         shader_runner(
-            {
-                "package::main": source,
-                "wgsl_test": """
+            wesl.Compiler(
+                modules={
+                    "package::main": source,
+                    "wgsl_test": """
                     import package::TestResult::testResult;
                     fn recordFailure(actual: vec4f, expected: vec4f) {
                         testResult.passed = 0u;
@@ -147,7 +153,8 @@ def test_custom_assertion_package(shader_runner: partial) -> None:
                         }
                     }
                 """,
-            },
+                }
+            ),
             "failure",
         )
     assert captured.value.actual == 4294967295
@@ -198,18 +205,22 @@ def test_result_instrumentation_preserves_layout_and_binding(
         with pytest.raises(ShaderAssertionError) as captured:
             run_test(
                 wesl_device,
-                {
-                    "package::main": """
+                wesl.Compiler(
+                    modules={
+                        "package::main": """
                         @group(0) @binding(0) var<storage, read> value: u32;
                         @test fn failure() {
                             wgsl_test::expectEq(value, 9u);
                         }
                     """.replace(
-                        "@test fn",
-                        "@test @workgroup_size(8) fn" if cooperative else "@test fn",
-                    ),
-                    "wgsl_test::TestResult": result_source,
-                },
+                            "@test fn",
+                            "@test @workgroup_size(8) fn"
+                            if cooperative
+                            else "@test fn",
+                        ),
+                        "wgsl_test::TestResult": result_source,
+                    }
+                ),
                 "failure",
                 resources={0: [{"binding": 0, "resource": {"buffer": buffer}}]},
             )
@@ -236,14 +247,16 @@ def test_result_layout_constants_preserve_failure_values(
     """
     with pytest.raises(ShaderAssertionError) as captured:
         shader_runner(
-            {
-                "package::main": """
+            wesl.Compiler(
+                modules={
+                    "package::main": """
                     @test fn failure() {
                         wgsl_test::expectEq(4294967295u, 4294967294u);
                     }
                 """,
-                "wgsl_test::TestResult": source,
-            },
+                    "wgsl_test::TestResult": source,
+                }
+            ),
             "failure",
         )
     assert captured.value.actual == 4294967295
@@ -306,9 +319,11 @@ def test_assertions_in_control_flow(
     )
     with pytest.raises(ShaderAssertionError) as captured:
         shader_runner(
-            {"package::main": source},
+            wesl.Compiler(
+                modules={"package::main": source},
+                filenames={"package::main": "control_flow.wesl"},
+            ),
             "loops",
-            filenames={"package::main": "control_flow.wesl"},
         )
     error = captured.value
     assert error.checks == checks
@@ -332,6 +347,25 @@ def test_assertions_in_control_flow(
             4294967294,
             1,
             id="u32",
+        ),
+        pytest.param(
+            "i32", "expectEqI32(-7, 2147483647);", -7, 2147483647, 1, id="i32"
+        ),
+        pytest.param(
+            "vec2u",
+            "expectEqVec2u(vec2u(4294967295u, 0u), vec2u(4294967295u, 1u));",
+            (4294967295, 0),
+            (4294967295, 1),
+            1,
+            id="vec2u",
+        ),
+        pytest.param(
+            "vec3i",
+            "expectEqVec3i(vec3i(-1, 0, 5), vec3i(-1, 0, -5));",
+            (-1, 0, 5),
+            (-1, 0, -5),
+            1,
+            id="vec3i",
         ),
         pytest.param(
             "f32",
@@ -396,24 +430,29 @@ def test_failures_preserve_scalar_and_vector_values(
     assert replacement_count > 0
     with pytest.raises(ShaderAssertionError) as captured:
         shader_runner(
-            {
-                "package::main": (
-                    "import wgsl_test::{expect, expectEq, expectNear, expectWithin, "
-                    "expectUlp, expectNearVec2, expectWithinVec2, expectUlpVec2, "
-                    "expectNearVec3, expectWithinVec3, expectUlpVec3, "
-                    "expectNearVec4, expectWithinVec4, expectUlpVec4}; "
-                    f"@test fn failure() {{ {assertions} }}"
-                ),
-                "wgsl_test": "import package::types::Value;\n" + source,
-                "wgsl_test::types": (
-                    f"alias Value = Base; alias Base = {parameter_type};"
-                ),
-            },
+            wesl.Compiler(
+                modules={
+                    "package::main": (
+                        "import wgsl_test::{expect, expectEq, expectEqI32, "
+                        "expectEqVec2u, expectEqVec3i, expectNear, "
+                        "expectWithin, expectUlp, expectNearVec2, expectWithinVec2, "
+                        "expectUlpVec2, "
+                        "expectNearVec3, expectWithinVec3, expectUlpVec3, "
+                        "expectNearVec4, expectWithinVec4, expectUlpVec4}; "
+                        f"@test fn failure() {{ {assertions} }}"
+                    ),
+                    "wgsl_test": "import package::types::Value;\n" + source,
+                    "wgsl_test::types": (
+                        f"alias Value = Base; alias Base = {parameter_type};"
+                    ),
+                }
+            ),
             "failure",
         )
     assert captured.value.actual == actual
     assert captured.value.expected == expected
     assert type(captured.value.actual) is type(actual)
     assert type(captured.value.expected) is type(expected)
+    assert captured.value.value_type == parameter_type
     assert captured.value.checks == checks
     assert captured.value.failures == checks

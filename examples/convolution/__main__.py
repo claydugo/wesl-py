@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import wesl
 import wgpu
-from wesl.testing import prepare_test
+from wesl.testing import run_test
 
 
 def main() -> None:
@@ -112,21 +112,13 @@ def main() -> None:
                 ],
             )
             passes.append((pipeline, group, workgroups))
-        verify = prepare_test(
-            device,
-            {
+        compiler = wesl.Compiler(
+            modules={
                 "package::main": (
                     Path(__file__).parent / "shaders/verify.wesl"
                 ).read_text()
             },
-            "matches_reference",
             filenames={"package::main": Path(__file__).parent / "shaders/verify.wesl"},
-            resources={
-                0: [
-                    {"binding": 0, "resource": {"buffer": convolution_buffer}},
-                    {"binding": 1, "resource": {"buffer": references[0]}},
-                ]
-            },
         )
         for _ in range(3):
             values = random.uniform(-1, 1, (3, 13, 17)).astype(np.float16)
@@ -160,14 +152,27 @@ def main() -> None:
                 device.queue.write_buffer(
                     reference, 0, payload + bytes(-len(payload) % 4)
                 )
-            verify()
-            verify(
+            run_test(
+                device,
+                compiler,
+                "matches_reference",
+                resources={
+                    0: [
+                        {"binding": 0, "resource": {"buffer": convolution_buffer}},
+                        {"binding": 1, "resource": {"buffer": references[0]}},
+                    ]
+                },
+            )
+            run_test(
+                device,
+                compiler,
+                "matches_reference",
                 resources={
                     0: [
                         {"binding": 0, "resource": {"buffer": pooling_buffer}},
                         {"binding": 1, "resource": {"buffer": references[1]}},
                     ]
-                }
+                },
             )
         print(f"Convolution and pooling passed on {adapter.info['device']}")
 

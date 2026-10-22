@@ -3,7 +3,6 @@ from __future__ import annotations
 import sys
 from collections import UserDict
 from fractions import Fraction
-from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 import pytest
@@ -17,68 +16,69 @@ def test_constant_modules_preserve_inputs_and_source_metadata() -> None:
     modules = UserDict(
         {
             "package::main": (
-                "import package::config::{width, scale, enabled}; "
+                "import constants::{width, scale, enabled}; "
                 "@if(selected) @compute @workgroup_size(width) fn main() { "
                 "let value: f32 = scale; let selected = enabled; }"
             ),
         }
     )
-    constants = UserDict({"width": 64, "scale": 1.0, "enabled": True})
-    constant_modules = MappingProxyType({"package::config": constants})
-    filenames = {"package::config": "generated.wesl"}
+    constants = UserDict(
+        {"width": 64, "scale": 1.0, "enabled": True, "center": "vec2f(0.5, 0.75)"}
+    )
+    filenames = {"constants": "generated.wesl"}
     result = wesl.compile(
         modules,
         features={"selected": True},
-        constant_modules=constant_modules,
+        constants=constants,
         filenames=filenames,
     )
     assert result.entry_points == ("main",)
-    assert result.modules == ("package::main", "package::config")
-    assert set(result.sources["package::config"].text.splitlines()) == {
+    assert result.modules == ("package::main", "constants")
+    assert set(result.sources["constants"].text.splitlines()) == {
         "public const width = 64;",
         "public const scale = 1.0;",
         "public const enabled = true;",
+        "public const center = vec2f(0.5, 0.75);",
     }
-    assert result.sources["package::config"].filename == "generated.wesl"
+    assert result.sources["constants"].filename == "generated.wesl"
     assert modules == {
         "package::main": (
-            "import package::config::{width, scale, enabled}; "
+            "import constants::{width, scale, enabled}; "
             "@if(selected) @compute @workgroup_size(width) fn main() { "
             "let value: f32 = scale; let selected = enabled; }"
         ),
     }
-    assert constant_modules["package::config"] is constants
-    assert constants == {"width": 64, "scale": 1.0, "enabled": True}
-    assert filenames == {"package::config": "generated.wesl"}
+    assert constants == {
+        "width": 64,
+        "scale": 1.0,
+        "enabled": True,
+        "center": "vec2f(0.5, 0.75)",
+    }
+    assert filenames == {"constants": "generated.wesl"}
 
     scoped = wesl.compile_source(
         "fn main() -> f32 { return library::value(); }",
-        modules={
-            "library": "fn value() -> f32 { return settings::scale; }",
-        },
-        constant_modules={"library/settings": {"scale": 0.5}},
+        modules={"library": "fn value() -> f32 { return constants::scale; }"},
+        constants={"scale": 0.5},
         keep=["main"],
     )
-    assert set(scoped.modules) == {"package::main", "library", "library/settings"}
-    assert scoped.sources["library/settings"].text == "public const scale = 0.5;"
+    assert set(scoped.modules) == {"package::main", "library", "constants"}
 
-    compiler = wesl.Compiler(modules={"package::config": "const value = 1;"})
-    for module in ["package::main", "package::config"]:
-        with pytest.raises(
-            ValueError, match="present in both modules and constant_modules"
-        ):
-            compiler.compile_source("", constant_modules={module: {}})
+    compiler = wesl.Compiler(modules={"constants": "const value = 1;"})
+    with pytest.raises(
+        ValueError, match="in modules and also comes from the constants argument"
+    ):
+        compiler.compile_source("", constants={"value": 2})
 
 
 @pytest.mark.parametrize("method", ["compile_source", "compile_file"])
 def test_constant_modules_apply_to_one_compilation(method: str, tmp_path: Path) -> None:
     source = (
-        "import package::config::width; "
+        "import constants::width; "
         "@if(selected) @compute @workgroup_size(width) fn main() {}"
     )
     filename = tmp_path / "main.wesl"
     filename.write_text(source)
-    (tmp_path / "config.wesl").write_text("const width = 1;")
     modules = {"package::unused": "fn unused() {}"}
     compiler = wesl.Compiler(
         root_directory=tmp_path,
@@ -89,18 +89,18 @@ def test_constant_modules_apply_to_one_compilation(method: str, tmp_path: Path) 
     result = getattr(compiler, method)(
         argument,
         features={"selected": True},
-        constant_modules={"package::config": {"width": 64}},
+        constants={"width": 64},
     )
     assert result == getattr(wesl, method)(
         argument,
         modules=modules,
         root_directory=tmp_path,
         features={"selected": True},
-        constant_modules={"package::config": {"width": 64}},
+        constants={"width": 64},
     )
-    assert result.sources["package::config"].text == "public const width = 64;"
-    restored = getattr(compiler, method)(argument, features={"selected": True})
-    assert restored.sources["package::config"].text == "const width = 1;"
+    assert result.sources["constants"].text == "public const width = 64;"
+    with pytest.raises(wesl.CompileError):
+        getattr(compiler, method)(argument, features={"selected": True})
     assert compiler.modules is modules
     assert modules == {"package::unused": "fn unused() {}"}
     assert compiler.options.features.flags == {"selected": False}
@@ -109,24 +109,22 @@ def test_constant_modules_apply_to_one_compilation(method: str, tmp_path: Path) 
 
 def test_constant_scalar_representations() -> None:
     result = wesl.compile_source(
-        "fn main() { let value = package::config::café; }",
-        constant_modules={
-            "package::config": {
-                "disabled": False,
-                "enabled": True,
-                "negative": -1,
-                "maximum_u32": 2**32 - 1,
-                "maximum_i64": 2**63 - 1,
-                "whole_float": 1.0,
-                "negative_zero": -0.0,
-                "subnormal": 5e-324,
-                "maximum_float": sys.float_info.max,
-                "café": Fraction(1, 2),
-            },
+        "fn main() { let value = constants::café; }",
+        constants={
+            "disabled": False,
+            "enabled": True,
+            "negative": -1,
+            "maximum_u32": 2**32 - 1,
+            "maximum_i64": 2**63 - 1,
+            "whole_float": 1.0,
+            "negative_zero": -0.0,
+            "subnormal": 5e-324,
+            "maximum_float": sys.float_info.max,
+            "café": Fraction(1, 2),
         },
         keep=["main"],
     )
-    assert set(result.sources["package::config"].text.splitlines()) == {
+    assert set(result.sources["constants"].text.splitlines()) == {
         "public const disabled = false;",
         "public const enabled = true;",
         "public const negative = -1;",
@@ -143,7 +141,12 @@ def test_constant_scalar_representations() -> None:
 @pytest.mark.parametrize(
     ("constants", "error", "message"),
     [
-        pytest.param({"value": "1u"}, TypeError, "value.*scalar", id="expression"),
+        pytest.param(
+            {"value": "1u; const other = 2u"},
+            ValueError,
+            "value.*invalid WGSL expression",
+            id="injected-expression",
+        ),
         pytest.param({"value": 1j}, TypeError, "value.*scalar", id="complex"),
         pytest.param({"value": float("nan")}, ValueError, "value.*finite", id="nan"),
         pytest.param(
@@ -185,10 +188,10 @@ def test_constant_modules_reject_unrepresentable_values(
     constants: dict[object, object], error: type[Exception], message: str
 ) -> None:
     for validate in (False, True):
-        with pytest.raises(error, match=f"package::config::{message}"):
+        with pytest.raises(error, match=f"constants::{message}"):
             wesl.compile_source(
                 "",
-                constant_modules={"package::config": constants},
+                constants=constants,
                 options=wesl.CompileOptions(validate=validate),
             )
 
@@ -196,19 +199,17 @@ def test_constant_modules_reject_unrepresentable_values(
 def test_constant_modules_normalize_numpy_scalars() -> None:
     np = pytest.importorskip("numpy")
     result = wesl.compile_source(
-        "fn main() { let value = package::config::signed; }",
-        constant_modules={
-            "package::config": {
-                "signed": np.int64(-1),
-                "unsigned": np.uint64(2**32 - 1),
-                "half": np.float16(0.5),
-                "single": np.float32(0.1),
-                "double": np.float64(1.0),
-            },
+        "fn main() { let value = constants::signed; }",
+        constants={
+            "signed": np.int64(-1),
+            "unsigned": np.uint64(2**32 - 1),
+            "half": np.float16(0.5),
+            "single": np.float32(0.1),
+            "double": np.float64(1.0),
         },
         keep=["main"],
     )
-    assert set(result.sources["package::config"].text.splitlines()) == {
+    assert set(result.sources["constants"].text.splitlines()) == {
         "public const signed = -1;",
         "public const unsigned = 4294967295;",
         "public const half = 0.5;",
@@ -221,7 +222,5 @@ def test_constant_modules_reject_lossy_numpy_conversion() -> None:
     np = pytest.importorskip("numpy")
     if np.finfo(np.longdouble).nmant <= np.finfo(float).nmant:
         pytest.skip("longdouble has no additional precision")
-    with pytest.raises(ValueError, match=r"package::config::value.*loses precision"):
-        wesl.compile_source(
-            "", constant_modules={"package::config": {"value": np.longdouble("0.1")}}
-        )
+    with pytest.raises(ValueError, match=r"constants::value.*loses precision"):
+        wesl.compile_source("", constants={"value": np.longdouble("0.1")})

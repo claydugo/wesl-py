@@ -1,4 +1,4 @@
-import package::examples::optimizers::layout::{output_bias, width};
+import constants::{output_bias, width};
 import package::examples::optimizers::network::{
     evaluate,
     first_bias,

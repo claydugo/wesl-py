@@ -1,5 +1,5 @@
 import package::examples::optimizers::backward::backward;
-import package::examples::optimizers::layout::parameter_count;
+import constants::parameter_count;
 import package::examples::optimizers::network::loss;
 
 @group(0) @binding(1) var<storage, read> samples: array<vec4f>;

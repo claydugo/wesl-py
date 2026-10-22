@@ -8,9 +8,9 @@ from ._native import constant_module
 
 
 def _normalize_constant(
-    value: SupportsFloat, *, module: str, name: str
-) -> bool | int | float:
-    if isinstance(value, bool):
+    value: SupportsFloat | str, *, module: str, name: str
+) -> bool | int | float | str:
+    if isinstance(value, (bool, str)):
         return value
     if isinstance(value, (int, Integral)):
         try:
@@ -36,7 +36,7 @@ def _normalize_constant(
             raise ValueError(message)
         return number
     message = (
-        f"{module}::{name}: expected bool, int, or real scalar;"
+        f"{module}::{name}: expected bool, int, real scalar, or str;"
         f" got {type(value).__name__}"
     )
     raise TypeError(message)
@@ -44,10 +44,10 @@ def _normalize_constant(
 
 def add_constant_modules(
     modules: Mapping[str, str],
-    constant_modules: Mapping[str, Mapping[str, SupportsFloat]],
+    constant_modules: Mapping[str, Mapping[str, SupportsFloat | str]],
 ) -> dict[str, str]:
     if not isinstance(constant_modules, Mapping):
-        message = "constant_modules must be a mapping or None"
+        message = "constants must be a mapping or None"
         raise TypeError(message)
     modules = dict(modules)
     for module, constants in constant_modules.items():
@@ -55,7 +55,11 @@ def add_constant_modules(
             message = "constant module names must be strings"
             raise TypeError(message)
         if module in modules:
-            message = f"{module!r} is present in both modules and constant_modules"
+            message = (
+                f"{module!r} is in modules and also comes from the constants argument."
+                " Pass the values in one place. In pytest, the wesl_constants"
+                " fixture adds the module to wesl_compiler.modules."
+            )
             raise ValueError(message)
         if not isinstance(constants, Mapping):
             message = f"{module!r}: constants must be a mapping"

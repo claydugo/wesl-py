@@ -21,7 +21,7 @@ result = wesl.compile(modules, features={"enabled": True}, keep=["answer"])
 print(result.wgsl)
 ```
 
-`compile(modules, *, root="package::main", options=None, features=None, constant_modules=None,
+`compile(modules, *, root="package::main", options=None, features=None, constants=None,
 keep=..., keep_main=None, strip=None, filenames=None, root_directory=None,
 dependencies=None)` returns a `CompileResult`.
 
@@ -202,8 +202,9 @@ root = "shaders"
 `Compiler.from_project()` finds the nearest ancestor manifest.
 Upstream `WeslToml` parses the manifest and supplies the root.
 The default root is `shaders`. Relative roots use the manifest directory.
-Pass dependencies explicitly through the constructor's `dependencies` mapping.
-The binding does not load manifest dependencies or deduplicate package instances.
+The constructor loads the `path` entries of `[dependencies]`.
+An explicit `dependencies` mapping replaces them.
+The binding does not deduplicate package instances.
 
 Manifest `include` and `exclude` patterns do not filter explicitly requested imports
 or pytest collection.
@@ -248,22 +249,21 @@ Virtual mappings do not define dependency graphs or deduplicate package instance
 
 ## Supply constants
 
-Pass `constant_modules` to supply scalar constants for one compilation:
+Pass `constants` to supply constants for one compilation, as the `constants`
+parameter of wesl-js `link()` does:
 
 ```python
 compiler = wesl.Compiler(root_directory="shaders")
 result = compiler.compile_file(
     "main.wesl",
-    constant_modules={
-        "package::config": {"width": 64, "scale": 0.5, "enabled": True},
-    },
+    constants={"width": 64, "scale": 0.5, "enabled": True},
 )
 ```
 
-The shader imports these constants from a virtual module:
+The shader imports these constants from the virtual module `constants`:
 
 ```wesl
-import package::config::{width, scale, enabled};
+import constants::{width, scale, enabled};
 
 @compute @workgroup_size(width)
 fn main() {
@@ -271,9 +271,8 @@ fn main() {
 }
 ```
 
-All compilation functions and methods accept `constant_modules`.
-Keys use the same paths as `modules`, including scoped dependencies.
-Inner mappings pair constant names with values.
+All compilation functions and methods accept `constants`.
+The mapping pairs constant names with values.
 
 The compiler emits one `public const` declaration for each value:
 
@@ -282,6 +281,7 @@ The compiler emits one `public const` declaration for each value:
 | `64` | `public const width = 64;` |
 | `0.5` | `public const scale = 0.5;` |
 | `True` | `public const enabled = true;` |
+| `"vec2f(0.5, 0.75)"` | `public const center = vec2f(0.5, 0.75);` |
 
 Numbers retain WGSL's abstract numeric types; shader use determines concrete types.
 Float literals retain a decimal point or exponent, including `1.0` and `-0.0`.
@@ -292,26 +292,27 @@ Integers must fit the signed 64-bit range. Real values must convert to a finite
 Python `float` without loss of precision. Common NumPy integer and floating scalars
 meet these requirements. Their dtype does not determine the WGSL type.
 Compilation does not import or require NumPy.
+A `str` value is a WGSL expression, as in wesl-js. The compiler inserts it unchanged.
 
 Declaration order is unspecified.
 The pinned parser cannot parse its generated literal for `-2**63`.
 Using that value raises `CompileError` when the compiler loads its module.
 
-Strings, complex values, arrays, and other unsupported types raise `TypeError`.
-Invalid identifiers, NaN, infinity, integers outside the supported range, and
-lossy conversions raise `ValueError`. Errors identify the module and constant.
-Normalization and identifier checks also apply to unused modules.
+Complex values, arrays, and other unsupported types raise `TypeError`.
+Invalid identifiers, invalid expressions, NaN, infinity, integers outside the
+supported range, and lossy conversions raise `ValueError`.
+Errors identify the constant.
+Normalization and identifier checks also apply when no shader uses the module.
 
-Each generated module replaces the whole file at its path. Constants do not merge
-with declarations from that file. A path present in both `modules` and
-`constant_modules` raises `ValueError`. This includes the root source supplied to
-`compile_source` or `compile_file`. Generated source appears in `CompileResult.sources`
-when the module is used and source maps are enabled. `filenames` can label it.
+A `constants` key in `modules` together with `constants` raises `ValueError`.
+Generated source appears in `CompileResult.sources` under `constants` when the
+module is used and source maps are enabled. `filenames` can label it.
 
 These constants can supply constant expressions, such as `@binding` arguments.
 Use WGSL `override` declarations for values supplied during pipeline creation.
-Use `features` for `@if` conditions. Constant modules do not add numeric conditions
-to `@if`. Use source modules for explicit types, vectors, arrays, or expressions.
+Use `features` for `@if` conditions. The `constants` module does not add
+numeric conditions to `@if`. Use source modules for declarations other than
+`const`.
 
 ## Reuse compilation settings
 
@@ -340,8 +341,11 @@ result = compiler.compile_file("main.wesl")
 This constructor raises `FileNotFoundError` if it finds no manifest.
 It accepts the same settings as `Compiler`.
 An explicit `root_directory` overrides the manifest root.
-The constructor reads one manifest and fixes the root and explicit dependency paths.
+The constructor reads one manifest and fixes the root and dependency paths.
 
+`compile(*, root="package::main", ...)` compiles a module path with the stored settings.
+`compiler.compile(root="package::regions::extents")` compiles the module that
+`var_reflection` and `classify_entry_points` name with the same path.
 `compile_source(source, *, root="package::main", filename="<string>", ...)`
 uses the stored settings.
 `compile_file(filename, ...)` resolves relative paths from `root_directory`,
@@ -365,6 +369,92 @@ With `CompileOptions(sourcemap=False)`, `sources` is empty.
 `Source(text, filename=None)` retains exact UTF-8 source text and a display label.
 `compile_file` uses the absolute filename as its label.
 Source records support equality, hashing, and pickle.
+
+## Reflection
+
+`wesl.reflect` reads buffer layouts and entry points from WESL declarations.
+Its functions follow the `wesl-reflect` package of wesl-js. After `import wesl`,
+the module is available as `wesl.reflect`.
+Each function takes a `Compiler` and a fully qualified path. It compiles the
+module with the compiler's modules, filenames, root directory, dependencies, and
+feature flags. Reflection does not add the `constants` module. To reflect a
+shader that imports `constants::`, put a `constants` module in the compiler's
+modules.
+`var_reflection`, `build_struct_registry`, `numpy_dtype`, and `decode_buffer`
+need NumPy to build dtypes. No function imports wgpu-py.
+
+```python
+from wesl.reflect import classify_entry_points, var_reflection
+
+particles = var_reflection(compiler, "package::simulation::particles")
+buffer_size = particle_count * particles.dtype.itemsize
+workgroup_sizes = {
+    entry_point.fn_name: entry_point.workgroup_size
+    for entry_point in classify_entry_points(compiler, "package::simulation")
+}
+```
+
+| Function | Result | wesl-js function |
+| --- | --- | --- |
+| `var_reflection(compiler, path)` | `VarReflection` | `varReflection` |
+| `build_struct_registry(compiler, module)` | `dict` of struct names to dtypes | `buildStructRegistry` |
+| `classify_entry_points(compiler, module)` | `list` of `EntryPoint` | `classifyEntryPoints` |
+| `numpy_dtype(compiler, path)` | Structured NumPy dtype | `typeShape` |
+| `decode_buffer(compiler, path, data, *, offset=0)` | NumPy arrays | `decodeBuffer` |
+
+`VarReflection` is a frozen dataclass with these fields:
+
+- `var_name`: The last component of `path`.
+- `address_space`: The address space in the declaration, such as `"storage"`, or
+  `None` when the declaration has none.
+- `access_mode`: The access mode in the declaration, such as `"read_write"`.
+  An omitted access mode gives `None`, as in wesl-js.
+- `group` and `binding`: The evaluated `@group` and `@binding` arguments. The
+  arguments can be constant expressions. A variable without them gives `None`.
+- `dtype`: The NumPy dtype of the type, with the layout of `numpy_dtype`.
+  For a runtime-sized array, this is the element type, padded to the array
+  stride.
+- `byte_size`: The size of the type in bytes. A runtime-sized array gives 0.
+
+A structure that ends in a runtime-sized array gives `dtype=None` and
+`byte_size=0`.
+A type whose size depends on an override, or a type without a host-shareable
+layout such as `bool`, gives `dtype=None` and `byte_size=0`.
+
+`TypeShapeError` is a `ValueError` with a `var_name` attribute, as in wesl-js.
+The functions raise it for a texture or a sampler, for a path that names no
+module and item, and for a path whose item is neither a type nor a typed
+module-scope variable.
+
+`numpy_dtype()` and `decode_buffer()` accept a type path or a variable path.
+For a type, `numpy_dtype()` gives the dtype of one element, and
+`decode_buffer()` reads `data` as an array of that type, so the result has the
+element count first. For a variable, `numpy_dtype()` gives `dtype` of
+`var_reflection()`, and `decode_buffer()` decodes the variable's own type: a
+`vec3f` variable gives shape `(3,)`, and a runtime-sized array takes its length
+from `data`. `offset` skips that many bytes at the start of `data`.
+In a dtype, an array of `vec3` values or a matrix with three rows keeps its
+padding component, so a `mat3x3f` member has shape `(3, 4)`. `decode_buffer()`
+removes that padding:
+
+```python
+results = decode_buffer(compiler, "package::simulation::results", readback, offset=16)
+```
+
+`build_struct_registry()` maps the name of each structure that the module
+declares to its dtype. It leaves out imported structures. A structure without a
+dtype maps to `None`.
+
+`classify_entry_points()` returns an `EntryPoint(fn_name, stage, workgroup_size)`
+named tuple for each `@compute`, `@vertex`, and `@fragment` function of the
+module, in declaration order. `stage` is `"compute"`, `"vertex"`, or
+`"fragment"`. `workgroup_size` is a tuple of three integers, with 1 for an
+omitted dimension. The arguments can be constant expressions.
+`workgroup_size` is `None` for a vertex or fragment function, and when the size
+uses an override.
+
+Errors in a reflected module name the module, for example
+`= note: in package::regions::extents`.
 
 ## Package resources
 

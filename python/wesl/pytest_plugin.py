@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Mapping
+from dataclasses import replace
 from os.path import abspath
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -18,18 +19,18 @@ from . import (
     TestOptions,
     _native,
 )
-from ._project import load_project
+from ._constants import add_constant_modules
+from ._project import Project, load_project
 from ._resources import module_name
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
-    from typing import Any
+    from typing import Any, SupportsFloat
 
     import wgpu
     from _pytest._code.code import TerminalRepr
 
     from . import Feature
-    from ._project import Project
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -49,9 +50,6 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "wesl: executes a WESL shader test")
-    config.addinivalue_line(
-        "markers", "gpu: requires a WebGPU adapter (hardware or software)"
-    )
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -90,43 +88,42 @@ class WeslModule(pytest.Module):
                 *,
                 wesl_device: wgpu.GPUDevice,
                 wesl_test_options: TestOptions,
-                wesl_modules: Mapping[str, str],
-                wesl_filenames: Mapping[str, str | Path],
-                wesl_root_directory: Path,
-                wesl_dependencies: Mapping[str, str | Path],
+                wesl_compiler: Compiler,
                 wesl_resources: Mapping[int, Sequence[dict[str, Any]]],
                 wesl_layouts: Mapping[int, Sequence[dict[str, Any]]] | None,
-                wesl_constants: Mapping[str, float],
                 shader_path: Path = self.path,
                 shader_source: str = source,
                 shader_name: str = name,
                 shader_module: _native.ParsedTestModule = parsed_module,
             ) -> None:
                 __tracebackhide__ = True
-                from .testing import ShaderTestDisabledError, _prepare_test
+                from .testing import ShaderTestDisabledError, _run_test
 
-                root_directory = Path(abspath(wesl_root_directory))
+                root_directory = Path(
+                    abspath(cast("Path", wesl_compiler.root_directory))
+                )
                 relative = shader_path.relative_to(root_directory)
                 parts = (*relative.parts[:-1], relative.stem.replace(".", "_"))
                 root = module_name(parts, namespace="package")
-                if root in wesl_modules:
+                if root in wesl_compiler.modules:
                     message = "the test module is already present in wesl_modules"
                     raise ValueError(message)
                 try:
-                    _prepare_test(
+                    _run_test(
                         wesl_device,
-                        {**wesl_modules, root: shader_source},
+                        replace(
+                            wesl_compiler,
+                            filenames={**wesl_compiler.filenames, root: shader_path},
+                            root_directory=root_directory,
+                        ),
                         shader_name,
+                        source=shader_source,
                         root=root,
                         options=wesl_test_options,
-                        filenames={**wesl_filenames, root: shader_path},
-                        root_directory=root_directory,
-                        dependencies=wesl_dependencies,
                         resources=wesl_resources,
                         layouts=wesl_layouts,
-                        constants=wesl_constants,
                         parsed_module=shader_module,
-                    )()
+                    )
                 except ShaderTestDisabledError as error:
                     pytest.skip(str(error))
 
@@ -136,7 +133,6 @@ class WeslModule(pytest.Module):
             run_shader.__module__ = module.__name__
             vars(run_shader)["__test__"] = True
             pytest.mark.wesl(run_shader)
-            pytest.mark.gpu(run_shader)
             try:
                 items = self.ihook.pytest_pycollect_makeitem(
                     collector=self, name=name, obj=run_shader
@@ -189,6 +185,7 @@ class WeslTest:
             excinfo.value.diagnostic,
             actual=excinfo.value.actual,
             expected=excinfo.value.expected,
+            value_type=excinfo.value.value_type,
             failures=excinfo.value.failures,
             checks=excinfo.value.checks,
             invocation=excinfo.value.invocation,
@@ -226,15 +223,19 @@ def wesl_device(request: pytest.FixtureRequest) -> Iterator[wgpu.GPUDevice]:
 
 @pytest.fixture
 def wesl_compiler(
+    *,
     wesl_options: CompileOptions,
     wesl_modules: Mapping[str, str],
     wesl_filenames: Mapping[str, str | Path],
     wesl_root_directory: Path,
     wesl_dependencies: Mapping[str, str | Path],
+    wesl_constants: Mapping[str, SupportsFloat | str],
 ) -> Compiler:
     return Compiler(
         options=wesl_options,
-        modules=wesl_modules,
+        modules=add_constant_modules(wesl_modules, {"constants": wesl_constants})
+        if wesl_constants
+        else wesl_modules,
         filenames=wesl_filenames,
         root_directory=wesl_root_directory,
         dependencies=wesl_dependencies,
@@ -247,8 +248,13 @@ def _wesl_project(request: pytest.FixtureRequest) -> Project | None:
 
 
 @pytest.fixture
-def wesl_dependencies() -> Mapping[str, str | Path]:
-    return {}
+def wesl_dependencies(_wesl_project: Project | None) -> Mapping[str, str | Path]:
+    if _wesl_project is None:
+        return {}
+    return {
+        name: Project(directory / "wesl.toml").root_directory
+        for name, directory in _wesl_project.dependencies.items()
+    }
 
 
 @pytest.fixture
@@ -299,7 +305,7 @@ def wesl_test_options(
 
 
 @pytest.fixture
-def wesl_constants() -> Mapping[str, float]:
+def wesl_constants() -> Mapping[str, SupportsFloat | str]:
     return {}
 
 

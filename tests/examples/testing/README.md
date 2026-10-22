@@ -35,13 +35,25 @@ removes the test from the linear variant, so pytest skips that case.
 [The test guide](../../README.md#native-shader-tests) describes this pattern for
 the other examples.
 
-[Buffer tests](shaders/buffers/exposure.test.wesl) combine resources, overrides,
+[Buffer tests](shaders/buffers/exposure.test.wesl) combine resources, constants,
 and features. Their [fixtures](shaders/buffers/conftest.py) provide inputs and NumPy
 references through `wesl_resources`, then destroy the buffers after each test.
 `wesl_constants` selects two gains, producing four cases with the feature variants.
 
 ```bash
 pixi run -e testing python -m pytest tests/examples/testing/shaders/buffers -v
+```
+
+## Parametrized cases
+
+[levels_cases.wesl](shaders/levels_cases.wesl) has one `@test` function that reads
+its input and expected value from the `constants::` module. Its filename does not
+end in `.test.wesl`, so the plugin does not collect it.
+[test_cases.py](test_cases.py) runs it once for each `pytest.param`, with the
+values in `constants`. With the feature variants, this gives six cases.
+
+```bash
+pixi run -e testing python -m pytest tests/examples/testing/test_cases.py -v
 ```
 
 ## Numerical checks

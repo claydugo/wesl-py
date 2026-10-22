@@ -18,13 +18,13 @@ def wesl_features(request: pytest.FixtureRequest) -> wesl.Features:
 
 
 @pytest.fixture(params=[1, 3], ids=["radius_1", "radius_3"])
-def wesl_constants(request: pytest.FixtureRequest) -> dict[str, float]:
-    return {"0": request.param}
+def wesl_constants(request: pytest.FixtureRequest) -> dict[str, int]:
+    return {"radius": request.param}
 
 
 @pytest.fixture
 def wesl_resources(
-    wesl_constants: dict[str, float],
+    wesl_constants: dict[str, int],
     wesl_device: wgpu.GPUDevice,
 ) -> Iterator[dict[int, list[dict[str, Any]]]]:
     np = pytest.importorskip("numpy")
@@ -32,7 +32,7 @@ def wesl_resources(
     rows, columns = np.indices((8, 8), dtype=np.float32)
     noise = np.random.default_rng(3).random((8, 8), dtype=np.float32)
     fields = np.stack([np.full((8, 8), 0.75, dtype=np.float32), columns, rows, noise])
-    radius = wesl_constants["0"]
+    radius = wesl_constants["radius"]
     offsets = np.arange(-radius, radius + 1, dtype=np.float64)
     weights = np.exp(-0.5 * (3 * offsets / radius) ** 2)
     weights /= weights.sum()

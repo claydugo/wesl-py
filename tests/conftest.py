@@ -28,7 +28,7 @@ def pytest_configure() -> None:
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     if find_spec("wgpu") is None:
         for item in items:
-            if "gpu" in item.keywords:
+            if "gpu" in item.keywords or "wesl" in item.keywords:
                 item.add_marker(pytest.mark.skip(reason="wgpu is not installed"))
 
 

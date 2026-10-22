@@ -1,5 +1,11 @@
-import package::examples::compaction::predicate::{selected, threshold};
+import package::examples::compaction::predicate::selected_at;
 import wgsl_test::{expect, expectEq};
+
+const threshold: u32 = constants::threshold;
+
+fn selected(value: u32) -> bool {
+    return selected_at(value, threshold);
+}
 
 var<workgroup> changes: array<u32, 64>;
 

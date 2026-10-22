@@ -1,5 +1,5 @@
 import package::examples::optimizers::backward::{backward, gradients};
-import package::examples::optimizers::layout::parameter_count;
+import constants::parameter_count;
 import package::examples::optimizers::network::{evaluate, loss};
 import package::examples::optimizers::parameters::{perturbation, perturbed_index};
 import wgsl_test::expectWithin;

@@ -1,4 +1,4 @@
-import package::examples::optimizers::layout::parameter_count;
+import constants::parameter_count;
 import package::examples::optimizers::rule::update;
 
 @group(0) @binding(0) var<storage, read_write> parameters: array<f32>;
