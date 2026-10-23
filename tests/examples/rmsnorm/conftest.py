@@ -15,6 +15,11 @@ def wesl_features(request: pytest.FixtureRequest) -> wesl.Features:
 
 
 @pytest.fixture
+def wesl_constants() -> dict[str, float]:
+    return {"width": 64, "epsilon": 0.25}
+
+
+@pytest.fixture
 def wesl_resources(
     wesl_features: wesl.Features,
     wesl_device: "wgpu.GPUDevice",
@@ -37,8 +42,3 @@ def wesl_resources(
             stack.callback(buffer.destroy)
             entries.append({"binding": binding, "resource": {"buffer": buffer}})
         yield {0: entries}
-
-
-@pytest.fixture
-def wesl_constants() -> dict[str, float]:
-    return {"0": 64, "1": 0.25}

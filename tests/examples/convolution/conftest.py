@@ -95,10 +95,12 @@ def assert_operator(
             filename = Path(__file__).with_name("operators.wesl")
             run_test(
                 wesl_device,
-                {"package::main": filename.read_text()},
+                wesl.Compiler(
+                    modules={"package::main": filename.read_text()},
+                    filenames={"package::main": filename},
+                ),
                 "operator_matches_reference",
                 options=wesl_test_options,
-                filenames={"package::main": filename},
                 constants={"expected_count": expected_count},
                 resources={
                     0: [

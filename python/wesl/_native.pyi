@@ -1,7 +1,5 @@
 import builtins
 import collections.abc
-import os
-import pathlib
 import typing
 
 import wesl
@@ -16,11 +14,16 @@ __all__ = [
     "TestResult",
     "__version__",
     "compile",
+    "compile_compute",
     "compile_test",
     "constant_module",
+    "entry_points",
     "execute_test_cpu",
-    "project_root",
+    "path_layout",
+    "project",
     "render_diagnostic",
+    "struct_layouts",
+    "var_reflection",
 ]
 
 __version__: builtins.str
@@ -107,6 +110,10 @@ class Source:
 class TestLayout:
     @property
     def buffer_size(self) -> builtins.int: ...
+    @property
+    def resources(self) -> builtins.list[tuple[builtins.int, builtins.int]]: ...
+    @property
+    def buffers(self) -> list[dict[str, typing.Any]]: ...
     def decode(self, data: collections.abc.Buffer) -> TestResult: ...
 
 @typing.final
@@ -129,49 +136,69 @@ class TestResult:
     def values(
         self,
     ) -> tuple[
-        bool | int | float | tuple[float, ...], bool | int | float | tuple[float, ...]
+        bool | int | float | tuple[bool | int | float, ...],
+        bool | int | float | tuple[bool | int | float, ...],
     ]: ...
+    @property
+    def value_type(self) -> builtins.str: ...
 
-def compile(
-    modules: collections.abc.Mapping[str, str],
-    root: builtins.str,
-    options: wesl.CompileOptions,
-    filenames: typing.Mapping[builtins.str, builtins.str],
-    root_directory: builtins.str | os.PathLike | pathlib.Path | None,
-    dependencies: typing.Mapping[
-        builtins.str, builtins.str | os.PathLike | pathlib.Path
-    ],
-) -> CompileResult: ...
+def compile(compiler: wesl.Compiler, root: builtins.str) -> CompileResult: ...
+def compile_compute(
+    compiler: wesl.Compiler, root: builtins.str
+) -> tuple[str, list[dict[str, typing.Any]], dict[str, str]]: ...
 def compile_test(
-    modules: collections.abc.Mapping[str, str],
+    compiler: wesl.Compiler,
     root: builtins.str,
     test_name: builtins.str,
     options: wesl.TestOptions,
-    filenames: typing.Mapping[builtins.str, builtins.str],
-    root_directory: builtins.str | os.PathLike | pathlib.Path | None,
     result_binding: builtins.int,
-    dependencies: typing.Mapping[
-        builtins.str, builtins.str | os.PathLike | pathlib.Path
-    ],
+    reserved: typing.Sequence[builtins.int],
     parsed_module: ParsedTestModule | None = None,
 ) -> (
     tuple[
         builtins.str,
         builtins.str,
         builtins.list[Diagnostic],
-        builtins.dict[builtins.str, builtins.str | None],
+        builtins.dict[builtins.str, builtins.str],
         TestLayout,
     ]
     | None
 ): ...
 def constant_module(
-    module: builtins.str, constants: collections.abc.Mapping[str, bool | int | float]
+    module: builtins.str,
+    constants: collections.abc.Mapping[str, bool | int | float | str],
 ) -> builtins.str: ...
+def entry_points(
+    compiler: wesl.Compiler, module: builtins.str
+) -> builtins.list[
+    tuple[
+        builtins.str,
+        builtins.str,
+        tuple[builtins.int, builtins.int, builtins.int] | None,
+    ]
+]: ...
 def execute_test_cpu(
-    source: builtins.str,
-    entry_point: builtins.str,
-    layout: TestLayout,
-    constants: typing.Mapping[builtins.str, builtins.float],
+    source: builtins.str, entry_point: builtins.str, layout: TestLayout
 ) -> builtins.list[builtins.int]: ...
-def project_root(source: builtins.str) -> builtins.str: ...
+def path_layout(
+    compiler: wesl.Compiler, path: builtins.str
+) -> builtins.tuple[builtins.bool, builtins.str | builtins.tuple[typing.Any, ...]]: ...
+def project(
+    source: builtins.str,
+) -> tuple[builtins.str, builtins.dict[builtins.str, builtins.str]]: ...
 def render_diagnostic(diagnostic: Diagnostic) -> builtins.str: ...
+def struct_layouts(
+    compiler: wesl.Compiler, module: builtins.str
+) -> builtins.list[
+    builtins.tuple[builtins.str, builtins.str | builtins.tuple[typing.Any, ...] | None]
+]: ...
+def var_reflection(
+    compiler: wesl.Compiler, path: builtins.str
+) -> builtins.tuple[
+    builtins.str | None,
+    builtins.str | None,
+    builtins.int | None,
+    builtins.int | None,
+    builtins.str | builtins.tuple[typing.Any, ...] | None,
+    builtins.int,
+]: ...

@@ -8,5 +8,5 @@ def wesl_features(request: pytest.FixtureRequest) -> wesl.Features:
 
 
 @pytest.fixture(params=[500, 2**31], ids=["threshold_500", "threshold_2_31"])
-def wesl_constants(request: pytest.FixtureRequest) -> dict[str, float]:
-    return {"0": request.param}
+def wesl_constants(request: pytest.FixtureRequest) -> dict[str, int]:
+    return {"threshold": request.param}

@@ -12,8 +12,7 @@ supplied text. Without it, wgpu-py selects a high-performance adapter.
 It creates synthetic inputs and verifies convolution and pooling with NumPy.
 
 The example reuses compute pipelines and resources across three inputs.
-A callable from `wesl.testing.prepare_test()` compares outputs with NumPy references
-on the GPU and accepts replacement resources for pooling.
+`wesl.testing.run_test()` compares the outputs with NumPy references on the GPU.
 
 The reusable shaders live in [shaders](shaders).
 

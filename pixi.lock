@@ -8234,6 +8234,7 @@ packages:
 - pypi: ./
   name: wesl-py
   requires_dist:
+  - numpy>=1.26 ; extra == 'testing'
   - pytest>=9.1 ; extra == 'testing'
   - wgpu>=0.32,<0.33 ; extra == 'testing'
   requires_python: '>=3.12'

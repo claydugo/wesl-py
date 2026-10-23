@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 import wesl
+from wesl.reflect import var_reflection
 
 
 def test_project_discovers_the_nearest_manifest(tmp_path: Path) -> None:
@@ -59,15 +60,28 @@ def test_project_dependencies_are_explicit(tmp_path: Path) -> None:
     (tmp_path / "main.wesl").write_text(source)
     compiler = wesl.Compiler.from_project(tmp_path)
     assert compiler.root_directory == tmp_path / "shaders"
-    assert compiler.dependencies == {}
-    with pytest.raises(wesl.CompileError, match="library"):
-        compiler.compile_source(source)
+    assert compiler.dependencies == {"library": library}
+    assert "7u" in compiler.compile_source(source).wgsl
+    with pytest.raises(
+        wesl.CompileError,
+        match="no dependency is named `shaders`; "
+        "the dependencies are `library`, `wgsl_test`",
+    ):
+        compiler.compile(root="shaders::main")
+    with pytest.raises(
+        wesl.CompileError,
+        match="no dependency is named `shaders`; the dependencies are `wgsl_test`",
+    ):
+        var_reflection(wesl.Compiler(), "shaders::main::value")
+    with pytest.raises(wesl.CompileError, match="the compiler has no root directory"):
+        wesl.Compiler().compile(root="package::main")
 
     compiler = wesl.Compiler.from_project(
         tmp_path, root_directory=tmp_path, dependencies={"library": library}
     )
     assert compiler.root_directory == tmp_path
     result = compiler.compile_file("main.wesl")
+    assert compiler.compile(root="package::main") == result
     assert result.modules == ("package::main", "library")
     assert "7u" in result.wgsl
     filename.write_text("fn value() -> u32 { return 9u; }")

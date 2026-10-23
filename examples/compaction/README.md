@@ -58,8 +58,9 @@ The tests compare prefixes and selected values with NumPy across hierarchy bound
 
 [Native tests](../../tests/examples/compaction/predicate.test.wesl) sweep 64
 values around the threshold in one workgroup. Each sweep must have exactly one
-partition boundary, at the threshold. Fixtures select both predicate variants
-and two threshold overrides.
+partition boundary, at the threshold. The test calls `selected_at` with a
+threshold from `constants::`. Fixtures select both predicate variants and the
+thresholds 500 and `2**31`.
 
 Collect the native tests without GPU dependencies:
 

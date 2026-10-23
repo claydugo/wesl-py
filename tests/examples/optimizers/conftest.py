@@ -11,12 +11,13 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture
+def wesl_constants() -> dict[str, int]:
+    return create_layout(16)
+
+
+@pytest.fixture
 def wesl_modules() -> dict[str, str]:
     return {
-        "package::examples::optimizers::layout": "\n".join(
-            f"public const {name} = {value};"
-            for name, value in create_layout(16).items()
-        ),
         "package::examples::optimizers::parameters": (
             Path(__file__).parent / "perturbed.wesl"
         ).read_text(),

@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-from importlib import import_module
-from importlib.util import find_spec
+import itertools
 from struct import pack, unpack
 from typing import TYPE_CHECKING
 
 import pytest
 import wesl
+from wesl.reflect import decode_buffer, numpy_dtype
 from wesl.testing import (
     ShaderAssertionError,
-    prepare_test,
+    run_compute,
     run_test,
+    run_test_cpu,
 )
 
 if TYPE_CHECKING:
@@ -28,12 +29,12 @@ def test_shader_test_visibility(shader_runner: partial) -> None:
         ),
         "library": "fn value() -> u32 { return 7u; }",
     }
-    shader_runner(modules, "selected")
+    shader_runner(wesl.Compiler(modules=modules), "selected")
     options = wesl.TestOptions(visibility=True)
     with pytest.raises(wesl.CompileError, match="visibility"):
-        shader_runner(modules, "selected", options=options)
+        shader_runner(wesl.Compiler(modules=modules), "selected", options=options)
     modules["library"] = "public fn value() -> u32 { return 7u; }"
-    shader_runner(modules, "selected", options=options)
+    shader_runner(wesl.Compiler(modules=modules), "selected", options=options)
 
 
 @pytest.mark.parametrize(
@@ -60,14 +61,13 @@ def test_run_test_uses_explicit_dependencies(
             "fn next() -> u32 { counter += 1u; return counter; }"
         )
     shader_runner(
-        modules,
+        wesl.Compiler(modules=modules, dependencies={"common": common}),
         "selected",
-        dependencies={"common": common},
     )
 
 
 @pytest.mark.gpu
-def test_prepared_test_lifecycle(wesl_device: wgpu.GPUDevice) -> None:
+def test_run_test_resources(wesl_device: wgpu.GPUDevice) -> None:
     import wgpu
 
     texture = wesl_device.create_texture(
@@ -119,10 +119,9 @@ def test_prepared_test_lifecycle(wesl_device: wgpu.GPUDevice) -> None:
                 @group(2) @binding(0) var image: texture_2d<f32>;
                 @group(2) @binding(1) var<storage, read_write> value: u32;
                 @group(2) @binding(2) var linear: sampler;
-                override expected: u32 = 0u;
                 @test fn accumulate() {
                     value += increment.x;
-                    wgsl_test::expectEq(value, expected);
+                    wgsl_test::expectEq(value, constants::expected);
                     wgsl_test::expectNearVec4(
                         textureSampleLevel(image, linear, vec2f(0.5), 0.0),
                         vec4f(1.0, 0.0, 0.0, 1.0),
@@ -130,30 +129,45 @@ def test_prepared_test_lifecycle(wesl_device: wgpu.GPUDevice) -> None:
                 }
             """
         }
+        compiler = wesl.Compiler(modules=modules)
         run_test(
             wesl_device,
-            modules,
+            compiler,
             "accumulate",
             resources=resources,
             constants={"expected": 7},
         )
-        shader_test = prepare_test(
+        run_test(
             wesl_device,
-            modules,
+            compiler,
             "accumulate",
             resources=resources,
             constants={"expected": 10},
         )
-        shader_test()
-        for replacement in (None, bindings(buffers[1], buffers[3]), None):
-            if replacement is None:
-                with pytest.raises(ShaderAssertionError) as failure:
-                    shader_test()
-                assert (failure.value.checks, failure.value.failures) == (2, 1)
-            else:
-                shader_test(resources=replacement)
+        with pytest.raises(ShaderAssertionError) as failure:
+            run_test(
+                wesl_device,
+                compiler,
+                "accumulate",
+                resources=resources,
+                constants={"expected": 10},
+            )
+        assert (failure.value.checks, failure.value.failures) == (2, 1)
+        run_test(
+            wesl_device,
+            compiler,
+            "accumulate",
+            resources=bindings(buffers[1], buffers[3]),
+            constants={"expected": 10},
+        )
         wesl_device.queue.write_buffer(buffers[2], 256, pack("<I", 7))
-        shader_test()
+        run_test(
+            wesl_device,
+            compiler,
+            "accumulate",
+            resources=resources,
+            constants={"expected": 10},
+        )
         assert unpack(
             "<I", wesl_device.queue.read_buffer(buffers[2], buffer_offset=256, size=4)
         ) == (10,)
@@ -208,8 +222,9 @@ def test_float32_texture_layouts(wesl_device: wgpu.GPUDevice) -> None:
         }
         run_test(
             wesl_device,
-            {
-                "package::main": """
+            wesl.Compiler(
+                modules={
+                    "package::main": """
                     @group(0) @binding(0) var image: texture_2d<f32>;
                     @group(0) @binding(1) var nearest: sampler;
                     @test fn sample() {
@@ -220,7 +235,8 @@ def test_float32_texture_layouts(wesl_device: wgpu.GPUDevice) -> None:
                         );
                     }
                 """
-            },
+                }
+            ),
             "sample",
             resources=resources,
             layouts=layouts,
@@ -231,35 +247,228 @@ def test_float32_texture_layouts(wesl_device: wgpu.GPUDevice) -> None:
         texture.destroy()
 
 
-def test_constants_for_stripped_overrides(shader_runner: partial) -> None:
-    modules = {
-        "package::main": """
-            import package::library::helper;
-            const base = 8u;
-            override used: u32;
-            override unused: u32;
-            @id(9) override numbered: u32;
-            @id(base + 2u) override derived: u32;
-            @test fn selected() { wgsl_test::expectEq(used + helper(), 7u); }
-        """,
-        "package::library": """
-            @id(11) override imported: u32;
-            override hidden: u32 = 0u;
-            fn helper() -> u32 { return 0u; }
-        """,
-    }
-    shader_runner(
-        modules,
-        "selected",
-        constants={"used": 7, "unused": 1, "9": 2, "10": 3, "11": 4},
+@pytest.mark.gpu
+def test_buffer_variables_get_zeroed_storage(wesl_device: wgpu.GPUDevice) -> None:
+    import wgpu
+
+    values = wesl_device.create_buffer_with_data(
+        data=pack("<2I", 3, 4), usage=wgpu.BufferUsage.STORAGE
     )
-    error_types: tuple[type[Exception], ...] = (ValueError,)
-    if find_spec("wgpu") is not None:
-        error_types = (ValueError, import_module("wgpu").GPUValidationError)
-    for name in ["misspelled", "numbered", "hidden"]:
-        with pytest.raises(
-            error_types,
-            match=r"pipeline constant does not name an override"
-            r"|pipeline-overridable constant '[a-z_]+' not found",
+    source = """
+        @group(0) @binding(1) var<storage, read> values: array<u32, 2>;
+        @buffer var<storage, read_write> scratch: array<u32, 4>;
+        @buffer var<storage, read_write> unused: array<u32, 4>;
+        @test fn scratch_starts_at_zero() {
+            wgsl_test::expectEq(scratch[3], 0u);
+            scratch[3] = values[1];
+            wgsl_test::expectEq(scratch[3], 4u);
+        }
+        @test fn uses_no_resource() { wgsl_test::expectEq(3u, 3u); }
+    """
+    try:
+        for strip, test_name in itertools.product(
+            [True, False], ["scratch_starts_at_zero", "uses_no_resource"]
         ):
-            shader_runner(modules, "selected", constants={"used": 7, name: 1})
+            run_test(
+                wesl_device,
+                wesl.Compiler(modules={"package::main": source}),
+                test_name,
+                options=wesl.TestOptions(strip=strip),
+                resources={
+                    0: [{"binding": 1, "resource": {"buffer": values}}],
+                    1: [{"binding": 0, "resource": {"buffer": values}}],
+                },
+            )
+    finally:
+        values.destroy()
+    run_test(
+        wesl_device,
+        wesl.Compiler(
+            modules={
+                "package::main": "@buffer var<storage, read> zeros: array<u32, 4>; "
+                "@test fn reads() { wgsl_test::expectEq(zeros[3], 0u); }"
+            }
+        ),
+        "reads",
+        layouts={},
+    )
+    with pytest.raises(ValueError, match="must be a var<storage>"):
+        run_test(
+            wesl_device,
+            wesl.Compiler(
+                modules={
+                    "package::main": "@buffer var<uniform> scale: vec4f; "
+                    "@test fn reads() { wgsl_test::expectNear(scale.x, 0.0); }"
+                }
+            ),
+            "reads",
+        )
+
+
+@pytest.mark.gpu
+def test_run_compute_returns_buffers_by_name(wesl_device: wgpu.GPUDevice) -> None:
+    import wgpu
+
+    np = pytest.importorskip("numpy")
+    results = run_compute(
+        wesl_device,
+        wesl.Compiler(),
+        """
+            @buffer var<storage, read_write> squares: array<u32, 8>;
+            @buffer var<storage> offsets: array<f32, 1>;
+            @buffer var<storage, read_write> halves: array<f32, 4>;
+            @buffer var<storage, read_write> unused: array<f32, 2>;
+            @compute @workgroup_size(4)
+            fn main(@builtin(global_invocation_id) index: vec3u) {
+                squares[index.x] = index.x * index.x + constants::shift;
+                if index.x < 2u {
+                    halves[index.x] =
+                        f32(index.x) * constants::scale + offsets[0] + 999.0;
+                }
+            }
+        """,
+        constants={"shift": 1, "scale": 0.5},
+        dispatch_workgroups=2,
+    )
+    assert list(results) == ["squares", "halves", "unused"]
+    np.testing.assert_array_equal(results["squares"], np.arange(8) ** 2 + 1)
+    np.testing.assert_array_equal(results["halves"], [0.0, 0.5, -999.0, -999.0])
+    np.testing.assert_array_equal(results["unused"], [-999.0, -999.0])
+    assert results["halves"].dtype == np.float32
+    compiler = wesl.Compiler(
+        modules={"package::shapes": "struct Pair { count: u32, turn: mat3x3f }"}
+    )
+    source = """
+        import package::shapes::Pair;
+        @buffer var<storage, read> values: array<i32>;
+        @buffer var<storage, read_write> points: array<vec3i, 2>;
+        @buffer var<storage, read_write> turn: mat3x3f;
+        @buffer var<storage, read_write> pairs: array<Pair, 2>;
+        @compute @workgroup_size(1) fn main() {
+            let last = arrayLength(&values) - 1u;
+            points[1] = vec3i(values[0], values[1], values[last]);
+            turn = mat3x3f(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0);
+            pairs[0] = Pair(arrayLength(&values), turn);
+        }
+    """
+    shaped = run_compute(
+        wesl_device,
+        compiler,
+        source,
+        buffers={
+            "values": [-3, 4, 0, 9],
+            "pairs": {"count": [0, 9], "turn": np.zeros((2, 3, 3))},
+        },
+    )
+    assert shaped["points"].shape == (2, 3)
+    np.testing.assert_array_equal(shaped["points"][1], [-3, 4, 9])
+    np.testing.assert_array_equal(shaped["turn"], np.arange(1, 10).reshape(3, 3))
+    np.testing.assert_array_equal(shaped["pairs"]["count"], [4, 9])
+    np.testing.assert_array_equal(
+        shaped["pairs"]["turn"][0], np.arange(1, 10).reshape(3, 3)
+    )
+    raw = np.zeros(2, numpy_dtype(compiler, "package::shapes::Pair"))
+    assert (raw.itemsize, raw["turn"].shape) == (64, (2, 3, 4))
+    raw["count"] = [5, 6]
+    raw["turn"][1, :, :3] = np.arange(9).reshape(3, 3)
+    decoded = decode_buffer(compiler, "package::shapes::Pair", raw.tobytes())
+    np.testing.assert_array_equal(decoded["count"], [5, 6])
+    np.testing.assert_array_equal(decoded["turn"][1], np.arange(9).reshape(3, 3))
+    with pytest.raises(ValueError, match="no @buffer variable is named missing"):
+        run_compute(wesl_device, compiler, source, buffers={"missing": [1]})
+    with pytest.raises(ValueError, match="requires a @buffer"):
+        run_compute(
+            wesl_device,
+            wesl.Compiler(),
+            "@compute @workgroup_size(1) fn main() {}",
+        )
+    with pytest.raises(wgpu.GPUValidationError):
+        run_compute(
+            wesl_device,
+            wesl.Compiler(
+                modules={
+                    "package::main": "import package::util::fill; "
+                    "@buffer var<storage, read_write> values: array<u32, 1>; "
+                    "@compute @workgroup_size(1) fn main() { values[0] = fill(); }",
+                    "package::util": "@buffer var<storage, read_write> "
+                    "values: array<u32, 1>; "
+                    "fn fill() -> u32 { values[0] = 7u; return values[0]; }",
+                }
+            ),
+        )
+
+
+@pytest.mark.gpu
+def test_shader_errors_name_source_declarations(wesl_device: wgpu.GPUDevice) -> None:
+    import wgpu
+
+    compiler = wesl.Compiler(
+        modules={
+            "package::util": "fn fill() -> u32 { let value: f32 = 1.5; return value; }"
+        }
+    )
+    with pytest.raises(wgpu.GPUValidationError, match="'package::util::fill'") as error:
+        run_compute(
+            wesl_device,
+            compiler,
+            "import package::util::fill; "
+            "@buffer var<storage, read_write> values: array<u32, 1>; "
+            "@compute @workgroup_size(1) fn main() { values[0] = fill(); }",
+        )
+    assert not any(
+        "package::util::fill" in line
+        for line in str(error.value).splitlines()
+        if "\u2502" in line
+    )
+    with pytest.raises(wgpu.GPUValidationError, match="'package::util::fill'"):
+        run_test(
+            wesl_device,
+            compiler,
+            "selected",
+            source="import package::util::fill; "
+            "@test fn selected() { wgsl_test::expectEq(fill(), 1u); }",
+        )
+
+
+@pytest.mark.gpu
+def test_run_compute_file_roots_and_fill_kinds(
+    wesl_device: wgpu.GPUDevice, tmp_path: Path
+) -> None:
+    (tmp_path / "algorithms").mkdir()
+    (tmp_path / "algorithms/double.test.wesl").write_text(
+        "struct Pair { count: u32, weight: f32 }"
+        "@buffer var<storage, read_write> values: array<u32, 2>; "
+        "@buffer var<storage, read_write> pair: Pair; "
+        "@compute @workgroup_size(1) fn main() { values[0] = 2u * values[0]; }"
+    )
+    compiler = wesl.Compiler(root_directory=tmp_path)
+    assert [
+        int(
+            run_compute(wesl_device, compiler, root=root, buffers={"values": [3, 4]})[
+                "values"
+            ][0]
+        )
+        for root in ("algorithms/double.test.wesl", "./algorithms/double.test.wesl")
+    ] == [6, 6]
+    for buffers, error, message in [
+        ({"values": [1.5, 2.0]}, TypeError, "cannot fill a uint32 buffer with float64"),
+        (
+            {"pair": {"count": 1, "wieght": 2.0}},
+            ValueError,
+            r"needs the members \['count', 'weight'\], got \['count', 'wieght'\]",
+        ),
+    ]:
+        with pytest.raises(error, match=message):
+            run_compute(
+                wesl_device,
+                compiler,
+                root="algorithms/double.test.wesl",
+                buffers=buffers,
+            )
+    run_test_cpu(
+        wesl.Compiler(
+            modules={"package": "@test fn selected() { wgsl_test::expectEq(1u, 1u); }"}
+        ),
+        "selected",
+        root="package",
+    )

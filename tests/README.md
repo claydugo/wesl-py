@@ -27,9 +27,9 @@ Pure assertion cases also run on GPU in the `testing` environment.
 
 The [runner](runner) directory tests the shader runner through its own pytest
 plugin. The `*.test.wesl` files cover assertions in every scope and control-flow
-form, workgroup builtins with pipeline overrides, and resource bindings with
-explicit layouts. Fixtures in each directory supply overrides, resources,
-and layouts. `test_cpu.py` runs the assertion file on the CPU interpreter as well.
+form, workgroup builtins with override sizes, and resource bindings with
+explicit layouts. Fixtures in each directory supply resources and layouts.
+`test_cpu.py` runs the assertion file on the CPU interpreter as well.
 
 ```bash
 pixi run -e testing python -m pytest tests/runner -v
@@ -69,7 +69,7 @@ It is the PCG hash of Jarzynski and Olano, and it maps a seed to `[0, 1)` with
 24-bit resolution. Each invocation uses its own seed range, such as `lane * 8u`
 to `lane * 8u + 7u` for eight values.
 Each property test also checks one or two exact values.
-Fixtures in each directory's `conftest.py` supply buffers, overrides, and
+Fixtures in each directory's `conftest.py` supply buffers, constants, and
 feature variants. Keep tests that need different bindings in separate
 directories.
 

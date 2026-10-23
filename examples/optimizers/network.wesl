@@ -1,4 +1,4 @@
-import package::examples::optimizers::layout::{
+import constants::{
     first_biases,
     first_weights,
     output_bias,

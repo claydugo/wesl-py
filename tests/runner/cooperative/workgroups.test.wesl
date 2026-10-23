@@ -1,9 +1,9 @@
 import wgsl_test::{expect, expectEq};
 
 alias Count = u32;
-const initial = 1u;
+const initial = 32u;
 override lanes = initial;
-@id(5) override limit: Count;
+@id(5) override limit: Count = 4294967295u;
 override enabled: bool = false;
 override offset: u32 = 0u;
 const width = 2u;
@@ -65,10 +65,10 @@ fn qualified_workgroup_size(
 fn pipeline_overrides(@builtin(local_invocation_index) lane: u32) {
     expectEq(lanes, 32u);
     expectEq(limit, 4294967295u);
-    expect(enabled);
-    expectEq(offset, 7u);
+    expect(!enabled);
+    expectEq(offset, 0u);
     expectEq(super::library::read(), 19u);
     values[lane] = lane + offset;
     workgroupBarrier();
-    expectEq(values[(lane + 1u) % lanes], (lane + 1u) % lanes + 7u);
+    expectEq(values[(lane + 1u) % lanes], (lane + 1u) % lanes);
 }

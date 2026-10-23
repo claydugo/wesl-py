@@ -9,7 +9,6 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    path::PathBuf,
     sync::Arc,
 };
 
@@ -17,13 +16,13 @@ use pyo3::{
     buffer::PyBuffer,
     exceptions::{PyNotImplementedError, PyValueError},
     prelude::*,
-    types::{PyMapping, PyTuple},
+    types::PyTuple,
 };
 use wesl::{
     Resolver,
     eval::{
-        Context, EvalAttrs as _, EvalTy as _, Exec as _, Instance, LiteralInstance, RefInstance,
-        ShaderStage, SyntaxUtil as _, Type, call_ctor, ty_eval_ty,
+        Context, EvalAttrs as _, Exec as _, Instance, LiteralInstance, RefInstance,
+        SyntaxUtil as _, Type, ty_eval_ty,
     },
     pass::{self, Visit},
     sourcemap::SourceMap,
@@ -40,43 +39,13 @@ use wgsl_parse::syntax::{
     Visibility, WorkgroupSizeAttribute,
 };
 
-use crate::{Diagnostic, Failure, Features, ModuleResolver, module_path};
+use crate::{Compiler, Diagnostic, Failure, Features, ModuleResolver, module_path};
 
 fn available_name(mut name: String, mut is_used: impl FnMut(&str) -> bool) -> String {
     while is_used(&name) {
         name.push('_');
     }
     name
-}
-
-fn override_keys(syntax: &TranslationUnit, names: bool) -> HashSet<String> {
-    let declarations: Vec<_> = global_declarations(syntax)
-        .filter_map(|declaration| match &**declaration {
-            GlobalDeclaration::Declaration(value) => Some(value),
-            _ => None,
-        })
-        .collect();
-    let mut context = Context::new(syntax);
-    let mut constants: Vec<_> = declarations
-        .iter()
-        .filter(|value| value.kind == DeclarationKind::Const)
-        .collect();
-    loop {
-        let count = constants.len();
-        constants.retain(|value| value.exec(&mut context).is_err());
-        if constants.len() == count {
-            break;
-        }
-    }
-    declarations
-        .into_iter()
-        .filter(|value| value.kind == DeclarationKind::Override)
-        .filter_map(|value| match value.attr_id(&mut context) {
-            Ok(Some(id)) => Some(id.to_string()),
-            Ok(None) if names => Some(value.ident.name().to_string()),
-            _ => None,
-        })
-        .collect()
 }
 
 fn global_declarations(
@@ -92,6 +61,577 @@ fn global_declarations(
     })
 }
 
+#[derive(Clone, IntoPyObject)]
+pub(super) struct Buffer {
+    name: String,
+    binding: u32,
+    size: u32,
+    layout: Option<Layout>,
+    access: &'static str,
+}
+
+type Placement = (Vec<(bool, Buffer)>, Vec<(u32, u32)>);
+
+#[derive(Clone)]
+pub(super) enum Layout {
+    Scalar(&'static str),
+    Array(Box<Self>, Option<usize>, u32),
+    Struct(Vec<(String, u32, Self)>, u32),
+}
+
+impl<'py> IntoPyObject<'py> for Layout {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        match self {
+            Self::Scalar(name) => Ok(name.into_pyobject(py)?.into_any()),
+            Self::Array(element, count, stride) => Ok(("array", *element, count, stride)
+                .into_pyobject(py)?
+                .into_any()),
+            Self::Struct(members, size) => {
+                Ok(("struct", members, size).into_pyobject(py)?.into_any())
+            }
+        }
+    }
+}
+
+fn layout(value_type: &Type) -> Option<Layout> {
+    match value_type {
+        Type::F32 => Some(Layout::Scalar("f32")),
+        Type::I32 => Some(Layout::Scalar("i32")),
+        Type::U32 => Some(Layout::Scalar("u32")),
+        Type::F16 => Some(Layout::Scalar("f16")),
+        Type::Atomic(inner) => layout(inner),
+        Type::Vec(components, inner) => Some(Layout::Array(
+            Box::new(layout(inner)?),
+            Some(usize::from(*components)),
+            inner.size_of()?,
+        )),
+        Type::Mat(columns, rows, inner) => {
+            let column = Type::Vec(*rows, inner.clone());
+            Some(Layout::Array(
+                Box::new(layout(&column)?),
+                Some(usize::from(*columns)),
+                column.align_of()?,
+            ))
+        }
+        Type::Array(element, count) => Some(Layout::Array(
+            Box::new(layout(element)?),
+            *count,
+            element.size_of()?.next_multiple_of(element.align_of()?),
+        )),
+        Type::Struct(structure) => {
+            let mut members = Vec::new();
+            let mut end = 0u32;
+            for member in &structure.members {
+                let size = member.size.or_else(|| member.ty.size_of())?;
+                let offset = end.next_multiple_of(member.align.or_else(|| member.ty.align_of())?);
+                members.push((member.name.clone(), offset, layout(&member.ty)?));
+                end = offset + size;
+            }
+            Some(Layout::Struct(members, value_type.size_of()?))
+        }
+        _ => None,
+    }
+}
+
+fn constant_context(syntax: &TranslationUnit) -> Context<'_> {
+    let mut context = Context::new(syntax);
+    let mut constants: Vec<_> = syntax
+        .global_declarations
+        .iter()
+        .filter_map(|declaration| match &**declaration {
+            GlobalDeclaration::Declaration(value) if value.kind == DeclarationKind::Const => {
+                Some(value)
+            }
+            _ => None,
+        })
+        .collect();
+    loop {
+        let count = constants.len();
+        constants.retain(|value| value.exec(&mut context).is_err());
+        if constants.len() == count {
+            break;
+        }
+    }
+    context
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "Buffer placement finds reached declarations, validates @buffer variables, and assigns bindings"
+)]
+fn place_buffers(
+    syntax: &mut TranslationUnit,
+    sourcemap: &impl SourceMap,
+    root: &ModulePath,
+    entry_point: &str,
+    reserved: &[u32],
+) -> Result<Placement, Failure> {
+    let declarations: HashMap<String, &GlobalDeclaration> = syntax
+        .global_declarations
+        .iter()
+        .filter_map(|declaration| Some((declaration.ident()?.name().clone(), &**declaration)))
+        .collect();
+    let mut reached = HashSet::from([entry_point.to_owned()]);
+    let mut pending: Vec<_> = declarations.get(entry_point).into_iter().copied().collect();
+    while let Some(current) = pending.pop() {
+        Visit::<TypeExpression>::visit_rec(current, &mut |expression: &TypeExpression| {
+            let name = expression.ident.name();
+            if let Some(&declaration) = declarations.get(&*name)
+                && reached.insert(name.clone())
+            {
+                pending.push(declaration);
+            }
+        });
+    }
+    let mut taken: HashSet<u32> = reserved.iter().copied().collect();
+    let mut resources = Vec::new();
+    let mut found = Vec::new();
+    let mut context = constant_context(syntax);
+    for (index, declaration) in syntax.global_declarations.iter().enumerate() {
+        let GlobalDeclaration::Declaration(value) = &**declaration else {
+            continue;
+        };
+        let bound = value
+            .attributes
+            .iter()
+            .any(|attribute| matches!(&**attribute, Attribute::Group(_) | Attribute::Binding(_)));
+        let name = value
+            .attributes
+            .iter()
+            .any(|attribute| matches!(&**attribute, Attribute::Custom(custom) if custom.name == "buffer"))
+            .then(|| {
+                sourcemap.item(&value.ident.name()).map_or_else(
+                    || Some(value.ident.name().clone()),
+                    |entry| (entry.path == *root).then(|| entry.name.clone()),
+                )
+            })
+            .flatten();
+        let Some(name) = name else {
+            if bound && let Ok((group, number)) = value.attr_group_binding(&mut context) {
+                if group == 0 {
+                    taken.insert(number);
+                }
+                if reached.contains(&*value.ident.name()) {
+                    resources.push((group, number));
+                }
+            }
+            continue;
+        };
+        let DeclarationKind::Var(Some((AddressSpace::Storage, access))) = &value.kind else {
+            return Err(Failure::Message(format!(
+                "@buffer variable {name} must be a var<storage>"
+            )));
+        };
+        if bound {
+            return Err(Failure::Message(format!(
+                "@buffer variable {name} takes its binding from the test runner"
+            )));
+        }
+        let Some(value_type) = &value.ty else {
+            continue;
+        };
+        let value_type = resolve_assertion_type(value_type, &mut context)
+            .map_err(|error| Failure::from_diagnostic(error.into()))?;
+        found.push((
+            index,
+            reached.contains(&*value.ident.name()),
+            Buffer {
+                name,
+                binding: 0,
+                size: value_type.size_of().unwrap_or(0).max(4),
+                layout: layout(&value_type),
+                access: if matches!(access, Some(AccessMode::ReadWrite)) {
+                    "read_write"
+                } else {
+                    "read"
+                },
+            },
+        ));
+    }
+    let mut next = 0;
+    let mut buffers = Vec::new();
+    for (index, reached, mut buffer) in found {
+        while taken.contains(&next) {
+            next += 1;
+        }
+        taken.insert(next);
+        if let GlobalDeclaration::Declaration(value) = &mut *syntax.global_declarations[index] {
+            value.attributes.retain(|attribute| {
+                !matches!(&**attribute, Attribute::Custom(custom) if custom.name == "buffer")
+            });
+            value
+                .attributes
+                .push(Attribute::Group(Expression::from(0u32).into()).into());
+            value
+                .attributes
+                .push(Attribute::Binding(Expression::from(next).into()).into());
+        }
+        buffer.binding = next;
+        buffers.push((reached, buffer));
+    }
+    Ok((buffers, resources))
+}
+
+type CompiledCompute = (String, Vec<Buffer>, HashMap<String, String>);
+
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "wesl._native")]
+#[pyfunction]
+#[pyo3(signature = (compiler, root))]
+#[gen_stub(override_return_type(
+    type_repr = "tuple[str, list[dict[str, typing.Any]], dict[str, str]]",
+    imports = ("typing")
+))]
+pub(super) fn compile_compute(
+    py: Python<'_>,
+    #[gen_stub(override_type(type_repr="wesl.Compiler", imports=("wesl")))] compiler: Compiler<'_>,
+    root: String,
+) -> PyResult<CompiledCompute> {
+    let (options, sources) = compiler.split()?;
+    py.detach(move || {
+        let root = module_path(&root)?;
+        let resolver = ModuleResolver::new(sources)?;
+        let mut result = crate::compiler::compile(
+            &root,
+            &wesl::CompileOptions {
+                visibility: false,
+                keep_main: true,
+                features: options.features,
+                ..Default::default()
+            },
+            &resolver,
+            HashMap::new(),
+            |_, _| Ok(()),
+        )
+        .map_err(|error| Failure::from_diagnostic(error.diagnostic()))?;
+        let (buffers, _) =
+            place_buffers(&mut result.syntax, &result.sourcemap, &root, "main", &[])?;
+        Ok((
+            result.syntax.to_string(),
+            buffers.into_iter().map(|(_, buffer)| buffer).collect(),
+            source_names(&result.syntax, &result.sourcemap),
+        ))
+    })
+    .map_err(|failure: Failure| failure.into_pyerr(py))
+}
+
+fn references_override<N: Visit<TypeExpression>>(syntax: &TranslationUnit, node: &N) -> bool {
+    let mut names = Vec::new();
+    node.visit_rec(&mut |expression: &TypeExpression| {
+        names.push(expression.ident.name().to_string());
+    });
+    let mut checked = HashSet::new();
+    while let Some(name) = names.pop() {
+        if !checked.insert(name.clone()) {
+            continue;
+        }
+        match syntax.user_decl(&name) {
+            Some(GlobalDeclaration::Declaration(value))
+                if value.kind == DeclarationKind::Override =>
+            {
+                return true;
+            }
+            Some(declaration) => declaration.visit_rec(&mut |expression: &TypeExpression| {
+                names.push(expression.ident.name().to_string());
+            }),
+            None => {}
+        }
+    }
+    false
+}
+
+fn compile_module(
+    resolver: &ModuleResolver,
+    module: &str,
+    features: wesl::Features,
+) -> Result<(ModulePath, wesl::CompileResult), Failure> {
+    let root = module_path(module)?;
+    let result = crate::compiler::compile(
+        &root,
+        &wesl::CompileOptions {
+            visibility: false,
+            strip: false,
+            validate: false,
+            features,
+            ..Default::default()
+        },
+        resolver,
+        HashMap::new(),
+        |_, _| Ok(()),
+    )
+    .map_err(|error| Failure::from_diagnostic(error.diagnostic()))?;
+    Ok((root, result))
+}
+
+fn module_failure(error: impl Into<wesl::Error>, root: &ModulePath) -> Failure {
+    Failure::from_diagnostic(
+        error
+            .into()
+            .diagnostic()
+            .with_module_path(root.clone(), None),
+    )
+}
+
+fn module_items<'a>(
+    root: &'a ModulePath,
+    result: &'a wesl::CompileResult,
+) -> impl Iterator<Item = (String, &'a GlobalDeclaration)> {
+    result
+        .syntax
+        .global_declarations
+        .iter()
+        .filter_map(move |declaration| {
+            let ident = declaration.ident()?.name().to_string();
+            match result.sourcemap.item(&ident) {
+                None => Some((ident, &**declaration)),
+                Some(entry) if entry.path == *root => Some((entry.name.clone(), &**declaration)),
+                Some(_) => None,
+            }
+        })
+}
+
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "wesl._native")]
+#[pyfunction]
+#[pyo3(signature = (compiler, path))]
+#[gen_stub(override_return_type(
+    type_repr = "builtins.tuple[builtins.bool, builtins.str | builtins.tuple[typing.Any, ...]]",
+    imports = ("builtins", "typing")
+))]
+pub(super) fn path_layout(
+    py: Python<'_>,
+    #[gen_stub(override_type(type_repr="wesl.Compiler", imports=("wesl")))] compiler: Compiler<'_>,
+    path: String,
+) -> PyResult<(bool, Layout)> {
+    let (options, sources) = compiler.split()?;
+    py.detach(move || {
+        let Some((module, name)) = path.rsplit_once("::") else {
+            return Err(Failure::Shape(
+                format!("{path:?} does not name a module and an item"),
+                None,
+            ));
+        };
+        let resolver = ModuleResolver::new(sources)?;
+        let (root, result) = compile_module(&resolver, module, options.features)?;
+        let (variable, type_expression) = match module_items(&root, &result)
+            .find_map(|(item, declaration)| (item == name).then_some(declaration))
+        {
+            Some(GlobalDeclaration::Declaration(Declaration {
+                kind: DeclarationKind::Var(_),
+                ty: Some(value_type),
+                ..
+            })) => (true, value_type.clone()),
+            Some(
+                declaration @ (GlobalDeclaration::Struct(_) | GlobalDeclaration::TypeAlias(_)),
+            ) => (
+                false,
+                TypeExpression::from(
+                    declaration
+                        .ident()
+                        .unwrap_or_else(|| Ident::new(name.to_owned())),
+                ),
+            ),
+            _ => {
+                return Err(Failure::Shape(
+                    format!("{path} does not name a type or a typed module-scope var"),
+                    Some(name.to_owned()),
+                ));
+            }
+        };
+        let mut context = constant_context(&result.syntax);
+        let value_type = (!references_override(&result.syntax, &type_expression))
+            .then(|| resolve_assertion_type(&type_expression, &mut context))
+            .transpose()
+            .map_err(|error| module_failure(error, &root))?;
+        value_type
+            .and_then(|value_type| {
+                layout(&if variable {
+                    value_type
+                } else {
+                    Type::Array(Box::new(value_type), None)
+                })
+            })
+            .map(|layout| (variable, layout))
+            .ok_or_else(|| {
+                Failure::Shape(
+                    format!("{path} has no fixed-size host-shareable layout"),
+                    Some(name.to_owned()),
+                )
+            })
+    })
+    .map_err(|failure: Failure| failure.into_pyerr(py))
+}
+
+type VarReflection = (
+    Option<String>,
+    Option<String>,
+    Option<u32>,
+    Option<u32>,
+    Option<Layout>,
+    u32,
+);
+
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "wesl._native")]
+#[pyfunction]
+#[pyo3(signature = (compiler, path))]
+#[gen_stub(override_return_type(
+    type_repr = "builtins.tuple[builtins.str | None, builtins.str | None, builtins.int | None, builtins.int | None, builtins.str | builtins.tuple[typing.Any, ...] | None, builtins.int]",
+    imports = ("builtins", "typing")
+))]
+pub(super) fn var_reflection(
+    py: Python<'_>,
+    #[gen_stub(override_type(type_repr="wesl.Compiler", imports=("wesl")))] compiler: Compiler<'_>,
+    path: String,
+) -> PyResult<VarReflection> {
+    let (options, sources) = compiler.split()?;
+    py.detach(move || {
+        let Some((module, name)) = path.rsplit_once("::") else {
+            return Err(Failure::Shape(
+                format!("{path:?} does not name a module and a variable"),
+                None,
+            ));
+        };
+        let resolver = ModuleResolver::new(sources)?;
+        let (root, result) = compile_module(&resolver, module, options.features)?;
+        let Some((declaration, space, value_type)) =
+            module_items(&root, &result).find_map(|(item, declaration)| match declaration {
+                GlobalDeclaration::Declaration(
+                    value @ Declaration {
+                        kind: DeclarationKind::Var(space),
+                        ty: Some(value_type),
+                        ..
+                    },
+                ) if item == name => Some((value, space, value_type)),
+                _ => None,
+            })
+        else {
+            return Err(Failure::Shape(
+                format!("{path} does not name a typed module-scope var"),
+                Some(name.to_owned()),
+            ));
+        };
+        let mut context = constant_context(&result.syntax);
+        let value_type = (!references_override(&result.syntax, value_type))
+            .then(|| resolve_assertion_type(value_type, &mut context))
+            .transpose()
+            .map_err(|error| module_failure(error, &root))?;
+        if matches!(value_type, Some(Type::Texture(_) | Type::Sampler(_))) {
+            return Err(Failure::Shape(
+                format!("{path} is a texture or sampler"),
+                Some(name.to_owned()),
+            ));
+        }
+        let (group, binding) = declaration
+            .attributes
+            .iter()
+            .any(|attribute| matches!(&**attribute, Attribute::Group(_) | Attribute::Binding(_)))
+            .then(|| declaration.attr_group_binding(&mut context))
+            .transpose()
+            .map_err(|error| module_failure(error, &root))?
+            .unzip();
+        Ok((
+            space.as_ref().map(|(space, _)| space.to_string()),
+            space
+                .as_ref()
+                .and_then(|(_, access)| access.as_ref().map(ToString::to_string)),
+            group,
+            binding,
+            value_type.as_ref().and_then(layout),
+            value_type.as_ref().and_then(Type::size_of).unwrap_or(0),
+        ))
+    })
+    .map_err(|failure: Failure| failure.into_pyerr(py))
+}
+
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "wesl._native")]
+#[pyfunction]
+#[pyo3(signature = (compiler, module))]
+#[gen_stub(override_return_type(
+    type_repr = "builtins.list[builtins.tuple[builtins.str, builtins.str | builtins.tuple[typing.Any, ...] | None]]",
+    imports = ("builtins", "typing")
+))]
+pub(super) fn struct_layouts(
+    py: Python<'_>,
+    #[gen_stub(override_type(type_repr="wesl.Compiler", imports=("wesl")))] compiler: Compiler<'_>,
+    module: String,
+) -> PyResult<Vec<(String, Option<Layout>)>> {
+    let (options, sources) = compiler.split()?;
+    py.detach(move || {
+        let resolver = ModuleResolver::new(sources)?;
+        let (root, result) = compile_module(&resolver, &module, options.features)?;
+        let mut context = Context::new(&result.syntax);
+        module_items(&root, &result)
+            .filter_map(|(item, declaration)| match declaration {
+                GlobalDeclaration::Struct(structure) => Some((item, structure)),
+                _ => None,
+            })
+            .map(|(item, structure)| {
+                let value_type = resolve_assertion_type(
+                    &TypeExpression::from(structure.ident.clone()),
+                    &mut context,
+                )
+                .map_err(|error| module_failure(error, &root))?;
+                Ok((item, layout(&value_type)))
+            })
+            .collect::<Result<Vec<_>, Failure>>()
+    })
+    .map_err(|failure: Failure| failure.into_pyerr(py))
+}
+
+type EntryPoint = (String, &'static str, Option<(u32, u32, u32)>);
+
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "wesl._native")]
+#[pyfunction]
+#[pyo3(signature = (compiler, module))]
+pub(super) fn entry_points(
+    py: Python<'_>,
+    #[gen_stub(override_type(type_repr="wesl.Compiler", imports=("wesl")))] compiler: Compiler<'_>,
+    module: String,
+) -> PyResult<Vec<EntryPoint>> {
+    let (options, sources) = compiler.split()?;
+    py.detach(move || {
+        let resolver = ModuleResolver::new(sources)?;
+        let (root, result) = compile_module(&resolver, &module, options.features)?;
+        let mut context = constant_context(&result.syntax);
+        let mut entry_points = Vec::new();
+        for (item, declaration) in module_items(&root, &result) {
+            let GlobalDeclaration::Function(function) = declaration else {
+                continue;
+            };
+            let Some(stage) = function
+                .attributes
+                .iter()
+                .find_map(|attribute| match &**attribute {
+                    Attribute::Compute => Some("compute"),
+                    Attribute::Fragment => Some("fragment"),
+                    Attribute::Vertex => Some("vertex"),
+                    _ => None,
+                })
+            else {
+                continue;
+            };
+            let workgroup_size = match function
+                .attributes
+                .iter()
+                .find(|attribute| matches!(&***attribute, Attribute::WorkgroupSize(_)))
+            {
+                Some(attribute) if !references_override(&result.syntax, &**attribute) => {
+                    let (x, y, z) = function
+                        .attr_workgroup_size(&mut context)
+                        .map_err(|error| module_failure(error, &root))?;
+                    Some((x, y.unwrap_or(1), z.unwrap_or(1)))
+                }
+                _ => None,
+            };
+            entry_points.push((item, stage, workgroup_size));
+        }
+        Ok(entry_points)
+    })
+    .map_err(|failure: Failure| failure.into_pyerr(py))
+}
+
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "wesl._native")]
 #[pyclass(frozen, module = "wesl._native")]
 pub(super) struct TestLayout {
@@ -99,11 +639,23 @@ pub(super) struct TestLayout {
     #[pyo3(get)]
     buffer_size: u32,
     cooperative: bool,
+    buffers: Vec<Buffer>,
+    #[pyo3(get)]
+    resources: Vec<(u32, u32)>,
 }
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl TestLayout {
+    #[getter]
+    #[gen_stub(override_return_type(
+        type_repr = "list[dict[str, typing.Any]]",
+        imports = ("typing")
+    ))]
+    fn buffers<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        self.buffers.clone().into_pyobject(py).map(Bound::into_any)
+    }
+
     #[pyo3(signature = (data))]
     fn decode(
         &self,
@@ -193,27 +745,54 @@ pub(super) struct TestResult {
 impl TestResult {
     #[getter]
     #[gen_stub(override_return_type(
-        type_repr = "tuple[bool | int | float | tuple[float, ...], bool | int | float | tuple[float, ...]]"
+        type_repr = "tuple[bool | int | float | tuple[bool | int | float, ...], bool | int | float | tuple[bool | int | float, ...]]"
     ))]
     fn values<'py>(&self, py: Python<'py>) -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
         let [actual, expected] = [&self.actual, &self.expected].map(|value| -> PyResult<_> {
-            match self.value_kind {
-                0 => Ok((value[0] != 0).into_pyobject(py)?.to_owned().into_any()),
-                1 => Ok(value[0].into_pyobject(py)?.into_any()),
-                _ if self.components == 1 => {
-                    Ok(f32::from_bits(value[0]).into_pyobject(py)?.into_any())
-                }
-                _ => {
-                    let components = usize::try_from(self.components)
-                        .map_err(|error| PyValueError::new_err(error.to_string()))?;
-                    let values = value.get(..components).ok_or_else(|| {
-                        PyValueError::new_err("shader assertion has too many components")
-                    })?;
-                    Ok(PyTuple::new(py, values.iter().copied().map(f32::from_bits))?.into_any())
-                }
+            let components = usize::try_from(self.components)
+                .map_err(|error| PyValueError::new_err(error.to_string()))?;
+            let values = value
+                .get(..components)
+                .ok_or_else(|| PyValueError::new_err("shader assertion has too many components"))?
+                .iter()
+                .map(|&bits| -> PyResult<Bound<'py, PyAny>> {
+                    match self.value_kind {
+                        0 => Ok((bits != 0).into_pyobject(py)?.to_owned().into_any()),
+                        1 => Ok(bits.into_pyobject(py)?.into_any()),
+                        3 => Ok(bits.cast_signed().into_pyobject(py)?.into_any()),
+                        _ => Ok(f32::from_bits(bits).into_pyobject(py)?.into_any()),
+                    }
+                })
+                .collect::<PyResult<Vec<_>>>()?;
+            if components == 1 {
+                Ok(values
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| PyValueError::new_err("shader assertion has no components"))?)
+            } else {
+                Ok(PyTuple::new(py, values)?.into_any())
             }
         });
         Ok((actual?, expected?))
+    }
+
+    #[getter]
+    const fn value_type(&self) -> &'static str {
+        match (self.value_kind, self.components) {
+            (0, _) => "bool",
+            (1, 1) => "u32",
+            (1, 2) => "vec2u",
+            (1, 3) => "vec3u",
+            (1, _) => "vec4u",
+            (3, 1) => "i32",
+            (3, 2) => "vec2i",
+            (3, 3) => "vec3i",
+            (3, _) => "vec4i",
+            (_, 1) => "f32",
+            (_, 2) => "vec2f",
+            (_, 3) => "vec3f",
+            _ => "vec4f",
+        }
     }
 }
 
@@ -239,6 +818,7 @@ struct TestTransform {
     assertion_module: ModulePath,
     result_module: ModulePath,
     result_binding: u32,
+    reserved: Vec<u32>,
     parameters: Vec<FormalParameter>,
     workgroup_size: Option<WorkgroupSizeAttribute>,
     cooperative: bool,
@@ -251,6 +831,7 @@ impl TestTransform {
         root: ModulePath,
         test_name: String,
         result_binding: u32,
+        reserved: Vec<u32>,
         features: &wesl::Features,
         resolver: &ModuleResolver,
         syntax: Option<TranslationUnit>,
@@ -301,6 +882,7 @@ impl TestTransform {
             assertion_module,
             result_module: result_module.clone(),
             result_binding,
+            reserved,
             parameters,
             workgroup_size,
             cooperative,
@@ -320,25 +902,16 @@ impl TestTransform {
         resolver: &ModuleResolver,
         parsed_modules: HashMap<ModulePath, TranslationUnit>,
     ) -> Result<CompiledTest, Failure> {
-        let mut declared_overrides = HashSet::new();
         let mut result = crate::compiler::compile(
             &self.root,
             options,
             resolver,
             parsed_modules,
-            |path, syntax| {
-                declared_overrides.extend(override_keys(syntax, path == &self.root));
-                self.apply(path, syntax)
-            },
+            |path, syntax| self.apply(path, syntax),
         )
         .map_err(|error| Failure::from_diagnostic(error.diagnostic()))?;
         let sourcemap = result.sourcemap.take();
-        TestInstrumentation::new(&result.syntax, &sourcemap, self)?.finish(
-            result,
-            &sourcemap,
-            self,
-            declared_overrides,
-        )
+        TestInstrumentation::new(&result.syntax, &sourcemap, self)?.finish(result, &sourcemap, self)
     }
 
     fn apply(&self, path: &ModulePath, syntax: &mut TranslationUnit) -> Result<(), wesl::Error> {
@@ -731,9 +1304,23 @@ type CompiledTest = Option<(
     String,
     String,
     Vec<Diagnostic>,
-    HashMap<String, Option<String>>,
+    HashMap<String, String>,
     TestLayout,
 )>;
+
+fn source_names(syntax: &TranslationUnit, sourcemap: &impl SourceMap) -> HashMap<String, String> {
+    syntax
+        .global_declarations
+        .iter()
+        .filter_map(|declaration| {
+            let ident = declaration.ident()?.name().to_string();
+            let entry = sourcemap
+                .item(&ident)
+                .or_else(|| sourcemap.item(ident.strip_suffix("_wesl_test")?))?;
+            (entry.name != ident).then(|| (ident, format!("{}::{}", entry.path, entry.name)))
+        })
+        .collect()
+}
 
 #[derive(Default)]
 struct TestInstrumentation {
@@ -741,7 +1328,6 @@ struct TestInstrumentation {
     result_name: Option<String>,
     result_type: Option<Type>,
     compiled_entry: Option<String>,
-    overrides: HashMap<String, Option<String>>,
     sites: Vec<Diagnostic>,
     sources: HashMap<ModulePath, Option<Arc<str>>>,
     referenced_assertions: HashSet<String>,
@@ -759,7 +1345,6 @@ impl TestInstrumentation {
             result_name,
             result_type,
             compiled_entry,
-            overrides,
             ..
         } = &mut instrumentation;
         let mut context = Context::new(syntax);
@@ -798,15 +1383,8 @@ impl TestInstrumentation {
                 } else if module == &transformed.result_module && name == "testResult" {
                     *result_name = Some(ident.name().to_string());
                     *result_type = value_type;
-                } else if module == &transformed.root {
-                    if *name == transformed.entry_point {
-                        *compiled_entry = Some(ident.name().to_string());
-                    }
-                    if matches!(&**declaration, GlobalDeclaration::Declaration(value)
-                        if value.kind == DeclarationKind::Override)
-                    {
-                        overrides.insert(name.to_owned(), Some(ident.name().to_string()));
-                    }
+                } else if module == &transformed.root && *name == transformed.entry_point {
+                    *compiled_entry = Some(ident.name().to_string());
                 }
             }
         }
@@ -925,17 +1503,10 @@ impl TestInstrumentation {
         mut result: wesl::CompileResult,
         sourcemap: &impl SourceMap,
         transformed: &TestTransform,
-        declared_overrides: HashSet<String>,
     ) -> Result<CompiledTest, Failure> {
         let Some(compiled_entry) = self.compiled_entry.take() else {
             return Ok(None);
         };
-        let present_ids = override_keys(&result.syntax, false);
-        for key in declared_overrides {
-            if !present_ids.contains(&key) {
-                self.overrides.entry(key).or_insert(None);
-            }
-        }
         let result_name = self
             .result_name
             .take()
@@ -943,6 +1514,13 @@ impl TestInstrumentation {
             .ok_or_else(|| Failure::Message("shader test result is missing".to_owned()))?;
         self.rewrite_calls(&mut result.syntax, sourcemap, transformed)?;
         self.add_wrappers(&mut result.syntax, sourcemap, transformed, &result_name)?;
+        let (buffers, resources) = place_buffers(
+            &mut result.syntax,
+            sourcemap,
+            &transformed.root,
+            &compiled_entry,
+            &transformed.reserved,
+        )?;
         let result_type = self
             .result_type
             .ok_or_else(|| Failure::Message("shader test result type is missing".to_owned()))?;
@@ -953,11 +1531,16 @@ impl TestInstrumentation {
             result.to_string(),
             compiled_entry,
             self.sites,
-            self.overrides,
+            source_names(&result.syntax, sourcemap),
             TestLayout {
                 result_type,
                 buffer_size,
                 cooperative: transformed.cooperative,
+                buffers: buffers
+                    .into_iter()
+                    .filter_map(|(reached, buffer)| reached.then_some(buffer))
+                    .collect(),
+                resources,
             },
         )))
     }
@@ -1104,11 +1687,15 @@ fn assertion_kind(
         Type::Bool => (0, 1),
         Type::U32 => (1, 1),
         Type::F32 => (2, 1),
+        Type::I32 => (3, 1),
+        Type::Vec(components, scalar) if **scalar == Type::U32 => (1, *components),
         Type::Vec(components, scalar) if **scalar == Type::F32 => (2, *components),
+        Type::Vec(components, scalar) if **scalar == Type::I32 => (3, *components),
         _ => {
             return Err(Failure::from_diagnostic(
                 wesl::Error::Custom(
-                    "shader assertion values require bool, u32, f32, or a vector of f32".to_owned(),
+                    "shader assertion values require bool, u32, i32, f32, or a vector of them"
+                        .to_owned(),
                 )
                 .diagnostic()
                 .with_module_path(
@@ -1213,26 +1800,23 @@ fn assertion_wrapper(
 
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "wesl._native")]
 #[pyfunction]
-#[pyo3(signature = (modules, root, test_name, options, filenames, root_directory, result_binding, dependencies, parsed_module=None))]
+#[pyo3(signature = (compiler, root, test_name, options, result_binding, reserved, parsed_module=None))]
 pub(super) fn compile_test(
     py: Python<'_>,
-    #[gen_stub(override_type(type_repr="collections.abc.Mapping[str, str]", imports=("collections.abc")))]
-    modules: &Bound<'_, PyMapping>,
+    #[gen_stub(override_type(type_repr="wesl.Compiler", imports=("wesl")))] compiler: Compiler<'_>,
     root: String,
     test_name: String,
     #[gen_stub(override_type(type_repr="wesl.TestOptions", imports=("wesl")))] options: TestOptions<
         '_,
     >,
-    filenames: HashMap<String, String>,
-    root_directory: Option<PathBuf>,
     result_binding: u32,
-    dependencies: HashMap<String, PathBuf>,
+    reserved: Vec<u32>,
     parsed_module: Option<&ParsedTestModule>,
 ) -> PyResult<CompiledTest> {
     if options.lower {
         return Err(PyNotImplementedError::new_err("lowering is not supported"));
     }
-    let modules = modules.items()?.extract::<Vec<(String, String)>>()?;
+    let (_, sources) = compiler.split()?;
     let TestOptions {
         strip,
         visibility,
@@ -1243,7 +1827,7 @@ pub(super) fn compile_test(
     let features: wesl::Features = features.try_into()?;
     py.detach(move || {
         let root = module_path(&root)?;
-        let resolver = ModuleResolver::new(modules, filenames, root_directory, dependencies)?;
+        let resolver = ModuleResolver::new(sources)?;
         let syntax = parsed_module
             .filter(|parsed_module| {
                 resolver
@@ -1259,6 +1843,7 @@ pub(super) fn compile_test(
             root,
             test_name,
             result_binding,
+            reserved,
             &features,
             &resolver,
             syntax,
@@ -1300,7 +1885,6 @@ pub(super) fn execute_test_cpu(
     source: String,
     entry_point: String,
     layout: &TestLayout,
-    constants: HashMap<String, f64>,
 ) -> PyResult<Vec<u8>> {
     if layout.cooperative {
         return Err(PyNotImplementedError::new_err(
@@ -1315,6 +1899,25 @@ pub(super) fn execute_test_cpu(
             )
         })?;
         pass::retarget_idents(&mut syntax);
+        let mut referenced = HashSet::new();
+        Visit::<TypeExpression>::visit_rec(&syntax, &mut |expression: &TypeExpression| {
+            referenced.insert(expression.ident.name().to_string());
+        });
+        for declaration in &mut syntax.global_declarations {
+            if let GlobalDeclaration::Declaration(value) = &mut **declaration
+                && value.kind == DeclarationKind::Override
+                && value.initializer.is_none()
+                && !referenced.contains(&*value.ident.name())
+                && let Some(value_type) = &value.ty
+            {
+                value.initializer = Some(
+                    format!("{value_type}()")
+                        .parse::<Expression>()
+                        .map_err(|error| Failure::from_diagnostic(error.into()))?
+                        .into(),
+                );
+            }
+        }
         let mut storage_count = 0;
         for declaration in &syntax.global_declarations {
             if matches!(
@@ -1349,7 +1952,6 @@ pub(super) fn execute_test_cpu(
         let result = Instance::storable_zero_value(&result_type)
             .map_err(|error| Failure::from_diagnostic(wesl::eval::EvalError::from(error).into()))?;
         let result = RefInstance::new(result, AddressSpace::Storage, AccessMode::ReadWrite);
-        let mut overrides = HashMap::new();
         let mut context = Context::new(&syntax);
         syntax.exec(&mut context).map_err(|error| {
             Failure::from_diagnostic(
@@ -1358,59 +1960,6 @@ pub(super) fn execute_test_cpu(
                     .with_source(source.clone()),
             )
         })?;
-        for (name, value) in constants {
-            let declaration = syntax
-                .global_declarations
-                .iter()
-                .find_map(|declaration| {
-                    let GlobalDeclaration::Declaration(declaration) = &**declaration else {
-                        return None;
-                    };
-                    (declaration.kind == DeclarationKind::Override
-                        && (declaration.ident.name().as_str() == name
-                            || declaration
-                                .attr_id(&mut context)
-                                .ok()
-                                .flatten()
-                                .is_some_and(|identifier| identifier.to_string() == name)))
-                    .then_some(declaration)
-                })
-                .ok_or_else(|| {
-                    Failure::Message("pipeline constant does not name an override".to_owned())
-                })?;
-            let value_type = TypeExpression::from(declaration.ident.clone())
-                .eval_ty(&mut context)
-                .map_err(|error| Failure::from_diagnostic(error.into()))?;
-            if value_type != Type::Bool && !value.is_finite() {
-                return Err(Failure::Message(
-                    "pipeline constant must be finite".to_owned(),
-                ));
-            }
-            if (value_type == Type::I32
-                && !(f64::from(i32::MIN)..=f64::from(i32::MAX)).contains(&value.trunc()))
-                || (value_type == Type::U32
-                    && !(f64::from(u32::MIN)..=f64::from(u32::MAX)).contains(&value.trunc()))
-            {
-                return Err(Failure::Message(
-                    "pipeline constant is outside the override type's range".to_owned(),
-                ));
-            }
-            let value = if value_type == Type::Bool {
-                Instance::from(value != 0.0 && !value.is_nan())
-            } else {
-                Instance::from(value)
-            };
-            let value =
-                call_ctor(&value_type, &[value], ShaderStage::Override).map_err(|error| {
-                    Failure::from_diagnostic(wesl::eval::EvalError::from(error).into())
-                })?;
-            if matches!(&value, Instance::Literal(value) if value.is_infinite()) {
-                return Err(Failure::Message(
-                    "pipeline constant is outside the override type's range".to_owned(),
-                ));
-            }
-            overrides.insert(declaration.ident.to_string(), value);
-        }
         let expression = format!("{entry_point}()")
             .parse::<Expression>()
             .map_err(|error| Failure::from_diagnostic(error.into()))?;
@@ -1418,7 +1967,7 @@ pub(super) fn execute_test_cpu(
             &expression,
             &syntax,
             HashMap::from([((0, 0), result.clone())]),
-            overrides,
+            HashMap::new(),
         );
         execution.map_err(|error| {
             Failure::from_diagnostic(

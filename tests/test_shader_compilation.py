@@ -9,18 +9,30 @@ import wesl
 from wesl import _native
 
 
-@pytest.fixture
-def compile_shader_test(wgsl_test: Path) -> partial:
-    return partial(
-        _native.compile_test,
-        root="package::main",
-        test_name="selected",
-        options=wesl.TestOptions(),
-        filenames={},
-        root_directory=None,
-        result_binding=0,
-        dependencies={"wgsl_test": str(wgsl_test)},
+def _compile_shader_test(
+    modules: dict[str, str],
+    *,
+    options: wesl.TestOptions | None = None,
+    filenames: dict[str, str] | None = None,
+    dependencies: dict[str, str] | None = None,
+) -> object:
+    return _native.compile_test(
+        wesl.Compiler(
+            modules=modules,
+            filenames={} if filenames is None else filenames,
+            dependencies={} if dependencies is None else dependencies,
+        ),
+        "package::main",
+        "selected",
+        wesl.TestOptions() if options is None else options,
+        0,
+        [],
     )
+
+
+@pytest.fixture
+def compile_shader_test() -> partial:
+    return partial(_compile_shader_test)
 
 
 def test_cooperative_wrapper_preserves_other_entry_points(
@@ -159,7 +171,7 @@ def test_shader_result_evaluates_layout_constants(
     ],
 )
 def test_shader_assertion_type_cycles_without_validation(
-    pytester: pytest.Pytester, wgsl_test: Path, declarations: str
+    pytester: pytest.Pytester, declarations: str
 ) -> None:
     source = f"{declarations} fn expectCustom(actual: Value, expected: Value) {{}}"
     completed = pytester.run(
@@ -170,13 +182,14 @@ def test_shader_assertion_type_cycles_without_validation(
             "from wesl import _native\n"
             "try:\n"
             "    _native.compile_test(\n"
-            "        {'package::main': '@test fn selected() { "
+            "        wesl.Compiler(\n"
+            "            modules={'package::main': '@test fn selected() { "
             "wgsl_test::expectCustom(1, 2); }',\n"
-            f"         'wgsl_test': {source!r}}},\n"
+            f"                     'wgsl_test': {source!r}}},\n"
+            "            filenames={'wgsl_test': 'assertions.wesl'},\n"
+            "        ),\n"
             "        'package::main', 'selected',\n"
-            "        wesl.TestOptions(validate=False),\n"
-            "        {'wgsl_test': 'assertions.wesl'}, None, 0,\n"
-            f"        {{'wgsl_test': {str(wgsl_test)!r}}},\n"
+            "        wesl.TestOptions(validate=False), 0, [],\n"
             "    )\n"
             "except wesl.CompileError as error:\n"
             "    [diagnostic] = error.diagnostics\n"
@@ -290,7 +303,7 @@ def test_assertion_wrappers_only_include_referenced_functions(
                     "@test fn selected() { wgsl_test::expectCustom(1, 2); }"
                 ),
                 "wgsl_test": (
-                    "alias Value = vec2<u32>; "
+                    "alias Value = mat2x2f; "
                     "fn expectCustom(actual: Value, expected: Value) {}"
                 ),
             },
@@ -393,7 +406,7 @@ def test_conditions_select_shader_tests(
     assert (compiled is not None) is enabled
 
 
-def test_concurrent_shader_instrumentation(wgsl_test: Path) -> None:
+def test_concurrent_shader_instrumentation() -> None:
     def compile_test(index: int) -> tuple[str, wesl.Diagnostic]:
         source = (
             "import wgsl_test::expectEq; "
@@ -404,21 +417,25 @@ def test_concurrent_shader_instrumentation(wgsl_test: Path) -> None:
         [(name, _, _)] = parsed.tests
         assert name == f"test_{index}"
         compiled = _native.compile_test(
-            {"package::main": source},
+            wesl.Compiler(
+                modules={"package::main": source}, filenames={"package::main": filename}
+            ),
             "package::main",
             name,
             wesl.TestOptions(),
-            {"package::main": filename},
-            None,
             0,
-            {"wgsl_test": str(wgsl_test)},
+            [],
             parsed,
         )
         assert compiled is not None
-        shader, entry_point, diagnostics, overrides, _ = compiled
+        shader, entry_point, diagnostics, names, _ = compiled
         _native.ParsedTestModule(shader, "compiled.wgsl")
         assert entry_point in shader
-        assert overrides == {}
+        assert "wgsl_test::expectEq" in {
+            name
+            for compiled_name, name in names.items()
+            if compiled_name.endswith("_wesl_test")
+        }
         [diagnostic] = diagnostics
         assert filename in _native.render_diagnostic(diagnostic)
         return shader, diagnostic

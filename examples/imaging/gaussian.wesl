@@ -10,10 +10,14 @@ fn direction() -> vec2<i32> {
 }
 
 fn convolve(position: vec3<u32>, dimensions: vec2<u32>) -> f32 {
+    return convolve_radius(position, dimensions, radius);
+}
+
+public fn convolve_radius(position: vec3<u32>, dimensions: vec2<u32>, kernel_radius: i32) -> f32 {
     var value = 0.0;
-    for (var offset = -radius; offset <= radius; offset++) {
+    for (var offset = -kernel_radius; offset <= kernel_radius; offset++) {
         let sample = clamp_position(vec2<i32>(position.xy) + direction() * offset, dimensions);
-        value += weights[u32(offset + radius)]
+        value += weights[u32(offset + kernel_radius)]
                * source[linear_index(vec3<u32>(sample, position.z), dimensions)];
     }
     return value;

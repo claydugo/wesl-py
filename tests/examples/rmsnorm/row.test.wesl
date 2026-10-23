@@ -1,6 +1,13 @@
 import package::examples::rmsnorm::input::load;
-import package::examples::rmsnorm::normalization::{epsilon, scale, width};
+import package::examples::rmsnorm::normalization::scale_row;
 import wgsl_test::expectNear;
+
+const width: u32 = constants::width;
+const epsilon: f32 = constants::epsilon;
+
+fn scale(square_sum: f32) -> f32 {
+    return scale_row(square_sum, width, epsilon);
+}
 
 @group(0) @binding(2) var<storage, read> combined: array<f32>;
 var<workgroup> squares: array<f32, 64>;

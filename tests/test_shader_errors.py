@@ -25,10 +25,12 @@ def test_failure_report_renders_shader_source(tmp_path: Path, line_break: str) -
     filename = tmp_path / "shaders/math.test.wesl"
     with pytest.raises(ShaderAssertionError) as captured:
         run_test_cpu(
-            {"package::main": source},
+            wesl.Compiler(
+                modules={"package::main": source},
+                filenames={"package::main": filename},
+                root_directory=tmp_path,
+            ),
             "failure",
-            filenames={"package::main": filename},
-            root_directory=tmp_path,
         )
     error = captured.value
     start = source.encode().index(b"wgsl_test")
@@ -106,6 +108,7 @@ def test_failure_report_tolerates_unusual_diagnostics(
         ),
         actual=False,
         expected=True,
+        value_type="bool",
         failures=2,
         checks=3,
     )

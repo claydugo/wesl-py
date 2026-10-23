@@ -23,7 +23,7 @@ def available_adapter() -> None:
 def test_injected_constant_semantics() -> None:
     result = wesl.compile_source(
         """
-        import package::config::{binding_number, width, scale, enabled, maximum};
+        import constants::{binding_number, width, scale, enabled, maximum};
         @group(0) @binding(binding_number)
         var<storage, read_write> output: array<u32>;
         @compute @workgroup_size(width) fn main() {
@@ -35,14 +35,12 @@ def test_injected_constant_semantics() -> None:
             output[2] = select(0u, maximum, enabled);
         }
         """,
-        constant_modules={
-            "package::config": {
-                "binding_number": 0,
-                "width": 1,
-                "scale": 1.0,
-                "enabled": True,
-                "maximum": 2**32 - 1,
-            },
+        constants={
+            "binding_number": 0,
+            "width": 1,
+            "scale": 1.0,
+            "enabled": True,
+            "maximum": 2**32 - 1,
         },
     )
     output = compute_with_buffers({}, {0: (3, "I")}, result.wgsl, n=1)

@@ -65,6 +65,21 @@ for options, library imports, and diagnostics.
 `compile_file()` resolves imports from the shader file's parent directory.
 Use `Compiler.from_project()` for a `wesl.toml` project.
 
+## Read buffer layouts
+
+`wesl.reflect` reads sizes, bindings, and workgroup sizes from the shader, so the
+Python side does not repeat them:
+
+```python
+from wesl.reflect import var_reflection
+
+particles = var_reflection(compiler, "package::simulation::particles")
+buffer_size = particle_count * particles.dtype.itemsize
+```
+
+See [Reflection](https://github.com/claydugo/wesl-py/blob/main/docs/api.md#reflection)
+for structures, entry points, and buffer decoding.
+
 ## Test a shader
 
 Save this as `shaders/math.test.wesl`:

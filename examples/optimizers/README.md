@@ -61,8 +61,8 @@ A slider change creates new update pipelines from the compiled shader modules.
 It does not compile again, and it keeps the weights.
 
 [layout.py](layout.py) computes the parameter offsets for a hidden width.
-[renderer.py](renderer.py) supplies them as the virtual module
-`package::examples::optimizers::layout` through `constant_modules`.
+[renderer.py](renderer.py) passes them as `constants`. The shaders import
+them from the virtual module `constants`.
 The width sizes private arrays, so it must be a compile-time constant.
 [viewer.py](viewer.py) uses the same offsets to initialize the weights.
 
