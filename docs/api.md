@@ -554,4 +554,4 @@ Python wheels include the compiled Rust dependencies. Source builds require
 Cargo and access to crates.io unless the crates are cached.
 The source distribution includes `Cargo.lock`; builds use locked resolution.
 Report parser defects to the [upstream issue tracker](https://github.com/webgpu-tools/wesl-rs/issues).
-See [LICENSE](../LICENSE) for source provenance and third-party notices.
+See [THIRD_PARTY_NOTICES](../THIRD_PARTY_NOTICES) for source provenance and third-party notices.

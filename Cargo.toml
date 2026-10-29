@@ -12,6 +12,7 @@ include = [
   "/Cargo.toml",
   "/LICENSE",
   "/README.md",
+  "/THIRD_PARTY_NOTICES",
   "/clippy.toml",
   "/deny.toml",
   "/pixi.lock",

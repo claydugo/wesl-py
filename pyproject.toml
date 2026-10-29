@@ -4,7 +4,7 @@ description = "Python bindings for the Rust WESL compiler"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES"]
 classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",

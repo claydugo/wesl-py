@@ -19,18 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-Third-party notices
-
-The bundled wgsl-test shaders use the MIT license above.
-Source: https://github.com/webgpu-tools/wesl-js/tree/37db2325b40cdb8aa504582cbc01cb4d41109a36/packages/wgsl-test/shaders
-Attribution comments and public visibility modifiers differ from upstream.
-Upstream lib.wesl is named package.wesl for the resolver and wgsl-analyzer.
-
-The imports example downloads Lygia's mod289 module from revision
-ce08fe351478b6c14297d103a8ce98d8e787d4d2. It uses the MIT license above.
-Source: https://github.com/patriciogonzalezvivo/lygia/blob/ce08fe351478b6c14297d103a8ce98d8e787d4d2/math/mod289.wesl
-The module originates in https://github.com/stegu/webgl-noise.
-Copyright 2021-2023 by Stefan Gustavson and Ian McEwan.
-Copyright (C) 2011 by Ashima Arts (Simplex noise)
-Copyright (C) 2011-2016 by Stefan Gustavson (Classic noise and others)
